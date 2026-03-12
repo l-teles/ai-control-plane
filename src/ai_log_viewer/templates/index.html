@@ -73,6 +73,21 @@ header .container { display: flex; align-items: center; gap: 16px; }
 }
 header h1 { font-size: 22px; font-weight: 600; }
 header p { color: var(--text-secondary); font-size: 14px; }
+.refresh-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+.refresh-btn.spinning { animation: spin 0.6s linear infinite; pointer-events: none; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .theme-toggle {
   margin-left: auto;
   background: var(--bg-tertiary);
@@ -140,6 +155,11 @@ header p { color: var(--text-secondary); font-size: 14px; }
   border-color: var(--orange);
   color: var(--orange);
 }
+.filter-btn.active-vscode {
+  background: var(--green-subtle);
+  border-color: var(--green);
+  color: var(--green);
+}
 .filter-btn .count {
   display: inline-block;
   background: var(--bg-tertiary);
@@ -186,6 +206,23 @@ header p { color: var(--text-secondary); font-size: 14px; }
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), var(--shadow);
 }
+.session-card.loading {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+}
+.session-card.loading::after {
+  content: "Loading...";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+}
 .session-card h2 {
   font-size: 18px; font-weight: 600; margin-bottom: 8px;
   color: var(--accent);
@@ -206,6 +243,7 @@ header p { color: var(--text-secondary); font-size: 14px; }
 .badge-branch { background: #3fb95022; color: var(--green); }
 .badge-source-claude { background: var(--purple-subtle); color: var(--purple); }
 .badge-source-copilot { background: var(--orange-subtle); color: var(--orange); }
+.badge-source-vscode { background: var(--green-subtle); color: var(--green); }
 .badge-model {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
@@ -232,6 +270,7 @@ header p { color: var(--text-secondary); font-size: 14px; }
       <h1>AI Session Log Viewer</h1>
       <p>Browse and understand AI agent session logs</p>
     </div>
+    <button class="refresh-btn" onclick="refreshSessions(this)" id="refresh-btn" title="Refresh session list">&#x21bb;</button>
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark mode"></button>
   </div>
 </header>
@@ -252,6 +291,11 @@ header p { color: var(--text-secondary); font-size: 14px; }
       <div class="stat-label">GitHub Copilot</div>
       <div class="stat-detail" title="{{ copilot_dir }}">{{ copilot_dir }}</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--green);">{{ vscode_count }}</div>
+      <div class="stat-label">VS Code Chat</div>
+      <div class="stat-detail" title="{{ vscode_dir }}">{{ vscode_dir }}</div>
+    </div>
   </div>
 
   <div class="search-bar">
@@ -262,6 +306,7 @@ header p { color: var(--text-secondary); font-size: 14px; }
     <button class="filter-btn active" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
     <button class="filter-btn" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
     <button class="filter-btn" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
+    <button class="filter-btn" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
   </div>
 
   <div class="sessions-grid" id="sessions-grid">
@@ -272,6 +317,8 @@ header p { color: var(--text-secondary); font-size: 14px; }
       <div class="session-meta">
         {% if s.source == 'claude' %}
         <span class="badge badge-source-claude">Claude Code</span>
+        {% elif s.source == 'vscode' %}
+        <span class="badge badge-source-vscode">VS Code Chat</span>
         {% else %}
         <span class="badge badge-source-copilot">Copilot</span>
         {% endif %}
@@ -304,7 +351,7 @@ header p { color: var(--text-secondary); font-size: 14px; }
   {% else %}
   <div class="empty-state">
     <h2>No sessions found</h2>
-    <p>Point the viewer at directories containing Copilot or Claude Code session logs.</p>
+    <p>Point the viewer at directories containing Copilot, Claude Code, or VS Code Chat session logs.</p>
   </div>
   {% endif %}
 </div>
@@ -345,7 +392,7 @@ function applyFilters() {
 
 function filterSessions(source, btn) {
   document.querySelectorAll('.filter-btn').forEach(function(b) {
-    b.classList.remove('active', 'active-claude', 'active-copilot');
+    b.classList.remove('active', 'active-claude', 'active-copilot', 'active-vscode');
   });
   var activeClass = btn.dataset.activeClass || 'active';
   btn.classList.add(activeClass);
@@ -360,6 +407,28 @@ if (searchInput) {
     applyFilters();
   });
 }
+
+/* Refresh sessions */
+function refreshSessions(btn) {
+  btn.classList.add('spinning');
+  window.location.href = '/?refresh=1';
+}
+
+/* Loading indicator on session card click */
+document.querySelectorAll('#sessions-grid .session-card').forEach(function(card) {
+  card.addEventListener('click', function() {
+    this.classList.add('loading');
+  });
+});
+
+/* Clear loading state on back/forward navigation (bfcache) */
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) {
+    document.querySelectorAll('.session-card.loading').forEach(function(card) {
+      card.classList.remove('loading');
+    });
+  }
+});
 </script>
 </body>
 </html>

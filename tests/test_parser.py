@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from copilot_log_viewer.parser import (
+from ai_log_viewer.parser import (
     build_conversation,
     compute_stats,
     discover_sessions,

@@ -465,7 +465,7 @@ a:hover { text-decoration: underline; }
       {% if ws.get('slug') %}
       <div class="info-row"><span class="info-key">Slug</span><span class="info-val">{{ ws.slug }}</span></div>
       {% endif %}
-      <div class="info-row"><span class="info-key">Source</span><span class="info-val">{{ source|capitalize if source == 'claude' else 'Copilot' }}</span></div>
+      <div class="info-row"><span class="info-key">Source</span><span class="info-val">{{ 'Claude Code' if source == 'claude' else ('VS Code Chat' if source == 'vscode' else 'Copilot') }}</span></div>
       <div class="info-row"><span class="info-key">ID</span><span class="info-val" style="font-size:10px;">{{ session_id }}</span></div>
     </div>
 
@@ -496,10 +496,12 @@ a:hover { text-decoration: underline; }
           <div class="stat-value">{{ stats.errors }}</div>
           <div class="stat-label">Errors</div>
         </div>
+        {% if stats.total_output_tokens > 0 %}
         <div class="stat-item" style="grid-column: span 2;">
           <div class="stat-value" style="font-size:18px;">{{ "{:,}".format(stats.total_output_tokens) }}</div>
           <div class="stat-label">Output Tokens</div>
         </div>
+        {% endif %}
       </div>
     </div>
 
@@ -556,7 +558,7 @@ a:hover { text-decoration: underline; }
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">
-          Session started &middot; {{ 'Claude Code' if source == 'claude' else 'Copilot' }} {{ item.version }}
+          Session started &middot; {{ 'Claude Code' if source == 'claude' else ('VS Code Chat' if source == 'vscode' else 'Copilot') }} {{ item.version }}
           {% if item.repo %} &middot; {{ item.repo }}{% endif %}
           {% if item.branch %} ({{ item.branch }}){% endif %}
         </div>
