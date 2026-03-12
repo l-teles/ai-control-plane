@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from copilot_log_viewer.app import create_app
+from ai_log_viewer.app import create_app
 
 
 @pytest.fixture()
@@ -42,7 +42,7 @@ def app_with_data(tmp_path: Path):
     backups.mkdir(parents=True)
     (backups / "abcdef0123456789-1234567890123").write_text("backup content")
 
-    app = create_app(tmp_path, tmp_path / "empty_claude")
+    app = create_app(tmp_path, tmp_path / "empty_claude", tmp_path / "empty_vscode")
     app.config["TESTING"] = True
     return app
 
@@ -167,7 +167,7 @@ def app_with_claude(tmp_path: Path):
     ]
     _write_jsonl(project_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl", events)
 
-    app = create_app(tmp_path / "empty_copilot", claude_dir)
+    app = create_app(tmp_path / "empty_copilot", claude_dir, tmp_path / "empty_vscode")
     app.config["TESTING"] = True
     return app
 
@@ -241,7 +241,7 @@ def app_mixed(tmp_path: Path):
     ]
     _write_jsonl(project_dir / "cccccccc-dddd-eeee-ffff-111111111111.jsonl", events_claude)
 
-    app = create_app(tmp_path / "copilot", claude_dir)
+    app = create_app(tmp_path / "copilot", claude_dir, tmp_path / "empty_vscode")
     app.config["TESTING"] = True
     return app
 
@@ -254,3 +254,141 @@ def test_mixed_sessions_index(app_mixed) -> None:
         assert len(data) == 2
         sources = {s["source"] for s in data}
         assert sources == {"copilot", "claude"}
+
+
+# ---------------------------------------------------------------------------
+# VS Code Chat session tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def app_with_vscode(tmp_path: Path):
+    """Create an app with a VS Code Chat session."""
+    vscode_dir = tmp_path / "vscode_user"
+    ws_dir = vscode_dir / "workspaceStorage" / "abc123hash"
+    chat_dir = ws_dir / "chatSessions"
+    chat_dir.mkdir(parents=True)
+
+    (ws_dir / "workspace.json").write_text(
+        json.dumps({"folder": "file:///Users/test/my-project"})
+    )
+
+    session = {
+        "version": 3,
+        "requesterUsername": "test-user",
+        "responderUsername": "GitHub Copilot",
+        "initialLocation": "panel",
+        "requests": [
+            {
+                "requestId": "request_11111111-2222-3333-4444-555555555555",
+                "message": {"text": "Fix the auth bug", "parts": [{"text": "Fix the auth bug", "kind": "text"}]},
+                "variableData": {"variables": []},
+                "response": [{"value": "I'll fix that for you."}],
+                "responseId": "resp_001",
+                "result": {
+                    "timings": {"firstProgress": 500, "totalElapsed": 3000},
+                    "metadata": {"toolCallRounds": [], "toolCallResults": {}},
+                    "details": "Claude Sonnet 4",
+                },
+                "followups": [],
+                "isCanceled": False,
+                "agent": {"id": "github.copilot.editsAgent", "name": "agent"},
+                "contentReferences": [],
+                "codeCitations": [],
+                "timestamp": 1710237601000,
+                "modelId": "copilot/claude-sonnet-4",
+            }
+        ],
+        "sessionId": "dddddddd-eeee-ffff-1111-222222222222",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 1710237601000,
+        "customTitle": "Fix auth bug",
+    }
+    (chat_dir / "dddddddd-eeee-ffff-1111-222222222222.json").write_text(
+        json.dumps(session)
+    )
+
+    app = create_app(tmp_path / "empty_copilot", tmp_path / "empty_claude", vscode_dir)
+    app.config["TESTING"] = True
+    return app
+
+
+def test_vscode_session_in_index(app_with_vscode) -> None:
+    with app_with_vscode.test_client() as c:
+        r = c.get("/")
+        assert r.status_code == 200
+        assert b"VS Code Chat" in r.data
+        assert b"Fix auth bug" in r.data
+
+
+def test_vscode_session_view(app_with_vscode) -> None:
+    with app_with_vscode.test_client() as c:
+        r = c.get("/session/dddddddd-eeee-ffff-1111-222222222222")
+        assert r.status_code == 200
+        assert b"Fix the auth bug" in r.data
+        assert b"fix that for you" in r.data
+
+
+def test_vscode_api_events(app_with_vscode) -> None:
+    with app_with_vscode.test_client() as c:
+        r = c.get("/api/session/dddddddd-eeee-ffff-1111-222222222222/events")
+        assert r.status_code == 200
+        data = r.get_json()
+        assert len(data) == 2  # 1 meta + 1 request
+
+
+def test_all_three_sources(tmp_path: Path) -> None:
+    """App with Copilot, Claude, and VS Code sessions."""
+    # Copilot
+    copilot_dir = tmp_path / "copilot" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    copilot_dir.mkdir(parents=True)
+    (copilot_dir / "workspace.yaml").write_text(
+        textwrap.dedent("""\
+        id: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+        summary: Copilot Session
+        created_at: 2026-03-12T09:00:00.000Z
+        updated_at: 2026-03-12T09:05:00.000Z
+        """)
+    )
+    _write_jsonl(copilot_dir / "events.jsonl", [
+        {"type": "session.start", "data": {"copilotVersion": "1.0.0", "context": {}}, "timestamp": "2026-03-12T09:00:00Z"},
+    ])
+
+    # Claude
+    claude_dir = tmp_path / "claude" / "-Users-test"
+    claude_dir.mkdir(parents=True)
+    _write_jsonl(claude_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl", [
+        {"type": "user", "message": {"role": "user", "content": "hi"},
+         "uuid": "u1", "timestamp": "2026-03-12T10:00:01Z",
+         "sessionId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+         "cwd": "/tmp", "version": "2.1.74", "gitBranch": "main"},
+    ])
+
+    # VS Code
+    vscode_dir = tmp_path / "vscode"
+    vs_ws = vscode_dir / "workspaceStorage" / "hash1" / "chatSessions"
+    vs_ws.mkdir(parents=True)
+    (vs_ws.parent / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
+    (vs_ws / "cccccccc-dddd-eeee-ffff-111111111111.json").write_text(json.dumps({
+        "version": 3, "sessionId": "cccccccc-dddd-eeee-ffff-111111111111",
+        "creationDate": 1710237600000, "lastMessageDate": 1710237601000,
+        "requests": [{
+            "requestId": "req_1", "message": {"text": "hello", "parts": []},
+            "variableData": {"variables": []},
+            "response": [{"value": "Hi!"}],
+            "result": {"timings": {}, "metadata": {"toolCallRounds": [], "toolCallResults": {}}, "details": ""},
+            "followups": [], "isCanceled": False,
+            "agent": {"id": "agent", "name": "agent"},
+            "contentReferences": [], "codeCitations": [],
+            "timestamp": 1710237601000, "modelId": "copilot/gpt-4o",
+        }],
+    }))
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude", vscode_dir)
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        r = c.get("/api/sessions")
+        assert r.status_code == 200
+        data = r.get_json()
+        sources = {s["source"] for s in data}
+        assert sources == {"copilot", "claude", "vscode"}

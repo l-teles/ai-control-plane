@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 
 import markdown
@@ -20,8 +21,10 @@ from .parser import (
     ts_display,
     ts_relative,
     duration_between,
+    _default_copilot_dir,
 )
 from . import claude_parser
+from . import vscode_parser
 
 # ---------------------------------------------------------------------------
 # Validation helpers
@@ -68,6 +71,7 @@ def md_to_html(text: str) -> str:
 def create_app(
     log_dir: str | Path | None = None,
     claude_dir: str | Path | None = None,
+    vscode_dir: str | Path | None = None,
 ) -> Flask:
     """Create and configure the Flask application.
 
@@ -79,16 +83,23 @@ def create_app(
     claude_dir:
         Root directory containing Claude Code project/session logs.
         Falls back to ``CLAUDE_LOG_DIR`` env var, then ``~/.claude/projects/``.
+    vscode_dir:
+        Root directory containing VS Code Chat session logs.
+        Falls back to ``VSCODE_LOG_DIR`` env var, then platform default.
     """
     import os
 
     if log_dir is None:
-        log_dir = os.environ.get("COPILOT_LOG_DIR", ".")
+        log_dir = os.environ.get("COPILOT_LOG_DIR", str(_default_copilot_dir()))
     copilot_path = Path(log_dir).resolve()
 
     if claude_dir is None:
-        claude_dir = os.environ.get("CLAUDE_LOG_DIR", str(Path.home() / ".claude" / "projects"))
+        claude_dir = os.environ.get("CLAUDE_LOG_DIR", str(claude_parser._default_claude_dir()))
     claude_path = Path(claude_dir).resolve()
+
+    if vscode_dir is None:
+        vscode_dir = os.environ.get("VSCODE_LOG_DIR", str(vscode_parser._default_vscode_dir()))
+    vscode_path = Path(vscode_dir).resolve()
 
     app = Flask(
         __name__,
@@ -101,9 +112,16 @@ def create_app(
     app.config["SECRET_KEY"] = os.urandom(32)
     app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
-    # -- Unified session index -----------------------------------------------
-    # Maps session_id -> {"source": "copilot"|"claude", "path": str, ...}
-    def _build_session_index() -> tuple[list[dict], dict[str, dict]]:
+    # -- Unified session index (cached) ---------------------------------------
+    # Maps session_id -> {"source": "copilot"|"claude"|"vscode", "path": str, ...}
+    _cache: dict = {"sessions": None, "index": None, "ts": 0.0}
+    _CACHE_TTL = 30  # seconds
+
+    def _build_session_index(*, force: bool = False) -> tuple[list[dict], dict[str, dict]]:
+        now = time.monotonic()
+        if not force and _cache["sessions"] is not None and (now - _cache["ts"]) < _CACHE_TTL:
+            return _cache["sessions"], _cache["index"]
+
         copilot_sessions = copilot_discover(copilot_path)
         for s in copilot_sessions:
             s.setdefault("source", "copilot")
@@ -111,13 +129,19 @@ def create_app(
         claude_sessions = claude_parser.discover_sessions(claude_path)
         # claude sessions already have source="claude"
 
-        all_sessions = copilot_sessions + claude_sessions
+        vscode_sessions = vscode_parser.discover_sessions(vscode_path)
+        # vscode sessions already have source="vscode"
+
+        all_sessions = copilot_sessions + claude_sessions + vscode_sessions
         all_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
 
         index = {}
         for s in all_sessions:
             index[s["id"]] = s
 
+        _cache["sessions"] = all_sessions
+        _cache["index"] = index
+        _cache["ts"] = now
         return all_sessions, index
 
     # -- Security headers (after every response) -----------------------------
@@ -140,16 +164,20 @@ def create_app(
 
     @app.route("/")
     def index():
-        sessions, _ = _build_session_index()
-        copilot_count = sum(1 for s in sessions if s.get("source") != "claude")
+        force = request.args.get("refresh") == "1"
+        sessions, _ = _build_session_index(force=force)
+        copilot_count = sum(1 for s in sessions if s.get("source") == "copilot")
         claude_count = sum(1 for s in sessions if s.get("source") == "claude")
+        vscode_count = sum(1 for s in sessions if s.get("source") == "vscode")
         return render_template(
             "index.html",
             sessions=sessions,
             copilot_dir=str(copilot_path),
             claude_dir=str(claude_path),
+            vscode_dir=str(vscode_path),
             copilot_count=copilot_count,
             claude_count=claude_count,
+            vscode_count=vscode_count,
         )
 
     @app.route("/session/<session_id>")
@@ -169,6 +197,13 @@ def create_app(
             conversation = claude_parser.build_conversation(events)
             stats = claude_parser.compute_stats(events)
             ws = claude_parser.extract_workspace(events)
+            snapshots = {}
+        elif source == "vscode":
+            session_file = Path(session_info["path"])
+            events = vscode_parser.parse_events(session_file)
+            conversation = vscode_parser.build_conversation(events)
+            stats = vscode_parser.compute_stats(events)
+            ws = vscode_parser.extract_workspace(events)
             snapshots = {}
         else:
             session_dir = copilot_path / session_id
@@ -217,8 +252,11 @@ def create_app(
         if not session_info:
             abort(404)
 
-        if session_info.get("source") == "claude":
+        source = session_info.get("source", "copilot")
+        if source == "claude":
             events = claude_parser.parse_events(Path(session_info["path"]))
+        elif source == "vscode":
+            events = vscode_parser.parse_events(Path(session_info["path"]))
         else:
             session_dir = copilot_path / session_id
             if not session_dir.is_dir():

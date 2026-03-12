@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
+
+
+def _default_claude_dir() -> Path:
+    """Return the platform-default Claude Code projects directory."""
+    if sys.platform == "win32":
+        import os
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            return Path(localappdata) / "claude" / "projects"
+    return Path.home() / ".claude" / "projects"
 
 from .parser import MAX_RESULT_CHARS
 

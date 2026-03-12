@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "copilot-log-viewer"
+name = "ai-log-viewer"
 version = "0.1.0"
 description = "A local web UI for browsing and understanding GitHub Copilot agent session logs."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "Luis Teles" },
+    { name = "Luís Teles" },
 ]
-keywords = ["github", "copilot", "logs", "viewer", "agent"]
+keywords = ["github", "copilot", "claude", "vscode", "vscode-chat", "logs", "viewer", "agent"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
@@ -43,18 +43,18 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/l-teles/copilot-log-viewer"
-Repository = "https://github.com/l-teles/copilot-log-viewer"
-Issues = "https://github.com/l-teles/copilot-log-viewer/issues"
+Homepage = "https://github.com/l-teles/ai-log-viewer"
+Repository = "https://github.com/l-teles/ai-log-viewer"
+Issues = "https://github.com/l-teles/ai-log-viewer/issues"
 
 [project.scripts]
-copilot-log-viewer = "copilot_log_viewer.__main__:main"
+ai-log-viewer = "ai_log_viewer.__main__:main"
 
 # ---------------------------------------------------------------------------
 # Hatch build
 # ---------------------------------------------------------------------------
 [tool.hatch.build.targets.wheel]
-packages = ["src/copilot_log_viewer"]
+packages = ["src/ai_log_viewer"]
 
 [tool.hatch.build.targets.sdist]
 include = [

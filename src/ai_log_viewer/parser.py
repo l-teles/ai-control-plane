@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+
+def _default_copilot_dir() -> Path:
+    """Return the platform-default Copilot session-state directory."""
+    if sys.platform == "win32":
+        import os
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            return Path(localappdata) / "github-copilot" / "session-state"
+    return Path.home() / ".copilot" / "session-state"
 
 
 def parse_workspace(session_dir: Path) -> dict:
