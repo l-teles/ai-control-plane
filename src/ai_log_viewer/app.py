@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import markdown
+import nh3
 from flask import Flask, Response, abort, jsonify, render_template, request
 from markupsafe import Markup
 
@@ -60,12 +61,27 @@ def _validate_backup_hash(backup_hash: str) -> None:
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-_DANGEROUS_HTML_RE = re.compile(
-    r"<\s*/?\s*(script|iframe|object|embed|form|input|textarea|button|link|meta|base|applet)"
-    r"[^>]*>",
-    re.IGNORECASE,
-)
-_EVENT_HANDLER_RE = re.compile(r"\s+on\w+\s*=", re.IGNORECASE)
+_SAFE_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "br", "hr",
+    "ul", "ol", "li",
+    "pre", "code", "blockquote",
+    "strong", "em", "del", "a", "img",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "div", "span",
+    "dl", "dt", "dd",
+    "sub", "sup",
+}
+_SAFE_ATTRS = {
+    "a": {"href", "title"},
+    "img": {"src", "alt", "title"},
+    "code": {"class"},
+    "div": {"class"},
+    "span": {"class", "style"},
+    "td": {"align"},
+    "th": {"align"},
+}
+_SAFE_URL_SCHEMES = {"http", "https", "mailto"}
 
 
 def md_to_html(text: str) -> str:
@@ -76,10 +92,12 @@ def md_to_html(text: str) -> str:
         extensions=["fenced_code", "tables", "codehilite", "nl2br"],
         extension_configs={"codehilite": {"css_class": "codehilite", "guess_lang": False}},
     )
-    # Sanitize: strip dangerous tags and event handler attributes
-    html = _DANGEROUS_HTML_RE.sub("", html)
-    html = _EVENT_HANDLER_RE.sub(" ", html)
-    return html
+    return nh3.clean(
+        html,
+        tags=_SAFE_TAGS,
+        attributes=_SAFE_ATTRS,
+        url_schemes=_SAFE_URL_SCHEMES,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -164,12 +182,24 @@ def create_app(
         return all_sessions, index
 
     def _lookup_session(session_id: str) -> dict | None:
-        """Look up a session by UUID, checking all source prefixes."""
+        """Look up a session by UUID or composite ``source:uuid`` key.
+
+        For bare UUIDs, returns the unique match or aborts with 400 if the
+        same UUID exists in multiple sources (ambiguous).
+        """
         _, idx = _build_session_index()
-        for source in ("claude", "copilot", "vscode"):
-            info = idx.get(f"{source}:{session_id}")
-            if info:
-                return info
+
+        # Composite key (e.g. "claude:abc-123")
+        if ":" in session_id:
+            return idx.get(session_id)
+
+        # Bare UUID — collect all matches and detect ambiguity
+        matches = [s for src in ("claude", "copilot", "vscode")
+                   if (s := idx.get(f"{src}:{session_id}"))]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            abort(400, description="Ambiguous session ID; specify source prefix (e.g. claude:<id>)")
         return None
 
     # -- Security headers (after every response) -----------------------------
