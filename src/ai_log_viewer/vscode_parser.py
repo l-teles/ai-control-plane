@@ -65,15 +65,66 @@ def _read_session_json(path: Path) -> dict | None:
     try:
         if path.suffix == ".jsonl":
             with open(path) as f:
+                state = {}
                 for line in f:
                     line = line.strip()
                     if not line:
                         continue
                     wrapper = json.loads(line)
-                    if isinstance(wrapper, dict) and wrapper.get("kind") == 0:
-                        return wrapper.get("v", {})
-                    return wrapper
-            return None
+                    if not isinstance(wrapper, dict):
+                        continue
+                    kind = wrapper.get("kind")
+                    if kind == 0:
+                        state = wrapper.get("v", {})
+                    elif kind == 1:
+                        keys = wrapper.get("k", [])
+                        value = wrapper.get("v")
+                        if len(keys) == 1:
+                            state[keys[0]] = value
+                        elif len(keys) == 2:
+                            k0, k1 = keys[0], keys[1]
+                            if k0 not in state:
+                                state[k0] = {} if not isinstance(k1, int) else []
+                            if isinstance(k1, int):
+                                while len(state[k0]) <= k1:
+                                    state[k0].append({})
+                                state[k0][k1] = value
+                            else:
+                                state[k0][k1] = value
+                        elif len(keys) == 3:
+                            k0, k1, k2 = keys[0], keys[1], keys[2]
+                            if k0 not in state:
+                                state[k0] = []
+                            while len(state[k0]) <= k1:
+                                state[k0].append({})
+                            if not isinstance(state[k0][k1], dict):
+                                state[k0][k1] = {}
+                            state[k0][k1][k2] = value
+                    elif kind == 2:
+                        keys = wrapper.get("k", [])
+                        value = wrapper.get("v")
+                        if len(keys) == 1:
+                            state[keys[0]] = value
+                        elif len(keys) == 2:
+                            k0, k1 = keys[0], keys[1]
+                            if k0 not in state:
+                                state[k0] = {} if not isinstance(k1, int) else []
+                            if isinstance(k1, int):
+                                while len(state[k0]) <= k1:
+                                    state[k0].append({})
+                                state[k0][k1] = value
+                            else:
+                                state[k0][k1] = value
+                        elif len(keys) == 3:
+                            k0, k1, k2 = keys[0], keys[1], keys[2]
+                            if k0 not in state:
+                                state[k0] = []
+                            while len(state[k0]) <= k1:
+                                state[k0].append({})
+                            if not isinstance(state[k0][k1], dict):
+                                state[k0][k1] = {}
+                            state[k0][k1][k2] = value
+                return state if state else None
         else:
             with open(path) as f:
                 return json.load(f)
@@ -129,7 +180,7 @@ def discover_sessions(base: Path) -> list[dict]:
                 except (json.JSONDecodeError, OSError):
                     pass
 
-            for session_file in sorted(chat_dir.glob("*.json")):
+            for session_file in sorted(list(chat_dir.glob("*.json")) + list(chat_dir.glob("*.jsonl"))):
                 entry = _session_entry_from_file(session_file, cwd, repo)
                 if entry:
                     sessions.append(entry)
