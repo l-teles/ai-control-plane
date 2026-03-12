@@ -170,7 +170,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
         elif etype == "assistant.message":
             tr_info = [
-                {"toolCallId": tr.get("toolCallId", ""), "toolName": tr.get("toolName", "unknown")}
+                {"toolCallId": tr.get("toolCallId", ""), "toolName": tr.get("name", tr.get("toolName", "unknown"))}
                 for tr in data.get("toolRequests", [])
             ]
             conversation.append({
