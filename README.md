@@ -1,14 +1,38 @@
-# ai-session-log-viewer
+<p align="center">
+  <img src="assets/banner.png" alt="AI Log Viewer banner" width="600">
+</p>
 
-A local web UI for browsing and understanding **GitHub Copilot**, **Claude Code**, and **VS Code Chat** agent session logs.
+<h1 align="center">AI Session Log Viewer</h1>
+
+<p align="center">
+  A local web UI for browsing and understanding <strong>GitHub Copilot</strong>, <strong>Claude Code</strong>, and <strong>VS Code Chat</strong> agent session logs.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.13%2B-blue" alt="Python 3.13+">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT">
+</p>
 
 AI coding agents produce rich session logs (JSONL events, workspace metadata,
 rewind snapshots, chat session JSON). This tool turns those raw files into a readable,
 interactive timeline so you can review what happened — the user prompts, assistant
 reasoning, tool calls, sub-agent activity, errors, and file snapshots — all in one place.
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot_dark_home.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot_light_home.png">
+    <img src="assets/screenshot_dark_home.png" alt="Dashboard homepage" width="700">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot_dark_session.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot_light_session.png">
+    <img src="assets/screenshot_dark_session.png" alt="Session timeline view" width="700">
+  </picture>
+</p>
 
 ---
 
