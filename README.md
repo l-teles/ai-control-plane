@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="AI Log Viewer banner" width="600">
+  <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/banner.png" alt="AI Log Viewer banner" width="600">
 </p>
 
 <h1 align="center">AI Session Log Viewer</h1>
@@ -20,17 +20,17 @@ reasoning, tool calls, sub-agent activity, errors, and file snapshots — all in
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot_dark_home.png">
-    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot_light_home.png">
-    <img src="assets/screenshot_dark_home.png" alt="Dashboard homepage" width="700">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_home.png">
+    <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="700">
   </picture>
 </p>
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot_dark_session.png">
-    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot_light_session.png">
-    <img src="assets/screenshot_dark_session.png" alt="Session timeline view" width="700">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_session.png">
+    <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="700">
   </picture>
 </p>
 
