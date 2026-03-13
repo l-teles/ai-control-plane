@@ -394,6 +394,140 @@ a:hover { text-decoration: underline; }
   font-style: italic;
 }
 
+/* Warning */
+.event-warning .event-dot { background: var(--orange); border-color: var(--orange); }
+.event-warning .event-card {
+  background: var(--orange-subtle);
+  border: 1px solid #d2992244;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--orange);
+  font-weight: 600;
+}
+
+/* Session summary */
+.event-summary .event-dot { background: var(--accent); border-color: var(--accent); }
+.event-summary .event-card {
+  background: var(--accent-subtle);
+  border: 1px solid #1f6feb44;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 13px;
+}
+
+/* Model change */
+.event-model-change .event-dot { background: var(--text-secondary); border-color: var(--border); }
+.event-model-change .event-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Stop reason badge */
+.badge-stop-reason {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-left: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+.badge-stop-reason.max-tokens { background: var(--red-subtle); color: var(--red); }
+
+/* Permission mode badge */
+.badge-perm {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--purple-subtle);
+  color: var(--purple);
+  margin-left: 6px;
+}
+
+/* Sidechain styling */
+.event.sidechain { margin-left: 32px; opacity: 0.7; }
+.event.sidechain .event-card { border-left: 3px solid var(--text-secondary); }
+
+/* Agent mode badge */
+.badge-agent {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  margin-left: 6px;
+}
+
+/* Hook events */
+.event-hook .event-dot { background: var(--text-secondary); border-color: var(--border); }
+.event-hook .event-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+/* File snapshot marker */
+.event-file-snapshot .event-dot { background: var(--cyan); border-color: var(--cyan); }
+.event-file-snapshot .event-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Last prompt indicator */
+.event-last-prompt .event-dot { background: var(--orange); border-color: var(--orange); }
+.event-last-prompt .event-card {
+  background: var(--orange-subtle);
+  border: 1px solid #d2992244;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--orange);
+}
+
+/* Follow-up chips */
+.followup-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.followup-chip {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Progress task */
+.event-progress-task .event-dot { background: var(--text-secondary); border-color: var(--border); }
+.event-progress-task .event-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Past tense tool summary */
+.tool-past-tense {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-style: italic;
+}
+
 /* Snapshot panel */
 .snapshots-panel {
   background: var(--bg-secondary);
@@ -502,6 +636,50 @@ a:hover { text-decoration: underline; }
           <div class="stat-label">Output Tokens</div>
         </div>
         {% endif %}
+        {% if stats.total_input_tokens %}
+        <div class="stat-item" style="grid-column: span 2;">
+          <div class="stat-value" style="font-size:18px;">{{ "{:,}".format(stats.total_input_tokens) }}</div>
+          <div class="stat-label">Input Tokens</div>
+        </div>
+        {% endif %}
+        {% if stats.cache_read_tokens %}
+        <div class="stat-item">
+          <div class="stat-value" style="font-size:16px;">{{ "{:,}".format(stats.cache_read_tokens) }}</div>
+          <div class="stat-label">Cache Read</div>
+        </div>
+        {% endif %}
+        {% if stats.cache_creation_tokens %}
+        <div class="stat-item">
+          <div class="stat-value" style="font-size:16px;">{{ "{:,}".format(stats.cache_creation_tokens) }}</div>
+          <div class="stat-label">Cache Created</div>
+        </div>
+        {% endif %}
+        {% if stats.reasoning_effort %}
+        <div class="stat-item" style="grid-column: span 2;">
+          <div class="stat-value" style="font-size:16px;">{{ stats.reasoning_effort }}</div>
+          <div class="stat-label">Reasoning Effort</div>
+        </div>
+        {% endif %}
+        {% if stats.service_tier %}
+        <div class="stat-item" style="grid-column: span 2;">
+          <div class="stat-value" style="font-size:16px;">{{ stats.service_tier }}</div>
+          <div class="stat-label">Service Tier</div>
+        </div>
+        {% endif %}
+        {% if stats.prompt_token_details %}
+        <div class="stat-item" style="grid-column: span 2;">
+          <div class="stat-label" style="margin-bottom:6px;">Prompt Token Breakdown</div>
+          {% for key, pct in stats.prompt_token_details.items() %}
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:2px;">
+            <span style="min-width:100px;color:var(--text-secondary);">{{ key }}</span>
+            <div style="flex:1;background:var(--bg-tertiary);border-radius:3px;height:8px;overflow:hidden;">
+              <div style="width:{{ [0, [pct|int, 100]|min]|max }}%;height:100%;background:var(--accent);border-radius:3px;"></div>
+            </div>
+            <span style="font-size:11px;color:var(--text-secondary);">{{ pct|int }}%</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
     </div>
 
@@ -513,6 +691,22 @@ a:hover { text-decoration: underline; }
         <li>
           <span class="tool-name">{{ tn }}</span>
           <div class="tool-bar-container"><div class="tool-bar" style="width: {{ (cnt / stats.total_tool_calls * 100)|round|int }}%"></div></div>
+          <span class="tool-count">{{ cnt }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if stats.mcp_tool_calls %}
+    <div class="stats-panel">
+      <h3>MCP Tool Usage</h3>
+      <ul class="tool-list">
+        {% set mcp_total = stats.mcp_tool_calls.values()|sum %}
+        {% for tn, cnt in stats.mcp_tool_calls|dictsort(by='value', reverse=true) %}
+        <li>
+          <span class="tool-name">{{ tn }}</span>
+          <div class="tool-bar-container"><div class="tool-bar" style="width: {{ (cnt / mcp_total * 100)|round|int }}%; background: var(--purple);"></div></div>
           <span class="tool-count">{{ cnt }}</span>
         </li>
         {% endfor %}
@@ -565,11 +759,11 @@ a:hover { text-decoration: underline; }
       </div>
 
       {% elif item.kind == 'user_message' %}
-      <div class="event event-user" data-kind="user_message">
+      <div class="event event-user{{ ' sidechain' if item.is_sidechain }}" data-kind="user_message">
         <div class="event-dot"></div>
-        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}{% if item.time_spent_waiting_ms %}<span class="tokens-badge">waited {{ "%.1f"|format(item.time_spent_waiting_ms / 1000) }}s</span>{% endif %}</div>
         <div class="event-card">
-          <div class="event-label">User</div>
+          <div class="event-label">User{% if item.permission_mode and item.permission_mode != 'default' %}<span class="badge-perm">{{ item.permission_mode }}</span>{% endif %}{% if item.agent_mode %}<span class="badge-agent">{{ item.agent_mode }}</span>{% endif %}</div>
           <div class="event-content">{{ item.content }}</div>
           {% if item.attachments %}
           <div class="attachments">
@@ -582,13 +776,14 @@ a:hover { text-decoration: underline; }
       </div>
 
       {% elif item.kind == 'assistant_message' %}
-      <div class="event event-assistant" data-kind="assistant_message">
+      <div class="event event-assistant{{ ' sidechain' if item.is_sidechain }}" data-kind="assistant_message">
         <div class="event-dot"></div>
-        <div class="event-time">{{ ts_display(item.timestamp) }}{% if item.output_tokens %}<span class="tokens-badge">{{ item.output_tokens }} tokens</span>{% endif %}</div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}{% if item.output_tokens %}<span class="tokens-badge">{{ item.output_tokens }} tokens</span>{% endif %}{% if item.first_progress_ms %}<span class="tokens-badge">TTFT {{ item.first_progress_ms }}ms</span>{% endif %}{% if item.total_elapsed_ms %}<span class="tokens-badge">{{ "%.1f"|format(item.total_elapsed_ms / 1000) }}s</span>{% endif %}{% if item.cost_multiplier %}<span class="tokens-badge">{{ item.cost_multiplier }}</span>{% endif %}</div>
         <div class="event-card">
           <div class="event-label">
             Assistant
             {% if item.parent_tool_call_id %}<span style="font-weight:400;color:var(--text-secondary);font-size:11px;"> (sub-agent response)</span>{% endif %}
+            {% if item.stop_reason %}<span class="badge-stop-reason{% if item.stop_reason == 'max_tokens' %} max-tokens{% endif %}">{{ item.stop_reason }}</span>{% endif %}
           </div>
           {% if item.content %}
           <div class="msg-content">{{ Markup(md_to_html(item.content)) }}</div>
@@ -612,9 +807,10 @@ a:hover { text-decoration: underline; }
         <div class="event-card">
           <div class="tool-header" onclick="this.parentElement.querySelector('.tool-details').classList.toggle('visible')">
             <span class="tool-icon">&#9881;</span>
-            <span class="tool-label">{{ item.tool_name }}</span>
+            <span class="tool-label">{% if item.mcp_server %}{{ item.mcp_server }} &rarr; {% endif %}{{ item.tool_name }}</span>
             <span style="color:var(--text-secondary);font-size:11px;margin-left:auto;">click to expand</span>
           </div>
+          {% if item.past_tense %}<div class="tool-past-tense">{{ item.past_tense }}</div>{% endif %}
           <div class="tool-details">{{ json.dumps(item.arguments, indent=2) }}</div>
         </div>
       </div>
@@ -653,6 +849,30 @@ a:hover { text-decoration: underline; }
         <div class="event-card">&#9888; {{ item.message }}</div>
       </div>
 
+      {% elif item.kind == 'warning' %}
+      <div class="event event-warning" data-kind="warning">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">&#9888; {{ item.message }}</div>
+      </div>
+
+      {% elif item.kind == 'session_summary' %}
+      <div class="event event-summary" data-kind="session">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">
+          <div class="reasoning-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">&#9654; AI-generated session summary</div>
+          <div class="reasoning-content">{{ item.content }}</div>
+        </div>
+      </div>
+
+      {% elif item.kind == 'model_change' %}
+      <div class="event event-model-change" data-kind="notification">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">Model changed to <strong>{{ item.new_model }}</strong>{% if item.reasoning_effort %} (reasoning: {{ item.reasoning_effort }}){% endif %}</div>
+      </div>
+
       {% elif item.kind == 'notification' %}
       <div class="event event-notification" data-kind="notification">
         <div class="event-dot"></div>
@@ -664,6 +884,41 @@ a:hover { text-decoration: underline; }
       <div class="event event-turn" data-kind="turn">
         <div class="event-dot"></div>
         <div class="event-card">&#x2500;&#x2500; Turn {{ item.turn_id }} &#x2500;&#x2500;</div>
+      </div>
+
+      {% elif item.kind == 'hook' %}
+      <div class="event event-hook" data-kind="notification">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">{{ item.hook_event }}: {{ item.hook_name }}{% if item.command %} &rarr; {{ item.command }}{% endif %}</div>
+      </div>
+
+      {% elif item.kind == 'file_snapshot' %}
+      <div class="event event-file-snapshot" data-kind="notification">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">{{ item.file_count }} file{{ 's' if item.file_count != 1 }} tracked: {{ item.files|join(', ') }}{% if item.file_count > 5 %}&hellip;{% endif %}</div>
+      </div>
+
+      {% elif item.kind == 'last_prompt' %}
+      <div class="event event-last-prompt" data-kind="notification">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">Session ended with pending prompt: {{ item.content[:120] }}{% if item.content|length > 120 %}&hellip;{% endif %}</div>
+      </div>
+
+      {% elif item.kind == 'followups' %}
+      <div class="event" data-kind="assistant_message">
+        <div class="event-dot" style="background:var(--text-secondary);border-color:var(--border);"></div>
+        <div class="followup-chips">
+          {% for s in item.suggestions %}<span class="followup-chip">{{ s }}</span>{% endfor %}
+        </div>
+      </div>
+
+      {% elif item.kind == 'progress_task' %}
+      <div class="event event-progress-task" data-kind="notification">
+        <div class="event-dot"></div>
+        <div class="event-card">{{ item.content }}</div>
       </div>
 
       {% elif item.kind == 'session_end' %}
@@ -704,6 +959,8 @@ function filterEvents(kind, btn) {
       el.style.display = '';
     } else if (kind === 'tool') {
       el.style.display = (el.dataset.kind === 'tool') ? '' : 'none';
+    } else if (kind === 'error') {
+      el.style.display = (el.dataset.kind === 'error' || el.dataset.kind === 'warning') ? '' : 'none';
     } else {
       el.style.display = (el.dataset.kind === kind) ? '' : 'none';
     }

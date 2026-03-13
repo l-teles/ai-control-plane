@@ -13,6 +13,7 @@ from ai_log_viewer.claude_parser import (
     discover_sessions,
     extract_workspace,
     parse_events,
+    parse_events_for_conversation,
 )
 
 
@@ -67,6 +68,14 @@ def claude_project(tmp_path: Path) -> Path:
 
     events = [
         {"type": "file-history-snapshot", "snapshot": {}, "messageId": "x"},
+        {
+            "type": "progress",
+            "data": {"type": "hook_progress", "hookEvent": "PreToolUse",
+                     "hookName": "PreToolUse:Bash", "command": "echo ok"},
+            "uuid": "p0", "timestamp": "2026-03-12T10:00:00Z",
+            "sessionId": "s1", "cwd": "/tmp/project",
+            "version": "2.1.74", "gitBranch": "main",
+        },
         _make_user_event("Hello, help me write tests", uuid="u1", ts="2026-03-12T10:00:01Z"),
         _make_assistant_event(
             [{"type": "thinking", "thinking": "Let me think about this...", "signature": "sig1"}],
@@ -113,6 +122,19 @@ def test_parse_events_filters_snapshots(claude_project: Path) -> None:
     assert "file-history-snapshot" not in types
     assert "user" in types
     assert "assistant" in types
+
+
+def test_parse_events_for_conversation(claude_project: Path) -> None:
+    """parse_events_for_conversation keeps progress and snapshot events."""
+    jsonl = claude_project / "-Users-test-project" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+    # Default filters out progress/file-history-snapshot
+    default_types = {e["type"] for e in parse_events(jsonl)}
+    assert "progress" not in default_types
+    # Conversation loader keeps them
+    full = parse_events_for_conversation(jsonl)
+    full_types = {e["type"] for e in full}
+    assert "progress" in full_types
+    assert "file-history-snapshot" in full_types
 
 
 def test_build_conversation_session_start(claude_project: Path) -> None:
@@ -284,3 +306,208 @@ def test_extract_workspace(claude_project: Path) -> None:
     assert ws["cwd"] == "/tmp/project"
     assert ws["branch"] == "main"
     assert ws["model"] == "claude-opus-4-6"
+
+
+def test_cache_token_stats() -> None:
+    """compute_stats tracks cache read/creation tokens per requestId."""
+    events = [
+        _make_user_event("Hi"),
+        {
+            "type": "assistant",
+            "message": {
+                "model": "claude-opus-4-6",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 500,
+                    "output_tokens": 30,
+                    "cache_read_input_tokens": 200,
+                    "cache_creation_input_tokens": 100,
+                },
+            },
+            "uuid": "a1",
+            "requestId": "req_cache",
+            "timestamp": "2026-03-12T10:00:02Z",
+            "sessionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "cwd": "/tmp/project",
+            "version": "2.1.74",
+            "gitBranch": "main",
+        },
+    ]
+    stats = compute_stats(events)
+    assert stats["cache_read_tokens"] == 200
+    assert stats["cache_creation_tokens"] == 100
+    assert stats["total_input_tokens"] == 500
+
+
+def test_stop_reason_on_message() -> None:
+    """build_conversation includes stop_reason from assistant messages."""
+    events = [
+        _make_user_event("Write a long essay"),
+        {
+            "type": "assistant",
+            "message": {
+                "model": "claude-opus-4-6",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Here is..."}],
+                "usage": {"input_tokens": 10, "output_tokens": 100},
+                "stop_reason": "max_tokens",
+            },
+            "uuid": "a1",
+            "requestId": "req_stop",
+            "timestamp": "2026-03-12T10:00:02Z",
+            "sessionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "cwd": "/tmp/project",
+            "version": "2.1.74",
+            "gitBranch": "main",
+        },
+    ]
+    conv = build_conversation(events)
+    asst = [c for c in conv if c["kind"] == "assistant_message"]
+    assert len(asst) == 1
+    assert asst[0]["stop_reason"] == "max_tokens"
+
+
+def test_service_tier_stats() -> None:
+    """compute_stats tracks service_tier from usage."""
+    events = [
+        _make_user_event("Hi"),
+        {
+            "type": "assistant",
+            "message": {
+                "model": "claude-opus-4-6",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "service_tier": "priority",
+                },
+            },
+            "uuid": "a1",
+            "requestId": "req_st",
+            "timestamp": "2026-03-12T10:00:02Z",
+            "sessionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "cwd": "/tmp/project",
+            "version": "2.1.74",
+            "gitBranch": "main",
+        },
+    ]
+    stats = compute_stats(events)
+    assert stats["service_tier"] == "priority"
+
+
+def test_permission_mode() -> None:
+    """build_conversation includes permissionMode on user messages."""
+    events = [
+        {
+            "type": "user",
+            "message": {"role": "user", "content": "Do it"},
+            "permissionMode": "acceptEdits",
+            "uuid": "u1",
+            "timestamp": "2026-03-12T10:00:01Z",
+            "sessionId": "s1",
+            "cwd": "/tmp",
+            "version": "2.1.74",
+            "gitBranch": "main",
+        },
+    ]
+    conv = build_conversation(events)
+    user_msgs = [c for c in conv if c["kind"] == "user_message"]
+    assert len(user_msgs) == 1
+    assert user_msgs[0]["permission_mode"] == "acceptEdits"
+
+
+def test_is_sidechain() -> None:
+    """build_conversation includes isSidechain on messages."""
+    events = [
+        {
+            "type": "user",
+            "message": {"role": "user", "content": "Side task"},
+            "isSidechain": True,
+            "uuid": "u1",
+            "timestamp": "2026-03-12T10:00:01Z",
+            "sessionId": "s1",
+            "cwd": "/tmp",
+            "version": "2.1.74",
+            "gitBranch": "main",
+        },
+        _make_assistant_event(
+            [{"type": "text", "text": "Done"}],
+            request_id="req_sc",
+            isSidechain=True,
+        ),
+    ]
+    conv = build_conversation(events)
+    user_msgs = [c for c in conv if c["kind"] == "user_message"]
+    asst_msgs = [c for c in conv if c["kind"] == "assistant_message"]
+    assert user_msgs[0]["is_sidechain"] is True
+    assert asst_msgs[0]["is_sidechain"] is True
+
+
+def test_hook_events() -> None:
+    """progress events with hook_progress type produce hook items."""
+    events = [
+        _make_user_event("Hi"),
+        {
+            "type": "progress",
+            "data": {
+                "type": "hook_progress",
+                "hookEvent": "PostToolUse",
+                "hookName": "PostToolUse:Read",
+                "command": "callback",
+            },
+            "uuid": "p1",
+            "timestamp": "2026-03-12T10:00:02Z",
+            "sessionId": "s1",
+            "cwd": "/tmp",
+            "version": "2.1.74",
+            "gitBranch": "main",
+        },
+    ]
+    conv = build_conversation(events)
+    hooks = [c for c in conv if c["kind"] == "hook"]
+    assert len(hooks) == 1
+    assert hooks[0]["hook_event"] == "PostToolUse"
+    assert hooks[0]["hook_name"] == "PostToolUse:Read"
+
+
+def test_file_snapshot() -> None:
+    """file-history-snapshot with tracked files produces file_snapshot."""
+    events = [
+        _make_user_event("Hi"),
+        {
+            "type": "file-history-snapshot",
+            "messageId": "m1",
+            "snapshot": {
+                "trackedFileBackups": {
+                    "foo.py": {"backupFileName": "abc"},
+                    "bar.py": {"backupFileName": "def"},
+                },
+                "timestamp": "2026-03-12T10:00:02Z",
+            },
+            "timestamp": "2026-03-12T10:00:02Z",
+        },
+    ]
+    conv = build_conversation(events)
+    snaps = [c for c in conv if c["kind"] == "file_snapshot"]
+    assert len(snaps) == 1
+    assert snaps[0]["file_count"] == 2
+    assert "foo.py" in snaps[0]["files"]
+
+
+def test_last_prompt() -> None:
+    """last-prompt events produce last_prompt items."""
+    events = [
+        _make_user_event("Hi"),
+        {
+            "type": "last-prompt",
+            "lastPrompt": "Fix the bug in auth",
+            "sessionId": "s1",
+            "timestamp": "2026-03-12T10:00:02Z",
+        },
+    ]
+    conv = build_conversation(events)
+    lp = [c for c in conv if c["kind"] == "last_prompt"]
+    assert len(lp) == 1
+    assert "Fix the bug" in lp[0]["content"]

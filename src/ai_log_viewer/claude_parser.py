@@ -44,11 +44,13 @@ def _split_xml_and_text(content: str) -> tuple[str, str]:
 # Reading
 # ---------------------------------------------------------------------------
 
-_SKIP_TYPES = frozenset({"file-history-snapshot", "queue-operation", "progress"})
+_SKIP_TYPES = frozenset({"queue-operation"})
+# Types to skip during metadata discovery (still parsed for conversation building)
+_DISCOVERY_SKIP_TYPES = frozenset({"file-history-snapshot", "queue-operation", "progress"})
 
 
-def parse_events(jsonl_path: Path) -> list[dict]:
-    """Read a Claude session JSONL file, filtering out internal bookkeeping."""
+def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
+    """Load events from a JSONL file, dropping types in *skip*."""
     if not jsonl_path.is_file():
         return []
     events: list[dict] = []
@@ -61,10 +63,27 @@ def parse_events(jsonl_path: Path) -> list[dict]:
                 evt = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if evt.get("type") in _SKIP_TYPES:
+            if evt.get("type") in skip:
                 continue
             events.append(evt)
     return events
+
+
+def parse_events(jsonl_path: Path) -> list[dict]:
+    """Read a Claude session JSONL file for stats/metadata display.
+
+    Filters out progress, file-history-snapshot, and queue-operation events.
+    """
+    return _load_events(jsonl_path, _DISCOVERY_SKIP_TYPES)
+
+
+def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
+    """Read a Claude session JSONL file for conversation building.
+
+    Keeps progress and file-history-snapshot events (needed for hook
+    and snapshot timeline items) while still filtering queue-operation.
+    """
+    return _load_events(jsonl_path, _SKIP_TYPES)
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +103,7 @@ def _first_metadata(jsonl_path: Path) -> dict:
                 evt = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if evt.get("type") in _SKIP_TYPES:
+            if evt.get("type") in _DISCOVERY_SKIP_TYPES:
                 continue
             if evt.get("isMeta"):
                 continue
@@ -236,7 +255,7 @@ def extract_workspace(events: list[dict]) -> dict:
     slug = ""
     first_user_content = ""
     for evt in events:
-        if evt.get("type") in _SKIP_TYPES or evt.get("isMeta"):
+        if evt.get("type") in _DISCOVERY_SKIP_TYPES or evt.get("isMeta"):
             continue
         ws.setdefault("id", evt.get("sessionId", ""))
         ws.setdefault("cwd", evt.get("cwd", ""))
@@ -279,7 +298,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
     # Synthesize session_start from first meaningful event
     for evt in events:
-        if evt.get("type") in _SKIP_TYPES or evt.get("isMeta"):
+        if evt.get("type") in _DISCOVERY_SKIP_TYPES or evt.get("isMeta"):
             continue
         conversation.append({
             "kind": "session_start",
@@ -312,6 +331,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 "usage": {},
                 "model": msg.get("model", ""),
                 "uuid": evt.get("uuid", ""),
+                "is_sidechain": evt.get("isSidechain", False),
             }
             assistant_order.append(rid)
 
@@ -320,6 +340,10 @@ def build_conversation(events: list[dict]) -> list[dict]:
         usage = msg.get("usage", {})
         if usage.get("output_tokens"):
             merged_assistant[rid]["usage"] = usage
+        # Capture stop_reason (last wins)
+        stop_reason = msg.get("stop_reason", "")
+        if stop_reason:
+            merged_assistant[rid]["stop_reason"] = stop_reason
         # Update timestamp to latest
         merged_assistant[rid]["timestamp"] = evt.get("timestamp", merged_assistant[rid]["timestamp"])
 
@@ -340,6 +364,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
             msg = evt.get("message", {})
             content = msg.get("content", "")
+            _perm = evt.get("permissionMode", "")
+            _sidechain = evt.get("isSidechain", False)
 
             # Tool results
             if isinstance(content, list):
@@ -391,6 +417,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                                 "timestamp": ts,
                                 "content": user_text,
                                 "attachments": [],
+                                "permission_mode": _perm,
+                                "is_sidechain": _sidechain,
                             })
                     else:
                         conversation.append({
@@ -398,6 +426,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                             "timestamp": ts,
                             "content": joined,
                             "attachments": [],
+                            "permission_mode": _perm,
+                            "is_sidechain": _sidechain,
                         })
                 continue
 
@@ -419,6 +449,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                             "timestamp": ts,
                             "content": user_text,
                             "attachments": [],
+                            "permission_mode": _perm,
+                            "is_sidechain": _sidechain,
                         })
                     continue
                 conversation.append({
@@ -426,6 +458,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     "timestamp": ts,
                     "content": content,
                     "attachments": [],
+                    "permission_mode": _perm,
+                    "is_sidechain": _sidechain,
                 })
 
         elif etype == "assistant":
@@ -460,6 +494,10 @@ def build_conversation(events: list[dict]) -> list[dict]:
             reasoning = "\n\n".join(reasoning_parts)
             output_tokens = usage.get("output_tokens", 0)
 
+            stop_reason = info.get("stop_reason", "")
+
+            is_sidechain = info.get("is_sidechain", False)
+
             # Emit assistant_message if there's text content or only reasoning
             if text_parts or (reasoning and not tool_uses):
                 conversation.append({
@@ -473,6 +511,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     ],
                     "parent_tool_call_id": None,
                     "output_tokens": output_tokens,
+                    "stop_reason": stop_reason,
+                    "is_sidechain": is_sidechain,
                 })
             elif tool_uses:
                 # No text — just emit a minimal assistant message with tool requests
@@ -487,6 +527,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     ],
                     "parent_tool_call_id": None,
                     "output_tokens": output_tokens,
+                    "stop_reason": stop_reason,
+                    "is_sidechain": is_sidechain,
                 })
 
             # Emit tool_start for each tool_use
@@ -511,6 +553,37 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     "kind": "notification",
                     "timestamp": ts,
                     "message": str(content)[:500],
+                })
+
+        elif etype == "progress":
+            data = evt.get("data", {})
+            if data.get("type") == "hook_progress":
+                conversation.append({
+                    "kind": "hook",
+                    "timestamp": ts,
+                    "hook_event": data.get("hookEvent", ""),
+                    "hook_name": data.get("hookName", ""),
+                    "command": data.get("command", ""),
+                })
+
+        elif etype == "file-history-snapshot":
+            snapshot = evt.get("snapshot", {})
+            backups = snapshot.get("trackedFileBackups", {})
+            if backups:
+                conversation.append({
+                    "kind": "file_snapshot",
+                    "timestamp": ts,
+                    "file_count": len(backups),
+                    "files": list(backups.keys())[:5],
+                })
+
+        elif etype == "last-prompt":
+            prompt = evt.get("lastPrompt", "")
+            if prompt:
+                conversation.append({
+                    "kind": "last_prompt",
+                    "timestamp": ts,
+                    "content": prompt[:500],
                 })
 
     # Synthesize session_end from last event
@@ -540,11 +613,19 @@ def compute_stats(events: list[dict]) -> dict:
         "subagents": 0,
         "errors": 0,
         "total_output_tokens": 0,
+        "total_input_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
         "turns": 0,
+        "service_tier": "",
     }
 
     seen_request_ids: set[str] = set()
     token_by_request: dict[str, int] = {}  # requestId -> output_tokens (last wins)
+    input_by_request: dict[str, int] = {}
+    cache_read_by_request: dict[str, int] = {}
+    cache_creation_by_request: dict[str, int] = {}
+    last_service_tier = ""
 
     for evt in events:
         etype = evt.get("type", "")
@@ -578,6 +659,18 @@ def compute_stats(events: list[dict]) -> dict:
             ot = usage.get("output_tokens", 0)
             if ot:
                 token_by_request[rid] = ot
+            it = usage.get("input_tokens", 0)
+            if it:
+                input_by_request[rid] = it
+            cr = usage.get("cache_read_input_tokens", 0)
+            if cr:
+                cache_read_by_request[rid] = cr
+            cc = usage.get("cache_creation_input_tokens", 0)
+            if cc:
+                cache_creation_by_request[rid] = cc
+            st = usage.get("service_tier", "")
+            if st:
+                last_service_tier = st
 
             # Count tool calls
             for block in msg.get("content", []):
@@ -586,5 +679,9 @@ def compute_stats(events: list[dict]) -> dict:
                     stats["tool_calls"][tn] = stats["tool_calls"].get(tn, 0) + 1
 
     stats["total_output_tokens"] = sum(token_by_request.values())
+    stats["total_input_tokens"] = sum(input_by_request.values())
+    stats["cache_read_tokens"] = sum(cache_read_by_request.values())
+    stats["cache_creation_tokens"] = sum(cache_creation_by_request.values())
     stats["total_tool_calls"] = sum(stats["tool_calls"].values())
+    stats["service_tier"] = last_service_tier
     return stats

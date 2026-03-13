@@ -362,3 +362,301 @@ def test_extract_workspace(vscode_workspace: Path) -> None:
     assert ws["model"] == "claude-sonnet-4"
     assert ws["summary"] == "Fix the bug in auth module"
     assert ws["created_at"]  # non-empty ISO timestamp
+
+
+def test_max_tool_calls_warning() -> None:
+    """maxToolCallsExceeded emits a warning event in conversation."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["result"]["metadata"]["maxToolCallsExceeded"] = True
+    conv = build_conversation([meta, req])
+    warnings = [c for c in conv if c["kind"] == "warning"]
+    assert len(warnings) == 1
+    assert "tool call limit" in warnings[0]["message"]
+
+
+def test_max_tool_calls_on_session_entry(tmp_path: Path) -> None:
+    """Session entry includes max_tool_calls_exceeded flag."""
+    ws_dir = tmp_path / "workspaceStorage" / "hash1"
+    chat_dir = ws_dir / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    (ws_dir / "workspace.json").write_text(
+        json.dumps({"folder": "file:///tmp/proj"})
+    )
+    req = _make_request()
+    req["result"]["metadata"]["maxToolCallsExceeded"] = True
+    session = _make_session(requests=[req])
+    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(
+        json.dumps(session)
+    )
+    sessions = discover_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0].get("max_tool_calls_exceeded") is True
+
+
+def test_session_summary() -> None:
+    """Auto-generated summary from last request metadata."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["result"]["metadata"]["summary"] = {"text": "Fixed auth bugs"}
+    conv = build_conversation([meta, req])
+    summaries = [c for c in conv if c["kind"] == "session_summary"]
+    assert len(summaries) == 1
+    assert summaries[0]["content"] == "Fixed auth bugs"
+
+
+def test_response_timings() -> None:
+    """Assistant messages include timing fields from result.timings."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["result"]["timings"] = {"firstProgress": 800, "totalElapsed": 3000}
+    conv = build_conversation([meta, req])
+    asst = [c for c in conv if c["kind"] == "assistant_message"]
+    assert len(asst) == 1
+    assert asst[0]["first_progress_ms"] == 800
+    assert asst[0]["total_elapsed_ms"] == 3000
+
+
+def test_thinking_blocks() -> None:
+    """Thinking text from tool call rounds is captured as reasoning."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request(
+        text="Help me",
+        response_text="",
+        tool_call_rounds=[
+            {
+                "response": "Let me check.",
+                "toolCalls": [],
+                "thinking": {"text": "I should look at the code first"},
+                "id": "round_1",
+            },
+        ],
+    )
+    conv = build_conversation([meta, req])
+    asst = [c for c in conv if c["kind"] == "assistant_message"]
+    assert len(asst) == 1
+    assert asst[0]["reasoning"] == "I should look at the code first"
+
+
+def test_cost_multiplier() -> None:
+    """Cost multiplier is extracted from result.details."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["result"]["details"] = "Claude Haiku 4.5 . 0.33x"
+    conv = build_conversation([meta, req])
+    asst = [c for c in conv if c["kind"] == "assistant_message"]
+    assert len(asst) == 1
+    assert asst[0]["cost_multiplier"] == "0.33x"
+
+
+def test_time_spent_waiting() -> None:
+    """User messages include timeSpentWaiting from request."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["timeSpentWaiting"] = 2500
+    conv = build_conversation([meta, req])
+    user_msgs = [c for c in conv if c["kind"] == "user_message"]
+    assert len(user_msgs) == 1
+    assert user_msgs[0]["time_spent_waiting_ms"] == 2500
+
+
+def test_agent_mode() -> None:
+    """User messages include agent mode label from request.agent.id."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["agent"] = {"id": "github.copilot.editsAgent", "name": "agent"}
+    conv = build_conversation([meta, req])
+    user_msgs = [c for c in conv if c["kind"] == "user_message"]
+    assert user_msgs[0]["agent_mode"] == "Edit"
+
+
+def test_past_tense_message() -> None:
+    """Tool invocations include pastTenseMessage."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request(text="Do it", response_text="")
+    req["response"] = [
+        {
+            "kind": "toolInvocationSerialized",
+            "toolCallId": "tc1",
+            "toolId": "create_file",
+            "invocationMessage": {"value": "Creating file..."},
+            "pastTenseMessage": {"value": "Created 3 files"},
+            "isComplete": True,
+        }
+    ]
+    conv = build_conversation([meta, req])
+    tool_starts = [c for c in conv if c["kind"] == "tool_start"]
+    assert len(tool_starts) == 1
+    assert tool_starts[0]["past_tense"] == "Created 3 files"
+
+
+def test_past_tense_via_tool_call_rounds() -> None:
+    """pastTenseMessage is matched positionally when toolCallRounds exist."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request(text="Do it", response_text="")
+    # response[] has pastTenseMessage with different IDs than toolCallRounds
+    req["response"] = [
+        {
+            "kind": "toolInvocationSerialized",
+            "toolCallId": "resp-id-1",
+            "toolId": "copilot_readFile",
+            "invocationMessage": {"value": "Reading file..."},
+            "pastTenseMessage": {"value": "Read main.py"},
+            "isComplete": True,
+        },
+        {
+            "kind": "toolInvocationSerialized",
+            "toolCallId": "resp-id-2",
+            "toolId": "copilot_runCommand",
+            "invocationMessage": {"value": "Running tests..."},
+            "pastTenseMessage": {"value": "Ran 5 tests"},
+            "isComplete": True,
+        },
+    ]
+    req["result"]["metadata"]["toolCallRounds"] = [
+        {
+            "response": "Let me check.",
+            "toolCalls": [
+                {
+                    "name": "read_file",
+                    "arguments": '{"filePath": "main.py"}',
+                    "id": "toolu_001__vscode-111",
+                },
+                {
+                    "name": "run_command",
+                    "arguments": '{"command": "pytest"}',
+                    "id": "toolu_002__vscode-222",
+                },
+            ],
+        },
+    ]
+    conv = build_conversation([meta, req])
+    tool_starts = [c for c in conv if c["kind"] == "tool_start"]
+    assert len(tool_starts) == 2
+    assert tool_starts[0]["past_tense"] == "Read main.py"
+    assert tool_starts[1]["past_tense"] == "Ran 5 tests"
+
+
+def test_has_pending_edits(tmp_path: Path) -> None:
+    """Session entry includes has_pending_edits flag."""
+    ws_dir = tmp_path / "workspaceStorage" / "hash2"
+    chat_dir = ws_dir / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    (ws_dir / "workspace.json").write_text(
+        json.dumps({"folder": "file:///tmp/proj"})
+    )
+    session = _make_session()
+    session["hasPendingEdits"] = True
+    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(
+        json.dumps(session)
+    )
+    sessions = discover_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0].get("has_pending_edits") is True
+
+
+def test_followups() -> None:
+    """Follow-up suggestions produce followups items."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request()
+    req["followups"] = [
+        {"message": "Tell me more"},
+        {"message": "Show an example"},
+    ]
+    conv = build_conversation([meta, req])
+    fups = [c for c in conv if c["kind"] == "followups"]
+    assert len(fups) == 1
+    assert fups[0]["suggestions"] == ["Tell me more", "Show an example"]
+
+
+def test_progress_task() -> None:
+    """progressTaskSerialized items produce progress_task events."""
+    meta = {
+        "_vscode_meta": True,
+        "sessionId": "test",
+        "creationDate": 1710237600000,
+        "lastMessageDate": 0,
+    }
+    req = _make_request(text="Optimize", response_text="")
+    req["response"] = [
+        {
+            "kind": "progressTaskSerialized",
+            "content": {"value": "Optimizing tool selection..."},
+        },
+        {"value": "Done optimizing."},
+    ]
+    req["result"]["metadata"]["toolCallRounds"] = []
+    conv = build_conversation([meta, req])
+    tasks = [c for c in conv if c["kind"] == "progress_task"]
+    assert len(tasks) == 1
+    assert "Optimizing" in tasks[0]["content"]
+
+
+def test_prompt_token_details() -> None:
+    """compute_stats aggregates prompt token breakdown."""
+    meta = {"_vscode_meta": True}
+    req = _make_request()
+    req["result"]["metadata"]["usage"] = {
+        "promptTokenDetails": {
+            "system": 40,
+            "toolDefinitions": 30,
+            "messages": 20,
+            "files": 10,
+        }
+    }
+    stats = compute_stats([meta, req])
+    ptd = stats["prompt_token_details"]
+    assert ptd["system"] == 40
+    assert ptd["toolDefinitions"] == 30
+    assert ptd["messages"] == 20
+    assert ptd["files"] == 10

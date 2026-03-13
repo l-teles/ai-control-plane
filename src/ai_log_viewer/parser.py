@@ -182,6 +182,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 "tool_call_id": data.get("toolCallId", ""),
                 "tool_name": data.get("toolName", "unknown"),
                 "arguments": data.get("arguments", {}),
+                "mcp_server": data.get("mcpServerName", ""),
             })
 
         elif etype == "tool.execution_complete":
@@ -237,6 +238,21 @@ def build_conversation(events: list[dict]) -> list[dict]:
         elif etype == "assistant.turn_end":
             conversation.append({"kind": "turn_end", "timestamp": ts, "turn_id": data.get("turnId", "")})
 
+        elif etype == "session.model_change":
+            conversation.append({
+                "kind": "model_change",
+                "timestamp": ts,
+                "new_model": data.get("newModel", ""),
+                "reasoning_effort": data.get("reasoningEffort", ""),
+            })
+
+        elif etype == "session.info":
+            conversation.append({
+                "kind": "notification",
+                "timestamp": ts,
+                "message": data.get("message", str(data)),
+            })
+
     return conversation
 
 
@@ -251,10 +267,12 @@ def compute_stats(events: list[dict]) -> dict:
         "user_messages": 0,
         "assistant_messages": 0,
         "tool_calls": {},
+        "mcp_tool_calls": {},
         "subagents": 0,
         "errors": 0,
         "total_output_tokens": 0,
         "turns": 0,
+        "reasoning_effort": "",
     }
     for evt in events:
         t = evt.get("type", "")
@@ -267,12 +285,18 @@ def compute_stats(events: list[dict]) -> dict:
         elif t == "tool.execution_start":
             tn = d.get("toolName", "unknown")
             stats["tool_calls"][tn] = stats["tool_calls"].get(tn, 0) + 1
+            mcp = d.get("mcpServerName", "")
+            if mcp:
+                mcp_key = f"{mcp} \u2192 {tn}"
+                stats["mcp_tool_calls"][mcp_key] = stats["mcp_tool_calls"].get(mcp_key, 0) + 1
         elif t == "subagent.started":
             stats["subagents"] += 1
         elif t == "session.error":
             stats["errors"] += 1
         elif t == "assistant.turn_end":
             stats["turns"] += 1
+        elif t == "session.model_change":
+            stats["reasoning_effort"] = d.get("reasoningEffort", "")
 
     stats["total_tool_calls"] = sum(stats["tool_calls"].values())
     return stats
