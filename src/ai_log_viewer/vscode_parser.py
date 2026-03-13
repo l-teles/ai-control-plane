@@ -83,17 +83,19 @@ def _read_session_json(path: Path) -> dict | None:
                             state[keys[0]] = value
                         elif len(keys) == 2:
                             k0, k1 = keys[0], keys[1]
-                            if k0 not in state:
-                                state[k0] = {} if not isinstance(k1, int) else []
                             if isinstance(k1, int):
+                                if not isinstance(state.get(k0), list):
+                                    state[k0] = []
                                 while len(state[k0]) <= k1:
                                     state[k0].append({})
                                 state[k0][k1] = value
                             else:
+                                if not isinstance(state.get(k0), dict):
+                                    state[k0] = {}
                                 state[k0][k1] = value
                         elif len(keys) == 3:
                             k0, k1, k2 = keys[0], keys[1], keys[2]
-                            if k0 not in state:
+                            if not isinstance(state.get(k0), list):
                                 state[k0] = []
                             while len(state[k0]) <= k1:
                                 state[k0].append({})
@@ -104,7 +106,7 @@ def _read_session_json(path: Path) -> dict | None:
         else:
             with open(path) as f:
                 return json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, TypeError, IndexError, AttributeError):
         return None
 
 
