@@ -338,13 +338,14 @@ def build_conversation(events: list[dict]) -> list[dict]:
             "message": "Agent hit tool call limit — session may be incomplete",
         })
 
-    # Extract auto-generated summary from last request
+    # Extract auto-generated summary from last request (display near session start)
     last_req = requests[-1] if requests else {}
+    first_req = requests[0] if requests else {}
     auto_summary = last_req.get("result", {}).get("metadata", {}).get("summary", {}).get("text", "")
     if auto_summary:
         conversation.append({
             "kind": "session_summary",
-            "timestamp": _ms_to_iso(last_req.get("timestamp", 0)),
+            "timestamp": _ms_to_iso(first_req.get("timestamp", 0)),
             "content": auto_summary,
         })
 

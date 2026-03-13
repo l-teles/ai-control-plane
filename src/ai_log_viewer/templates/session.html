@@ -434,6 +434,8 @@ a:hover { text-decoration: underline; }
   border-radius: 4px;
   font-weight: 600;
   margin-left: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
 }
 .badge-stop-reason.max-tokens { background: var(--red-subtle); color: var(--red); }
 
@@ -781,7 +783,7 @@ a:hover { text-decoration: underline; }
           <div class="event-label">
             Assistant
             {% if item.parent_tool_call_id %}<span style="font-weight:400;color:var(--text-secondary);font-size:11px;"> (sub-agent response)</span>{% endif %}
-            {% if item.stop_reason == 'max_tokens' %}<span class="badge-stop-reason max-tokens">max_tokens</span>{% endif %}
+            {% if item.stop_reason %}<span class="badge-stop-reason{% if item.stop_reason == 'max_tokens' %} max-tokens{% endif %}">{{ item.stop_reason }}</span>{% endif %}
           </div>
           {% if item.content %}
           <div class="msg-content">{{ Markup(md_to_html(item.content)) }}</div>
@@ -848,7 +850,7 @@ a:hover { text-decoration: underline; }
       </div>
 
       {% elif item.kind == 'warning' %}
-      <div class="event event-warning" data-kind="error">
+      <div class="event event-warning" data-kind="warning">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">&#9888; {{ item.message }}</div>
@@ -957,6 +959,8 @@ function filterEvents(kind, btn) {
       el.style.display = '';
     } else if (kind === 'tool') {
       el.style.display = (el.dataset.kind === 'tool') ? '' : 'none';
+    } else if (kind === 'error') {
+      el.style.display = (el.dataset.kind === 'error' || el.dataset.kind === 'warning') ? '' : 'none';
     } else {
       el.style.display = (el.dataset.kind === kind) ? '' : 'none';
     }

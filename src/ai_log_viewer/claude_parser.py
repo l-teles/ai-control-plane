@@ -49,19 +49,8 @@ _SKIP_TYPES = frozenset({"queue-operation"})
 _DISCOVERY_SKIP_TYPES = frozenset({"file-history-snapshot", "queue-operation", "progress"})
 
 
-def parse_events(
-    jsonl_path: Path,
-    *,
-    skip: frozenset[str] | None = None,
-) -> list[dict]:
-    """Read a Claude session JSONL file, filtering out internal bookkeeping.
-
-    *skip* controls which event types are dropped.  Defaults to
-    ``_DISCOVERY_SKIP_TYPES`` (omits progress / file-history-snapshot);
-    pass ``_SKIP_TYPES`` to keep those for conversation building.
-    """
-    if skip is None:
-        skip = _DISCOVERY_SKIP_TYPES
+def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
+    """Load events from a JSONL file, dropping types in *skip*."""
     if not jsonl_path.is_file():
         return []
     events: list[dict] = []
@@ -78,6 +67,23 @@ def parse_events(
                 continue
             events.append(evt)
     return events
+
+
+def parse_events(jsonl_path: Path) -> list[dict]:
+    """Read a Claude session JSONL file for stats/metadata display.
+
+    Filters out progress, file-history-snapshot, and queue-operation events.
+    """
+    return _load_events(jsonl_path, _DISCOVERY_SKIP_TYPES)
+
+
+def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
+    """Read a Claude session JSONL file for conversation building.
+
+    Keeps progress and file-history-snapshot events (needed for hook
+    and snapshot timeline items) while still filtering queue-operation.
+    """
+    return _load_events(jsonl_path, _SKIP_TYPES)
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +449,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                             "timestamp": ts,
                             "content": user_text,
                             "attachments": [],
+                            "permission_mode": _perm,
+                            "is_sidechain": _sidechain,
                         })
                     continue
                 conversation.append({

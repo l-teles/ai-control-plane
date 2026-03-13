@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from ai_log_viewer.claude_parser import (
-    _SKIP_TYPES,
     build_conversation,
     compute_stats,
     discover_sessions,
     extract_workspace,
     parse_events,
+    parse_events_for_conversation,
 )
 
 
@@ -124,14 +124,14 @@ def test_parse_events_filters_snapshots(claude_project: Path) -> None:
     assert "assistant" in types
 
 
-def test_parse_events_skip_parameter(claude_project: Path) -> None:
-    """parse_events with skip=_SKIP_TYPES keeps progress and snapshot events."""
+def test_parse_events_for_conversation(claude_project: Path) -> None:
+    """parse_events_for_conversation keeps progress and snapshot events."""
     jsonl = claude_project / "-Users-test-project" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
     # Default filters out progress/file-history-snapshot
     default_types = {e["type"] for e in parse_events(jsonl)}
     assert "progress" not in default_types
-    # Minimal skip keeps them
-    full = parse_events(jsonl, skip=_SKIP_TYPES)
+    # Conversation loader keeps them
+    full = parse_events_for_conversation(jsonl)
     full_types = {e["type"] for e in full}
     assert "progress" in full_types
     assert "file-history-snapshot" in full_types
