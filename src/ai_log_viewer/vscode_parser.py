@@ -367,7 +367,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 uri_data = var.get("value", {}).get("uri", {})
                 file_path = uri_data.get("path", "") or uri_data.get("fsPath", "")
                 if file_path:
-                    attachments.append({"name": Path(file_path).name, "path": file_path})
+                    attachments.append({"type": "file", "name": Path(file_path).name, "path": file_path})
 
         if user_text:
             conversation.append({
@@ -630,15 +630,19 @@ def compute_stats(events: list[dict]) -> dict:
         if req.get("isCanceled"):
             stats["errors"] += 1
 
-        # Prompt token details
+        # Prompt token details — treat missing keys as 0 so averages
+        # aren't biased by requests where a category happens to be zero.
         ptd = result_meta.get("usage", {}).get("promptTokenDetails", {})
         if ptd:
             for key in ("system", "toolDefinitions", "messages", "files"):
                 pct = ptd.get(key, 0)
-                if pct:
-                    stats["prompt_token_details"][key] = (
-                        stats["prompt_token_details"].get(key, 0) + pct
-                    )
+                try:
+                    pct = float(pct)
+                except (TypeError, ValueError):
+                    pct = 0.0
+                stats["prompt_token_details"][key] = (
+                    stats["prompt_token_details"].get(key, 0) + pct
+                )
             stats["_ptd_count"] += 1
 
     stats["total_tool_calls"] = sum(stats["tool_calls"].values())

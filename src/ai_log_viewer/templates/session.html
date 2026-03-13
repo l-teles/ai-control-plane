@@ -673,9 +673,9 @@ a:hover { text-decoration: underline; }
           <div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:2px;">
             <span style="min-width:100px;color:var(--text-secondary);">{{ key }}</span>
             <div style="flex:1;background:var(--bg-tertiary);border-radius:3px;height:8px;overflow:hidden;">
-              <div style="width:{{ pct }}%;height:100%;background:var(--accent);border-radius:3px;"></div>
+              <div style="width:{{ [0, [pct|int, 100]|min]|max }}%;height:100%;background:var(--accent);border-radius:3px;"></div>
             </div>
-            <span style="font-size:11px;color:var(--text-secondary);">{{ pct }}%</span>
+            <span style="font-size:11px;color:var(--text-secondary);">{{ pct|int }}%</span>
           </div>
           {% endfor %}
         </div>
