@@ -250,6 +250,11 @@ header p { color: var(--text-secondary); font-size: 14px; }
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
 }
+.badge-warning {
+  background: var(--orange-subtle);
+  color: var(--orange);
+  font-weight: 600;
+}
 .no-results {
   text-align: center; padding: 40px 20px;
   color: var(--text-secondary);
@@ -321,6 +326,12 @@ header p { color: var(--text-secondary); font-size: 14px; }
         <span class="badge badge-source-vscode">VS Code Chat</span>
         {% else %}
         <span class="badge badge-source-copilot">Copilot</span>
+        {% endif %}
+        {% if s.max_tool_calls_exceeded %}
+        <span class="badge badge-warning">Tool limit hit</span>
+        {% endif %}
+        {% if s.has_pending_edits %}
+        <span class="badge badge-warning">Pending edits</span>
         {% endif %}
         {% if s.slug %}
         <span class="badge badge-model">{{ s.slug }}</span>

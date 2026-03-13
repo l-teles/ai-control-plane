@@ -44,6 +44,36 @@ def _extract_model(request: dict) -> str:
     return ""
 
 
+def _extract_cost_multiplier(request: dict) -> str:
+    """Extract cost multiplier from result.details (e.g. 'Claude Haiku 4.5 . 0.33x')."""
+    details = request.get("result", {}).get("details", "")
+    if not details:
+        return ""
+    # Look for pattern like "0.33x" or "1x"
+    parts = details.split("\u2022")
+    if len(parts) >= 2:
+        return parts[-1].strip()
+    parts = details.split(" . ")
+    if len(parts) >= 2:
+        return parts[-1].strip()
+    return ""
+
+
+_AGENT_MODE_MAP = {
+    "editsagent": "Edit",
+    "chatagent": "Chat",
+    "agent": "Agent",
+}
+
+
+def _agent_mode_label(agent_id: str) -> str:
+    """Map a VS Code agent ID to a human-readable mode label."""
+    if not agent_id:
+        return ""
+    suffix = agent_id.rsplit(".", 1)[-1].lower()
+    return _AGENT_MODE_MAP.get(suffix, suffix.title() if suffix else "")
+
+
 def _folder_uri_to_path(uri: str) -> str:
     """Convert a VS Code folder URI to a filesystem path.
 
@@ -177,7 +207,13 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
     created_at = _ms_to_iso(data.get("creationDate", 0))
     updated_at = _ms_to_iso(data.get("lastMessageDate", 0)) or created_at
 
-    return {
+    # Check if any request hit the tool call limit
+    max_tool_calls_exceeded = any(
+        req.get("result", {}).get("metadata", {}).get("maxToolCallsExceeded", False)
+        for req in requests
+    )
+
+    entry: dict = {
         "id": session_id,
         "path": str(path),
         "summary": summary,
@@ -189,6 +225,11 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
         "source": "vscode",
         "model": model,
     }
+    if max_tool_calls_exceeded:
+        entry["max_tool_calls_exceeded"] = True
+    if data.get("hasPendingEdits", False):
+        entry["has_pending_edits"] = True
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +330,32 @@ def build_conversation(events: list[dict]) -> list[dict]:
         "cwd": meta.get("cwd", ""),
     })
 
+    # Check for maxToolCallsExceeded across all requests
+    if any(req.get("result", {}).get("metadata", {}).get("maxToolCallsExceeded", False) for req in requests):
+        conversation.append({
+            "kind": "warning",
+            "timestamp": _ms_to_iso(first_req.get("timestamp", 0) or meta.get("creationDate", 0)),
+            "message": "Agent hit tool call limit — session may be incomplete",
+        })
+
+    # Extract auto-generated summary from last request
+    last_req = requests[-1] if requests else {}
+    auto_summary = last_req.get("result", {}).get("metadata", {}).get("summary", {}).get("text", "")
+    if auto_summary:
+        conversation.append({
+            "kind": "session_summary",
+            "timestamp": _ms_to_iso(last_req.get("timestamp", 0)),
+            "content": auto_summary,
+        })
+
     for req in requests:
         ts = _ms_to_iso(req.get("timestamp", 0))
+        timings = req.get("result", {}).get("timings", {})
+        cost_multiplier = _extract_cost_multiplier(req)
+
+        # Agent mode from request.agent.id (e.g. "github.copilot.editsAgent" -> "Edit")
+        agent_id = req.get("agent", {}).get("id", "") if isinstance(req.get("agent"), dict) else ""
+        agent_mode = _agent_mode_label(agent_id)
 
         # --- User message ---
         user_text = req.get("message", {}).get("text", "")
@@ -309,6 +374,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 "timestamp": ts,
                 "content": user_text,
                 "attachments": attachments,
+                "agent_mode": agent_mode,
+                "time_spent_waiting_ms": req.get("timeSpentWaiting", 0),
             })
 
         # --- Process tool call rounds from metadata (structured data) ---
@@ -316,10 +383,23 @@ def build_conversation(events: list[dict]) -> list[dict]:
         tool_call_rounds = result_meta.get("toolCallRounds", [])
         tool_call_results = result_meta.get("toolCallResults", {})
 
+        # Build ordered list of pastTenseMessage from response array.
+        # IDs differ between response[] and toolCallRounds, so match by
+        # position (both arrays list tools in the same order).
+        past_tense_list: list[str] = []
+        for item in req.get("response", []):
+            if isinstance(item, dict) and item.get("kind") == "toolInvocationSerialized":
+                pt = item.get("pastTenseMessage", "")
+                if isinstance(pt, dict):
+                    pt = pt.get("value", "")
+                past_tense_list.append(pt or "")
+
         if tool_call_rounds:
+            _pt_idx = 0  # positional index into past_tense_list
             for round_data in tool_call_rounds:
                 response_text = round_data.get("response", "")
                 tool_calls = round_data.get("toolCalls", [])
+                thinking = round_data.get("thinking", {}).get("text", "")
 
                 # Emit assistant message for this round
                 if response_text or tool_calls:
@@ -327,13 +407,16 @@ def build_conversation(events: list[dict]) -> list[dict]:
                         "kind": "assistant_message",
                         "timestamp": ts,
                         "content": response_text,
-                        "reasoning": "",
+                        "reasoning": thinking,
                         "tool_requests": [
                             {"toolCallId": tc.get("id", ""), "toolName": tc.get("name", "unknown")}
                             for tc in tool_calls
                         ],
                         "parent_tool_call_id": None,
                         "output_tokens": 0,
+                        "first_progress_ms": timings.get("firstProgress", 0),
+                        "total_elapsed_ms": timings.get("totalElapsed", 0),
+                        "cost_multiplier": cost_multiplier,
                     })
 
                 # Emit tool_start and tool_complete for each tool call
@@ -346,12 +429,16 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     except (json.JSONDecodeError, TypeError):
                         tc_args = {"raw": tc.get("arguments", "")}
 
+                    pt = past_tense_list[_pt_idx] if _pt_idx < len(past_tense_list) else ""
+                    _pt_idx += 1
+
                     conversation.append({
                         "kind": "tool_start",
                         "timestamp": ts,
                         "tool_call_id": tc_id,
                         "tool_name": tc_name,
                         "arguments": tc_args,
+                        "past_tense": pt,
                     })
 
                     # Tool result
@@ -369,7 +456,26 @@ def build_conversation(events: list[dict]) -> list[dict]:
             text_parts = []
             for item in req.get("response", []):
                 if isinstance(item, dict):
-                    if "value" in item and "kind" not in item:
+                    if item.get("kind") == "progressTaskSerialized":
+                        content_val = item.get("content", {})
+                        if isinstance(content_val, dict):
+                            content_val = content_val.get("value", "")
+                        if content_val:
+                            conversation.append({
+                                "kind": "progress_task",
+                                "timestamp": ts,
+                                "content": str(content_val)[:200],
+                            })
+                    elif item.get("kind") == "confirmation":
+                        title = item.get("title", "")
+                        if isinstance(title, dict):
+                            title = title.get("value", "")
+                        conversation.append({
+                            "kind": "notification",
+                            "timestamp": ts,
+                            "message": title or "User confirmation requested",
+                        })
+                    elif "value" in item and "kind" not in item:
                         # Plain text response
                         val = item["value"]
                         if isinstance(val, str):
@@ -381,6 +487,9 @@ def build_conversation(events: list[dict]) -> list[dict]:
                         msg = item.get("invocationMessage", "")
                         if isinstance(msg, dict):
                             msg = msg.get("value", "")
+                        past_tense = item.get("pastTenseMessage", "")
+                        if isinstance(past_tense, dict):
+                            past_tense = past_tense.get("value", "")
 
                         conversation.append({
                             "kind": "tool_start",
@@ -388,6 +497,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
                             "tool_call_id": tc_id,
                             "tool_name": tc_name,
                             "arguments": {"description": msg},
+                            "past_tense": past_tense,
                         })
 
                         result_data = tool_call_results.get(tc_id)
@@ -409,6 +519,9 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     "tool_requests": [],
                     "parent_tool_call_id": None,
                     "output_tokens": 0,
+                    "first_progress_ms": timings.get("firstProgress", 0),
+                    "total_elapsed_ms": timings.get("totalElapsed", 0),
+                    "cost_multiplier": cost_multiplier,
                 })
 
         # Handle canceled requests
@@ -417,6 +530,19 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 "kind": "error",
                 "timestamp": ts,
                 "message": "Request was canceled by user",
+            })
+
+        # Follow-up suggestions
+        followups = req.get("followups", [])
+        suggestions = [
+            f.get("message", "") for f in followups
+            if isinstance(f, dict) and f.get("message")
+        ]
+        if suggestions:
+            conversation.append({
+                "kind": "followups",
+                "timestamp": ts,
+                "suggestions": suggestions,
             })
 
     # Session end
@@ -470,6 +596,8 @@ def compute_stats(events: list[dict]) -> dict:
         "errors": 0,
         "total_output_tokens": 0,
         "turns": 0,
+        "prompt_token_details": {},
+        "_ptd_count": 0,
     }
 
     for req in requests:
@@ -501,5 +629,23 @@ def compute_stats(events: list[dict]) -> dict:
         if req.get("isCanceled"):
             stats["errors"] += 1
 
+        # Prompt token details
+        ptd = result_meta.get("usage", {}).get("promptTokenDetails", {})
+        if ptd:
+            for key in ("system", "toolDefinitions", "messages", "files"):
+                pct = ptd.get(key, 0)
+                if pct:
+                    stats["prompt_token_details"][key] = (
+                        stats["prompt_token_details"].get(key, 0) + pct
+                    )
+            stats["_ptd_count"] += 1
+
     stats["total_tool_calls"] = sum(stats["tool_calls"].values())
+    # Average prompt token percentages if we have multiple requests
+    if stats.get("_ptd_count", 0) > 1:
+        for key in stats["prompt_token_details"]:
+            stats["prompt_token_details"][key] = round(
+                stats["prompt_token_details"][key] / stats["_ptd_count"]
+            )
+    stats.pop("_ptd_count", None)
     return stats

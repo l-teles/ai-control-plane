@@ -251,7 +251,10 @@ def create_app(
         if source == "claude":
             session_file = Path(session_info["path"])
             events = claude_parser.parse_events(session_file)
-            conversation = claude_parser.build_conversation(events)
+            full_events = claude_parser.parse_events(
+                session_file, skip=claude_parser._SKIP_TYPES,
+            )
+            conversation = claude_parser.build_conversation(full_events)
             stats = claude_parser.compute_stats(events)
             ws = claude_parser.extract_workspace(events)
             snapshots = {}

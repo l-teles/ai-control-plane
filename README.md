@@ -18,21 +18,29 @@ rewind snapshots, chat session JSON). This tool turns those raw files into a rea
 interactive timeline so you can review what happened — the user prompts, assistant
 reasoning, tool calls, sub-agent activity, errors, and file snapshots — all in one place.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_home.png">
-    <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="700">
-  </picture>
-</p>
+<table>
+  <tr>
+    <td align="center"><strong>Dashboard</strong></td>
+    <td align="center"><strong>Session Timeline</strong></td>
+  </tr>
+  <tr>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_home.png">
+        <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="400">
+      </picture>
+    </td>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
+        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_session.png">
+        <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="400">
+      </picture>
+    </td>
+  </tr>
+</table>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_session.png">
-    <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="700">
-  </picture>
-</p>
 
 ---
 
