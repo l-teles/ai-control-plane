@@ -1,2 +1,1 @@
-hatch==1.16.5 \
-    --hash=sha256:d9b8047f2cd10d3349eb6e8f278ad728a04f91495aace305c257d5c2747188fb
+hatch==1.16.5
