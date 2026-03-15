@@ -442,16 +442,105 @@ def create_app(
         ]
         return render_template("tools.html", configs=configs, shared_servers=shared_servers)
 
+    # Claude settings.json key descriptions (from code.claude.com/docs/en/settings)
+    _CLAUDE_SETTINGS_META: dict[str, dict] = {
+        "apiKeyHelper": {"desc": "Custom script to generate an auth value for API requests", "type": "string"},
+        "autoMemoryDirectory": {"desc": "Custom directory for auto memory storage", "type": "path"},
+        "cleanupPeriodDays": {"desc": "Days before inactive sessions are deleted at startup (default: 30)", "type": "number"},
+        "companyAnnouncements": {"desc": "Announcements displayed to users at startup", "type": "array"},
+        "env": {"desc": "Environment variables applied to every session", "type": "object"},
+        "attribution": {"desc": "Customize attribution for git commits and pull requests", "type": "object"},
+        "includeCoAuthoredBy": {"desc": "Include co-authored-by Claude byline in commits (deprecated, use attribution)", "type": "bool"},
+        "includeGitInstructions": {"desc": "Include built-in commit and PR workflow instructions in system prompt", "type": "bool"},
+        "permissions": {"desc": "Permission rules: allow, ask, and deny lists for tool access", "type": "object"},
+        "hooks": {"desc": "Custom commands that run at lifecycle events", "type": "object"},
+        "disableAllHooks": {"desc": "Disable all hooks and custom status line", "type": "bool"},
+        "allowManagedHooksOnly": {"desc": "Only allow managed hooks (managed settings only)", "type": "bool"},
+        "allowedHttpHookUrls": {"desc": "URL patterns that HTTP hooks may target", "type": "array"},
+        "httpHookAllowedEnvVars": {"desc": "Environment variables HTTP hooks may interpolate into headers", "type": "array"},
+        "allowManagedPermissionRulesOnly": {"desc": "Only managed permission rules apply (managed settings only)", "type": "bool"},
+        "allowManagedMcpServersOnly": {"desc": "Only admin-defined MCP server allowlist applies (managed settings only)", "type": "bool"},
+        "model": {"desc": "Override the default model for Claude Code", "type": "string"},
+        "availableModels": {"desc": "Restrict which models users can select", "type": "array"},
+        "modelOverrides": {"desc": "Map Anthropic model IDs to provider-specific model IDs", "type": "object"},
+        "effortLevel": {"desc": "Persist effort level across sessions (low/medium/high)", "type": "string"},
+        "otelHeadersHelper": {"desc": "Script to generate dynamic OpenTelemetry headers", "type": "string"},
+        "statusLine": {"desc": "Custom status line command or configuration", "type": "object"},
+        "fileSuggestion": {"desc": "Custom script for @ file autocomplete", "type": "object"},
+        "respectGitignore": {"desc": "Whether the @ file picker respects .gitignore patterns", "type": "bool"},
+        "outputStyle": {"desc": "Output style to adjust system prompt behavior", "type": "string"},
+        "forceLoginMethod": {"desc": "Restrict login to claudeai or console accounts", "type": "string"},
+        "forceLoginOrgUUID": {"desc": "Auto-select organization during login", "type": "string"},
+        "enableAllProjectMcpServers": {"desc": "Auto-approve all MCP servers in project .mcp.json", "type": "bool"},
+        "enabledMcpjsonServers": {"desc": "Specific MCP servers from .mcp.json to approve", "type": "array"},
+        "disabledMcpjsonServers": {"desc": "Specific MCP servers from .mcp.json to reject", "type": "array"},
+        "allowedMcpServers": {"desc": "Allowlist of MCP servers users can configure (managed only)", "type": "array"},
+        "deniedMcpServers": {"desc": "Denylist of explicitly blocked MCP servers (managed only)", "type": "array"},
+        "strictKnownMarketplaces": {"desc": "Allowlist of plugin marketplaces users can add (managed only)", "type": "array"},
+        "blockedMarketplaces": {"desc": "Blocklist of marketplace sources (managed only)", "type": "array"},
+        "pluginTrustMessage": {"desc": "Custom message appended to plugin trust warning (managed only)", "type": "string"},
+        "awsAuthRefresh": {"desc": "Custom script to refresh AWS credentials", "type": "string"},
+        "awsCredentialExport": {"desc": "Custom script that outputs JSON with AWS credentials", "type": "string"},
+        "alwaysThinkingEnabled": {"desc": "Enable extended thinking by default for all sessions", "type": "bool"},
+        "plansDirectory": {"desc": "Custom directory for plan file storage", "type": "path"},
+        "showTurnDuration": {"desc": "Show turn duration messages after responses", "type": "bool"},
+        "spinnerVerbs": {"desc": "Customize action verbs in spinner and duration messages", "type": "object"},
+        "language": {"desc": "Preferred response language", "type": "string"},
+        "autoUpdatesChannel": {"desc": "Release channel: stable (week-old) or latest (default)", "type": "string"},
+        "spinnerTipsEnabled": {"desc": "Show tips in spinner while working", "type": "bool"},
+        "spinnerTipsOverride": {"desc": "Override spinner tips with custom strings", "type": "object"},
+        "terminalProgressBarEnabled": {"desc": "Enable terminal progress bar in supported terminals", "type": "bool"},
+        "prefersReducedMotion": {"desc": "Reduce or disable UI animations for accessibility", "type": "bool"},
+        "fastModePerSessionOptIn": {"desc": "Require per-session opt-in for fast mode", "type": "bool"},
+        "teammateMode": {"desc": "How agent team teammates display (auto/in-process/tmux)", "type": "string"},
+        "feedbackSurveyRate": {"desc": "Probability (0-1) that session quality survey appears", "type": "number"},
+        "worktree.symlinkDirectories": {"desc": "Directories to symlink into worktrees to save disk space", "type": "array"},
+        "worktree.sparsePaths": {"desc": "Directories to check out via git sparse-checkout in worktrees", "type": "array"},
+        "sandbox.enabled": {"desc": "Enable bash sandboxing", "type": "bool"},
+        "sandbox.autoAllowBashIfSandboxed": {"desc": "Auto-approve bash commands when sandboxed", "type": "bool"},
+        "sandbox.excludedCommands": {"desc": "Commands that run outside the sandbox", "type": "array"},
+        "sandbox.allowUnsandboxedCommands": {"desc": "Allow commands to bypass sandbox via dangerouslyDisableSandbox", "type": "bool"},
+        "sandbox.filesystem.allowWrite": {"desc": "Additional writable paths for sandboxed commands", "type": "array"},
+        "sandbox.filesystem.denyWrite": {"desc": "Paths where sandboxed commands cannot write", "type": "array"},
+        "sandbox.filesystem.denyRead": {"desc": "Paths where sandboxed commands cannot read", "type": "array"},
+        "sandbox.network.allowUnixSockets": {"desc": "Unix socket paths accessible in sandbox", "type": "array"},
+        "sandbox.network.allowAllUnixSockets": {"desc": "Allow all Unix socket connections in sandbox", "type": "bool"},
+        "sandbox.network.allowLocalBinding": {"desc": "Allow binding to localhost ports (macOS only)", "type": "bool"},
+        "sandbox.network.allowedDomains": {"desc": "Domains allowed for outbound network traffic", "type": "array"},
+        "sandbox.network.allowManagedDomainsOnly": {"desc": "Only managed network domain allowlists apply", "type": "bool"},
+        "sandbox.network.httpProxyPort": {"desc": "HTTP proxy port for sandbox", "type": "number"},
+        "sandbox.network.socksProxyPort": {"desc": "SOCKS5 proxy port for sandbox", "type": "number"},
+        "sandbox.enableWeakerNestedSandbox": {"desc": "Weaker sandbox for unprivileged Docker (reduces security)", "type": "bool"},
+        "sandbox.enableWeakerNetworkIsolation": {"desc": "Allow TLS trust service access in sandbox (reduces security)", "type": "bool"},
+    }
+
+    def _parse_claude_settings(settings: dict) -> list[dict]:
+        """Parse Claude settings into annotated list with descriptions."""
+        result = []
+        for key, value in sorted(settings.items()):
+            meta = _CLAUDE_SETTINGS_META.get(key, {})
+            result.append({
+                "key": key,
+                "value": value,
+                "desc": meta.get("desc", ""),
+                "type": meta.get("type", "unknown"),
+            })
+        return result
+
     @app.route("/tools/<tool>")
     def tool_detail(tool: str):
         if tool not in _VALID_TOOLS:
             abort(404)
         config = _get_tool_config(tool)
+        parsed_settings = []
+        if tool == "claude" and config.get("settings"):
+            parsed_settings = _parse_claude_settings(config["settings"])
         return render_template(
             "tool_detail.html",
             tool=tool,
             config=config,
             json=json,
+            parsed_settings=parsed_settings,
         )
 
     @app.route("/api/tools")

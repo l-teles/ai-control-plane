@@ -130,6 +130,18 @@
 }
 .clauditor-arrow { margin-left: auto; font-size: 20px; color: var(--purple); flex-shrink: 0; transition: transform var(--transition); }
 .clauditor-cta:hover .clauditor-arrow { transform: translateX(4px); }
+
+/* Settings parsed view */
+.settings-desc { font-size: 12px; color: var(--text-secondary); max-width: 300px; }
+.settings-complex { font-size: 11px; white-space: pre-wrap; word-break: break-all; display: block; max-height: 120px; overflow-y: auto; }
+.btn-show-raw {
+  margin-top: 12px; padding: 5px 14px; font-size: 12px;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 16px; color: var(--text-secondary); cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-show-raw:hover { border-color: var(--accent); color: var(--accent); }
+.hidden { display: none; }
 </style>
 {% endblock %}
 
@@ -387,9 +399,40 @@
         {# Settings #}
         {% if config.settings %}
         <div class="section">
-          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Settings</h3>
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Settings ({{ config.settings|length }})</h3>
           <div class="section-body">
-            <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.settings, indent=2) }}</code></pre>
+            {% if parsed_settings %}
+            <div class="settings-parsed" id="settings-parsed">
+              <table class="data-table">
+                <thead><tr><th>Setting</th><th>Value</th><th>Description</th></tr></thead>
+                <tbody>
+                  {% for s in parsed_settings %}
+                  <tr>
+                    <td><code>{{ s.key }}</code></td>
+                    <td>
+                      {% if s.value is mapping or s.value is iterable and s.value is not string %}
+                        <code class="settings-complex">{{ json.dumps(s.value, indent=2) }}</code>
+                      {% elif s.value is sameas true %}
+                        <span class="badge badge-on">on</span>
+                      {% elif s.value is sameas false %}
+                        <span class="badge badge-off">off</span>
+                      {% else %}
+                        <span class="kv-value">{{ s.value }}</span>
+                      {% endif %}
+                    </td>
+                    <td class="settings-desc">{{ s.desc if s.desc else '—' }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+            <div class="settings-raw {% if parsed_settings %}hidden{% endif %}" id="settings-raw">
+              <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.settings, indent=2) }}</code></pre>
+            </div>
+            {% if parsed_settings %}
+            <button class="btn-show-raw" onclick="toggleSettingsView()" id="btn-settings-toggle">Show Raw JSON</button>
+            {% endif %}
           </div>
         </div>
         {% endif %}
@@ -521,4 +564,25 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+function toggleSettingsView() {
+  var parsed = document.getElementById('settings-parsed');
+  var raw = document.getElementById('settings-raw');
+  var btn = document.getElementById('btn-settings-toggle');
+  if (!parsed || !raw || !btn) return;
+  var showingRaw = !raw.classList.contains('hidden');
+  if (showingRaw) {
+    parsed.classList.remove('hidden');
+    raw.classList.add('hidden');
+    btn.textContent = 'Show Raw JSON';
+  } else {
+    parsed.classList.add('hidden');
+    raw.classList.remove('hidden');
+    btn.textContent = 'Show Parsed View';
+  }
+}
+</script>
 {% endblock %}

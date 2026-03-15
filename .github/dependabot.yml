@@ -10,6 +10,22 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - dependencies
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: pip
+    directory: /.github
+    schedule:
+      interval: weekly
+    target-branch: main
+    commit-message:
+      prefix: "ci:"
+    open-pull-requests-limit: 5
+    labels:
+      - ci
+      - dependencies
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: github-actions
     directory: /
@@ -21,3 +37,5 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - ci
+    cooldown:
+      default-days: 7
