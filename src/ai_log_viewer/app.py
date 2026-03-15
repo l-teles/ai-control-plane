@@ -13,6 +13,10 @@ from flask import Flask, Response, abort, jsonify, render_template, request
 from markupsafe import Markup
 
 from . import claude_parser, vscode_parser
+from .config_readers import read_all_configs
+from .config_readers.claude_config import read_claude_config
+from .config_readers.copilot_config import read_copilot_config
+from .config_readers.vscode_config import read_vscode_config
 from .parser import (
     _default_copilot_dir,
     duration_between,
@@ -292,6 +296,46 @@ def create_app(
             dict=dict,
             Markup=Markup,
         )
+
+    # -- Tools configuration routes ------------------------------------------
+
+    _VALID_TOOLS = {"claude", "copilot", "vscode"}
+
+    def _get_tool_config(tool: str) -> dict:
+        if tool == "claude":
+            return read_claude_config()
+        elif tool == "copilot":
+            return read_copilot_config()
+        elif tool == "vscode":
+            return read_vscode_config()
+        abort(404)
+
+    @app.route("/tools")
+    def tools_overview():
+        configs = read_all_configs()
+        return render_template("tools.html", configs=configs)
+
+    @app.route("/tools/<tool>")
+    def tool_detail(tool: str):
+        if tool not in _VALID_TOOLS:
+            abort(404)
+        config = _get_tool_config(tool)
+        return render_template(
+            "tool_detail.html",
+            tool=tool,
+            config=config,
+            json=json,
+        )
+
+    @app.route("/api/tools")
+    def api_tools():
+        return jsonify(read_all_configs())
+
+    @app.route("/api/tools/<tool>")
+    def api_tool(tool: str):
+        if tool not in _VALID_TOOLS:
+            abort(404)
+        return jsonify(_get_tool_config(tool))
 
     # -- JSON API ------------------------------------------------------------
 

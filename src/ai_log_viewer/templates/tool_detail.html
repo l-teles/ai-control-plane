@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');</script>
+<title>{{ tool|capitalize }} Configuration - AI Log Viewer</title>
+<style>
+:root, [data-theme="dark"] {
+  --bg: #0d1117; --bg-secondary: #161b22; --bg-tertiary: #21262d;
+  --border: #30363d; --text: #e6edf3; --text-secondary: #8b949e;
+  --accent: #58a6ff; --accent-subtle: #1f6feb33;
+  --green: #3fb950; --green-subtle: #3fb95022;
+  --orange: #d29922; --orange-subtle: #d2992222;
+  --purple: #bc8cff; --purple-subtle: #bc8cff22;
+  --red: #f85149; --red-subtle: #f8514922;
+  --radius: 8px; --shadow: 0 3px 12px rgba(0,0,0,0.4);
+}
+[data-theme="light"] {
+  --bg: #ffffff; --bg-secondary: #f6f8fa; --bg-tertiary: #eaeef2;
+  --border: #d0d7de; --text: #1f2328; --text-secondary: #656d76;
+  --accent: #0969da; --accent-subtle: #0969da1a;
+  --green: #1a7f37; --green-subtle: #1a7f371a;
+  --orange: #9a6700; --orange-subtle: #9a67001a;
+  --purple: #8250df; --purple-subtle: #8250df1a;
+  --red: #cf222e; --red-subtle: #cf222e1a;
+  --radius: 8px; --shadow: 0 3px 12px rgba(0,0,0,0.12);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+header {
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+  padding: 20px 0; margin-bottom: 32px;
+}
+header .container { display: flex; align-items: center; gap: 16px; }
+.logo {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: bold; color: #fff;
+}
+header h1 { font-size: 22px; font-weight: 600; }
+.nav-link {
+  color: var(--text-secondary); text-decoration: none; font-size: 14px;
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
+  transition: all 0.15s; background: var(--bg-tertiary);
+}
+.nav-link:hover { border-color: var(--accent); color: var(--accent); }
+.theme-toggle {
+  margin-left: auto; background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 20px; padding: 6px 12px; cursor: pointer;
+  color: var(--text-secondary); font-size: 14px; line-height: 1; transition: all 0.15s;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Tab bar */
+.tab-bar { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+.tab-link {
+  padding: 8px 20px; text-decoration: none; color: var(--text-secondary);
+  font-size: 14px; font-weight: 500; border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.tab-link:hover { color: var(--text); }
+.tab-link.active { border-bottom-color: var(--accent); color: var(--accent); }
+.tab-link.active-claude { border-bottom-color: var(--purple); color: var(--purple); }
+.tab-link.active-copilot { border-bottom-color: var(--orange); color: var(--orange); }
+.tab-link.active-vscode { border-bottom-color: var(--green); color: var(--green); }
+
+/* Layout */
+.detail-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; }
+@media (max-width: 768px) { .detail-layout { grid-template-columns: 1fr; } }
+
+.sidebar {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; align-self: start;
+}
+.sidebar h3 { font-size: 15px; margin-bottom: 12px; }
+.info-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--text-secondary); }
+.info-value { font-weight: 500; text-align: right; word-break: break-all; max-width: 60%; }
+
+.main-content { min-width: 0; }
+
+/* Sections */
+.section {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+}
+.section h3 {
+  font-size: 15px; font-weight: 600; margin-bottom: 12px;
+  cursor: pointer; user-select: none;
+}
+.section h3::before { content: "\25BE "; color: var(--text-secondary); font-size: 12px; }
+.section.collapsed h3::before { content: "\25B8 "; }
+.section.collapsed .section-body { display: none; }
+
+table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border);
+  color: var(--text-secondary); font-weight: 500; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.data-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table code {
+  font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px;
+  background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px;
+}
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 12px;
+  font-size: 11px; font-weight: 500;
+}
+.badge-on { background: var(--green-subtle); color: var(--green); }
+.badge-off { background: var(--bg-tertiary); color: var(--text-secondary); }
+.badge-official { background: var(--accent-subtle); color: var(--accent); }
+.badge-external { background: var(--orange-subtle); color: var(--orange); }
+.badge-stdio { background: var(--bg-tertiary); color: var(--text-secondary); }
+.badge-http { background: var(--accent-subtle); color: var(--accent); }
+
+.kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.kv-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px;
+  font-size: 13px;
+}
+.kv-key { color: var(--text-secondary); margin-right: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv-value { font-weight: 500; flex-shrink: 0; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.plugin-card {
+  background: var(--bg-tertiary); border-radius: var(--radius); padding: 14px;
+}
+.plugin-card h4 { font-size: 14px; margin-bottom: 4px; }
+.plugin-card p { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.plugin-card .icons { display: flex; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+
+.cmd-list {
+  max-height: 300px; overflow-y: auto; font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px; line-height: 2;
+}
+.cmd-list div { padding: 2px 8px; border-bottom: 1px solid var(--border); }
+
+.empty-note { color: var(--text-secondary); font-size: 13px; font-style: italic; }
+
+/* Color helpers */
+.color-claude { color: var(--purple); }
+.color-copilot { color: var(--orange); }
+.color-vscode { color: var(--green); }
+
+/* Plugin/agent links */
+.plugin-link { color: var(--accent); text-decoration: none; }
+.plugin-link:hover { text-decoration: underline; }
+.ext-icon { font-size: 10px; opacity: 0.5; }
+
+/* Clauditor CTA */
+.clauditor-cta {
+  display: flex; align-items: center; gap: 14px;
+  margin-top: 16px; padding: 14px 18px;
+  background: linear-gradient(135deg, var(--purple-subtle), var(--accent-subtle));
+  border: 1px solid var(--purple); border-radius: var(--radius);
+  text-decoration: none; color: var(--text);
+  transition: all 0.2s;
+}
+.clauditor-cta:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--purple) 30%, transparent);
+  border-color: var(--accent);
+}
+.clauditor-cta strong { display: block; font-size: 14px; margin-bottom: 2px; }
+.clauditor-sub { font-size: 12px; color: var(--text-secondary); }
+.clauditor-icon { font-size: 24px; flex-shrink: 0; }
+.clauditor-arrow { margin-left: auto; font-size: 20px; color: var(--purple); flex-shrink: 0; transition: transform 0.2s; }
+.clauditor-cta:hover .clauditor-arrow { transform: translateX(4px); }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <div class="logo">A</div>
+    <div>
+      <h1 class="color-{{ tool }}">
+        {% if tool == 'claude' %}Claude Code{% elif tool == 'copilot' %}GitHub Copilot{% else %}VS Code Chat{% endif %}
+      </h1>
+    </div>
+    <a class="nav-link" href="/tools">All Tools</a>
+    <a class="nav-link" href="/">Sessions</a>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark mode"></button>
+  </div>
+</header>
+<div class="container">
+  <div class="tab-bar">
+    <a class="tab-link {% if tool == 'claude' %}active-claude{% endif %}" href="/tools/claude">Claude Code</a>
+    <a class="tab-link {% if tool == 'copilot' %}active-copilot{% endif %}" href="/tools/copilot">GitHub Copilot</a>
+    <a class="tab-link {% if tool == 'vscode' %}active-vscode{% endif %}" href="/tools/vscode">VS Code Chat</a>
+  </div>
+
+  <div class="detail-layout">
+    <div class="sidebar">
+      <h3>Quick Info</h3>
+      <div class="info-row">
+        <span class="info-label">Status</span>
+        <span class="info-value">{{ "Installed" if config.installed else "Not found" }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Directory</span>
+        <span class="info-value" style="font-family:monospace;font-size:11px;">{{ config.get('home_dir') or config.get('user_dir', '') }}</span>
+      </div>
+      {% if tool == 'claude' %}
+      <div class="info-row">
+        <span class="info-label">MCP Servers</span>
+        <span class="info-value">{{ config.mcp_servers|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Plugins</span>
+        <span class="info-value">{{ config.plugins|length + config.external_plugins|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Agents</span>
+        <span class="info-value">{{ config.agents|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Hooks</span>
+        <span class="info-value">{{ config.hooks|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Feature Flags</span>
+        <span class="info-value">{{ config.feature_flags|length }}</span>
+      </div>
+      {% elif tool == 'copilot' %}
+      <div class="info-row">
+        <span class="info-label">MCP Servers</span>
+        <span class="info-value">{{ config.mcp_servers|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Sessions</span>
+        <span class="info-value">{{ config.session_count }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Commands</span>
+        <span class="info-value">{{ config.recent_commands|length }}</span>
+      </div>
+      {% else %}
+      <div class="info-row">
+        <span class="info-label">MCP Servers</span>
+        <span class="info-value">{{ config.mcp_servers|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Agents</span>
+        <span class="info-value">{{ config.agents|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">AI Settings</span>
+        <span class="info-value">{{ config.copilot_settings|length }}</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="main-content">
+
+      {# ---- MCP Servers (all tools) ---- #}
+      {% if config.mcp_servers %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">MCP Servers ({{ config.mcp_servers|length }})</h3>
+        <div class="section-body">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+            <tbody>
+              {% for srv in config.mcp_servers %}
+              <tr>
+                <td><strong>{{ srv.name }}</strong></td>
+                <td><span class="badge badge-{{ srv.type }}">{{ srv.type }}</span></td>
+                <td><code>{% if srv.url %}{{ srv.url }}{% else %}{{ srv.command }}{% if srv.args %} {{ srv.args|join(' ') }}{% endif %}{% endif %}</code></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ---- Claude-specific sections ---- #}
+      {% if tool == 'claude' %}
+
+        {# Plugins #}
+        {% if config.plugins or config.external_plugins %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Plugins ({{ config.plugins|length + config.external_plugins|length }})</h3>
+          <div class="section-body">
+            <div class="card-grid">
+              {% for p in config.plugins + config.external_plugins %}
+              <div class="plugin-card">
+                <h4>{% if p.type == 'official' %}<a href="https://github.com/anthropics/claude-code/tree/main/plugins/{{ p.name }}" target="_blank" rel="noopener" class="plugin-link">{{ p.name }} <span class="ext-icon">&#x2197;</span></a>{% else %}{{ p.name }}{% endif %}</h4>
+                <p>{{ p.description[:120] if p.description else 'No description' }}</p>
+                <div>
+                  <span class="badge {% if p.type == 'official' %}badge-official{% else %}badge-external{% endif %}">{{ p.type }}</span>
+                  {% if p.has_hooks %}<span class="badge badge-off">hooks</span>{% endif %}
+                  {% if p.has_agents %}<span class="badge badge-off">agents</span>{% endif %}
+                  {% if p.has_commands %}<span class="badge badge-off">commands</span>{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Agents #}
+        {% if config.agents %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Agents ({{ config.agents|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Plugin</th><th>Model</th><th>Description</th></tr></thead>
+              <tbody>
+                {% for a in config.agents %}
+                <tr>
+                  <td><strong><a href="https://github.com/anthropics/claude-code/tree/main/plugins/{{ a.plugin }}/agents" target="_blank" rel="noopener" class="plugin-link">{{ a.name }} <span class="ext-icon">&#x2197;</span></a></strong></td>
+                  <td>{{ a.plugin }}</td>
+                  <td>{% if a.model %}<span class="badge badge-stdio">{{ a.model }}</span>{% endif %}</td>
+                  <td>{{ a.description[:120] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Hooks #}
+        {% if config.hooks %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Hooks ({{ config.hooks|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Event</th><th>Name</th><th>Plugin</th><th>Command</th></tr></thead>
+              <tbody>
+                {% for h in config.hooks %}
+                <tr>
+                  <td>{{ h.event }}</td>
+                  <td><strong>{{ h.name }}</strong></td>
+                  <td>{{ h.plugin }}</td>
+                  <td><code>{{ h.command }}</code></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Feature Flags #}
+        {% if config.feature_flags %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Feature Flags ({{ config.feature_flags|length }})</h3>
+          <div class="section-body">
+            <div class="kv-grid">
+              {% for flag, enabled in config.feature_flags.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ flag }}</span>
+                <span class="badge {% if enabled %}badge-on{% else %}badge-off{% endif %}">{{ "on" if enabled else "off" }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            <a href="https://gabrielsoltz.github.io/clauditor/" target="_blank" rel="noopener" class="clauditor-cta">
+              <span class="clauditor-icon">&#x1F6E1;</span>
+              <span>
+                <strong>Not sure which flags to enable?</strong>
+                <span class="clauditor-sub">Clauditor is a security reference for Claude Code -- browse 50+ checks covering permissions, sandboxing, MCP supply chain, and more.</span>
+              </span>
+              <span class="clauditor-arrow">&#x2192;</span>
+            </a>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Main Settings #}
+        {% if config.main_settings %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Main Settings</h3>
+          <div class="section-body">
+            <div class="kv-grid">
+              {% for k, v in config.main_settings.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ k }}</span>
+                <span class="kv-value">{{ v }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Settings #}
+        {% if config.settings %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Settings</h3>
+          <div class="section-body">
+            <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.settings, indent=2) }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Policy Limits #}
+        {% if config.policy_limits %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Policy &amp; Limits</h3>
+          <div class="section-body">
+            <div class="kv-grid">
+              {% for k, v in config.policy_limits.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ k }}</span>
+                <span class="kv-value">{{ v }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Plugin Blocklist #}
+        {% if config.plugin_blocklist %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Plugin Blocklist ({{ config.plugin_blocklist|length }})</h3>
+          <div class="section-body">
+            <div class="kv-grid">
+              {% for item in config.plugin_blocklist %}
+              <div class="kv-item"><span class="kv-key">{{ item }}</span></div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      {% endif %}
+
+      {# ---- Copilot-specific sections ---- #}
+      {% if tool == 'copilot' %}
+
+        {# Config #}
+        {% if config.config %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Configuration</h3>
+          <div class="section-body">
+            <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.config, indent=2) }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Recent Commands #}
+        {% if config.recent_commands %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Recent Commands ({{ config.recent_commands|length }})</h3>
+          <div class="section-body">
+            <div class="cmd-list">
+              {% for cmd in config.recent_commands|reverse %}
+              <div>{{ cmd if cmd is string else json.dumps(cmd) }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      {% endif %}
+
+      {# ---- VS Code-specific sections ---- #}
+      {% if tool == 'vscode' %}
+
+        {# Agents #}
+        {% if config.agents %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Agents ({{ config.agents|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Description</th></tr></thead>
+              <tbody>
+                {% for a in config.agents %}
+                <tr>
+                  <td><strong>{{ a.name }}</strong></td>
+                  <td>{{ a.description[:150] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Copilot/AI Settings #}
+        {% if config.copilot_settings %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">AI Settings ({{ config.copilot_settings|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Key</th><th>Value</th></tr></thead>
+              <tbody>
+                {% for k, v in config.copilot_settings.items()|sort %}
+                <tr>
+                  <td><code>{{ k }}</code></td>
+                  <td>{% if v is mapping or v is iterable and v is not string %}<code>{{ json.dumps(v) }}</code>{% else %}{{ v }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Language Models #}
+        {% if config.language_models %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">Language Models ({{ config.language_models|length }})</h3>
+          <div class="section-body">
+            <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.language_models, indent=2) }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+
+      {% endif %}
+
+      {# Empty state #}
+      {% if not config.installed %}
+      <div class="section">
+        <p class="empty-note">This tool was not found on the system. Check that the directory exists and contains configuration files.</p>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = saved === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+})();
+function toggleTheme() {
+  var current = document.documentElement.getAttribute('data-theme') || 'dark';
+  var next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = next === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+}
+</script>
+</body>
+</html>

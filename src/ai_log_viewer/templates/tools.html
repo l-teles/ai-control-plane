@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');</script>
+<title>Tool Configuration - AI Log Viewer</title>
+<style>
+:root, [data-theme="dark"] {
+  --bg: #0d1117; --bg-secondary: #161b22; --bg-tertiary: #21262d;
+  --border: #30363d; --text: #e6edf3; --text-secondary: #8b949e;
+  --accent: #58a6ff; --accent-subtle: #1f6feb33;
+  --green: #3fb950; --green-subtle: #3fb95022;
+  --orange: #d29922; --orange-subtle: #d2992222;
+  --purple: #bc8cff; --purple-subtle: #bc8cff22;
+  --red: #f85149; --red-subtle: #f8514922;
+  --radius: 8px; --shadow: 0 3px 12px rgba(0,0,0,0.4);
+}
+[data-theme="light"] {
+  --bg: #ffffff; --bg-secondary: #f6f8fa; --bg-tertiary: #eaeef2;
+  --border: #d0d7de; --text: #1f2328; --text-secondary: #656d76;
+  --accent: #0969da; --accent-subtle: #0969da1a;
+  --green: #1a7f37; --green-subtle: #1a7f371a;
+  --orange: #9a6700; --orange-subtle: #9a67001a;
+  --purple: #8250df; --purple-subtle: #8250df1a;
+  --red: #cf222e; --red-subtle: #cf222e1a;
+  --radius: 8px; --shadow: 0 3px 12px rgba(0,0,0,0.12);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+header {
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+  padding: 20px 0; margin-bottom: 32px;
+}
+header .container { display: flex; align-items: center; gap: 16px; }
+.logo {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: bold; color: #fff;
+}
+header h1 { font-size: 22px; font-weight: 600; }
+header p { color: var(--text-secondary); font-size: 14px; }
+.nav-link {
+  color: var(--text-secondary); text-decoration: none; font-size: 14px;
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
+  transition: all 0.15s; background: var(--bg-tertiary);
+}
+.nav-link:hover { border-color: var(--accent); color: var(--accent); }
+.theme-toggle {
+  margin-left: auto; background: var(--bg-tertiary); border: 1px solid var(--border);
+  border-radius: 20px; padding: 6px 12px; cursor: pointer;
+  color: var(--text-secondary); font-size: 14px; line-height: 1; transition: all 0.15s;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+.tool-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.tool-card {
+  background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 24px; text-decoration: none; color: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s; display: block;
+}
+.tool-card:hover { box-shadow: var(--shadow); }
+.tool-card.claude { border-left: 4px solid var(--purple); }
+.tool-card.claude:hover { border-color: var(--purple); }
+.tool-card.copilot { border-left: 4px solid var(--orange); }
+.tool-card.copilot:hover { border-color: var(--orange); }
+.tool-card.vscode { border-left: 4px solid var(--green); }
+.tool-card.vscode:hover { border-color: var(--green); }
+
+.tool-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+.tool-card.claude h2 { color: var(--purple); }
+.tool-card.copilot h2 { color: var(--orange); }
+.tool-card.vscode h2 { color: var(--green); }
+
+.tool-card .status {
+  font-size: 13px; margin-bottom: 12px;
+}
+.status-installed { color: var(--green); }
+.status-not-found { color: var(--text-secondary); }
+
+.tool-card .stats { display: flex; flex-wrap: wrap; gap: 12px; }
+.tool-card .stat {
+  font-size: 13px; color: var(--text-secondary);
+}
+.tool-card .stat strong {
+  display: block; font-size: 22px; color: var(--text); font-weight: 700;
+}
+
+.section-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary); }
+
+.shared-servers {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+}
+.shared-servers table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.shared-servers th {
+  text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border);
+  color: var(--text-secondary); font-weight: 500; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.shared-servers td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 12px;
+  font-size: 11px; font-weight: 500;
+}
+.badge-claude { background: var(--purple-subtle); color: var(--purple); }
+.badge-copilot { background: var(--orange-subtle); color: var(--orange); }
+.badge-vscode { background: var(--green-subtle); color: var(--green); }
+.empty-note { color: var(--text-secondary); font-size: 14px; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <div class="logo">A</div>
+    <div>
+      <h1>Tool Configuration</h1>
+      <p>AI tool settings, MCP servers, plugins, and agents</p>
+    </div>
+    <a class="nav-link" href="/">Sessions</a>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark mode"></button>
+  </div>
+</header>
+<div class="container">
+  <div class="tool-cards">
+    {% set c = configs.claude %}
+    <a class="tool-card claude" href="/tools/claude">
+      <h2>Claude Code</h2>
+      <div class="status {% if c.installed %}status-installed{% else %}status-not-found{% endif %}">
+        {{ "Installed" if c.installed else "Not found" }}
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>{{ c.mcp_servers|length }}</strong> MCP Servers</div>
+        <div class="stat"><strong>{{ c.plugins|length + c.external_plugins|length }}</strong> Plugins</div>
+        <div class="stat"><strong>{{ c.agents|length }}</strong> Agents</div>
+        <div class="stat"><strong>{{ c.hooks|length }}</strong> Hooks</div>
+      </div>
+    </a>
+
+    {% set cp = configs.copilot %}
+    <a class="tool-card copilot" href="/tools/copilot">
+      <h2>GitHub Copilot</h2>
+      <div class="status {% if cp.installed %}status-installed{% else %}status-not-found{% endif %}">
+        {{ "Installed" if cp.installed else "Not found" }}
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>{{ cp.mcp_servers|length }}</strong> MCP Servers</div>
+        <div class="stat"><strong>{{ cp.session_count }}</strong> Sessions</div>
+        <div class="stat"><strong>{{ cp.recent_commands|length }}</strong> Commands</div>
+      </div>
+    </a>
+
+    {% set v = configs.vscode %}
+    <a class="tool-card vscode" href="/tools/vscode">
+      <h2>VS Code Chat</h2>
+      <div class="status {% if v.installed %}status-installed{% else %}status-not-found{% endif %}">
+        {{ "Installed" if v.installed else "Not found" }}
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>{{ v.mcp_servers|length }}</strong> MCP Servers</div>
+        <div class="stat"><strong>{{ v.agents|length }}</strong> Agents</div>
+        <div class="stat"><strong>{{ v.copilot_settings|length }}</strong> Settings</div>
+      </div>
+    </a>
+  </div>
+
+  {# Shared MCP Servers — servers that appear in 2+ tools #}
+  {% set all_servers = {} %}
+  {% for srv in c.mcp_servers %}
+    {% if all_servers.update({srv.name: all_servers.get(srv.name, []) + ['claude']}) %}{% endif %}
+  {% endfor %}
+  {% for srv in cp.mcp_servers %}
+    {% if all_servers.update({srv.name: all_servers.get(srv.name, []) + ['copilot']}) %}{% endif %}
+  {% endfor %}
+  {% for srv in v.mcp_servers %}
+    {% if all_servers.update({srv.name: all_servers.get(srv.name, []) + ['vscode']}) %}{% endif %}
+  {% endfor %}
+  {% set shared = [] %}
+  {% for name, sources in all_servers.items() %}
+    {% if sources|length > 1 %}
+      {% if shared.append({'name': name, 'sources': sources}) %}{% endif %}
+    {% endif %}
+  {% endfor %}
+
+  {% if shared %}
+  <h3 class="section-title">Shared MCP Servers</h3>
+  <div class="shared-servers">
+    <table>
+      <thead><tr><th>Server Name</th><th>Present In</th></tr></thead>
+      <tbody>
+        {% for s in shared %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td>
+            {% for src in s.sources %}
+            <span class="badge badge-{{ src }}">{{ src }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  var saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = saved === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+})();
+function toggleTheme() {
+  var current = document.documentElement.getAttribute('data-theme') || 'dark';
+  var next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = next === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+}
+</script>
+</body>
+</html>
