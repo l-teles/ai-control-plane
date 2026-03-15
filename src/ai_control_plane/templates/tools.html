@@ -140,31 +140,13 @@
     </a>
   </div>
 
-  {# Shared MCP Servers — servers that appear in 2+ tools #}
-  {% set all_servers = {} %}
-  {% for srv in c.mcp_servers %}
-    {% if all_servers.update({srv.name: all_servers.get(srv.name, []) + ['claude']}) %}{% endif %}
-  {% endfor %}
-  {% for srv in cp.mcp_servers %}
-    {% if all_servers.update({srv.name: all_servers.get(srv.name, []) + ['copilot']}) %}{% endif %}
-  {% endfor %}
-  {% for srv in v.mcp_servers %}
-    {% if all_servers.update({srv.name: all_servers.get(srv.name, []) + ['vscode']}) %}{% endif %}
-  {% endfor %}
-  {% set shared = [] %}
-  {% for name, sources in all_servers.items() %}
-    {% if sources|length > 1 %}
-      {% if shared.append({'name': name, 'sources': sources}) %}{% endif %}
-    {% endif %}
-  {% endfor %}
-
-  {% if shared %}
+  {% if shared_servers %}
   <h3 class="section-title">Shared MCP Servers</h3>
   <div class="shared-servers">
     <table>
       <thead><tr><th>Server Name</th><th>Present In</th></tr></thead>
       <tbody>
-        {% for s in shared %}
+        {% for s in shared_servers %}
         <tr>
           <td>{{ s.name }}</td>
           <td>
@@ -180,3 +162,4 @@
   {% endif %}
 </div>
 {% endblock %}
+

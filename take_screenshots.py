@@ -57,8 +57,8 @@ def main():
     # Start the Flask app
     proc = subprocess.Popen(
         [sys.executable, "-m", "ai_control_plane", "--port", "5099"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     time.sleep(3)  # Wait for server startup
 

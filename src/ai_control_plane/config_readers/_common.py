@@ -49,13 +49,37 @@ def mask_secret(key: str, value: Any) -> Any:
     return value
 
 
+def _mask_bare_value(value: Any) -> Any:
+    """Mask a standalone string if its value looks like a secret."""
+    if not isinstance(value, str):
+        return value
+    if _SECRET_VALUE_RE.match(value):
+        return mask_value(value)
+    if "://" in value and "@" in value:
+        return _URL_CRED_RE.sub(r"\1****\2", value)
+    return value
+
+
 def mask_dict(d: dict | list | Any) -> dict | list | Any:
     """Recursively mask secrets in a dict or list."""
     if isinstance(d, dict):
         return {k: mask_secret(k, mask_dict(v)) for k, v in d.items()}
     if isinstance(d, list):
-        return [mask_dict(item) for item in d]
+        return [_mask_bare_value(mask_dict(item)) for item in d]
     return d
+
+
+_SAFE_URL_SCHEMES = frozenset({"http", "https", "mailto"})
+
+
+def sanitize_url(url: str) -> str:
+    """Return the URL only if it uses a safe scheme, otherwise empty string."""
+    if not url or not isinstance(url, str):
+        return ""
+    scheme = url.split(":", 1)[0].lower().strip()
+    if scheme in _SAFE_URL_SCHEMES:
+        return url
+    return ""
 
 
 def safe_read_json(path: Path) -> dict | None:
@@ -169,7 +193,7 @@ def read_skills(skills_dir: Path) -> list[dict]:
                 "name": fm.get("name") or skill_file.parent.name,
                 "description": fm.get("description", "").strip()[:200],
                 "path": str(skill_file.parent),
-                "homepage": str(homepage) if homepage else "",
+                "homepage": sanitize_url(str(homepage)) if homepage else "",
                 "author": str(author) if author else "",
                 "version": str(version) if version else "",
                 "license": str(fm.get("license", "")) or "",

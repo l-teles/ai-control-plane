@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ai_control_plane.config_readers._common import mask_dict, mask_secret, mask_value
+from ai_control_plane.config_readers._common import mask_dict, mask_secret, mask_value, sanitize_url
 from ai_control_plane.config_readers.claude_config import read_claude_config
 from ai_control_plane.config_readers.copilot_config import read_copilot_config
 from ai_control_plane.config_readers.vscode_config import read_vscode_config
@@ -82,6 +82,40 @@ def test_mask_dict_recursive():
     assert result["nested"]["safe"] == "hello"
     assert result["items"][0]["password"].endswith("****")
     assert result["items"][0]["label"] == "ok"
+
+
+def test_mask_dict_masks_secrets_in_lists():
+    """Strings in lists that look like secrets should be masked."""
+    data = {
+        "args": ["-y", "safe-arg", "ghp_abcdefghijklmnopqrstuvwxyz1234567890"],
+    }
+    result = mask_dict(data)
+    assert result["args"][0] == "-y"
+    assert result["args"][1] == "safe-arg"
+    assert result["args"][2].endswith("****")
+    assert "ghp_abcdefghijklmnop" not in result["args"][2]
+
+
+# ---------------------------------------------------------------------------
+# sanitize_url tests
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_url_safe_schemes():
+    assert sanitize_url("https://example.com") == "https://example.com"
+    assert sanitize_url("http://example.com") == "http://example.com"
+    assert sanitize_url("mailto:user@example.com") == "mailto:user@example.com"
+
+
+def test_sanitize_url_unsafe_schemes():
+    assert sanitize_url("javascript:alert(1)") == ""
+    assert sanitize_url("data:text/html,<h1>hi</h1>") == ""
+    assert sanitize_url("vbscript:foo") == ""
+
+
+def test_sanitize_url_empty():
+    assert sanitize_url("") == ""
+    assert sanitize_url(None) == ""
 
 
 # ---------------------------------------------------------------------------

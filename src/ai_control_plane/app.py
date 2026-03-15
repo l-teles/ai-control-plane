@@ -430,7 +430,17 @@ def create_app(
     @app.route("/tools")
     def tools_overview():
         configs = read_all_configs()
-        return render_template("tools.html", configs=configs)
+        # Compute shared MCP servers (present in 2+ tools)
+        server_sources: dict[str, list[str]] = {}
+        for source in ("claude", "copilot", "vscode"):
+            for srv in configs[source].get("mcp_servers", []):
+                server_sources.setdefault(srv["name"], []).append(source)
+        shared_servers = [
+            {"name": name, "sources": sources}
+            for name, sources in sorted(server_sources.items())
+            if len(sources) > 1
+        ]
+        return render_template("tools.html", configs=configs, shared_servers=shared_servers)
 
     @app.route("/tools/<tool>")
     def tool_detail(tool: str):
