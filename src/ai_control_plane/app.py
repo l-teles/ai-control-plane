@@ -1,4 +1,4 @@
-"""Flask application for the AI Session Log Viewer."""
+"""Flask application for the AI Control Plane."""
 
 from __future__ import annotations
 
@@ -68,7 +68,9 @@ def _safe_copilot_dir(base: Path, session_id: str) -> Path:
     if not safe_name or safe_name != session_id:
         abort(400)
     resolved = (base / safe_name).resolve()
-    if not str(resolved).startswith(str(base.resolve())):
+    try:
+        resolved.relative_to(base.resolve())
+    except ValueError:
         abort(403)
     return resolved
 
@@ -408,7 +410,8 @@ def create_app(
             for s in configs[source].get("skills", []):
                 name = s["name"]
                 if name in by_name:
-                    by_name[name]["sources"].append(source)
+                    if source not in by_name[name]["sources"]:
+                        by_name[name]["sources"].append(source)
                 else:
                     by_name[name] = {**s, "sources": [source]}
         return sorted(by_name.values(), key=lambda s: s["name"])
@@ -641,7 +644,9 @@ def create_app(
             session_dir / "rewind-snapshots" / "backups" / safe_hash
         )
         resolved = backup_file.resolve()
-        if not str(resolved).startswith(str(copilot_path.resolve())):
+        try:
+            resolved.relative_to(copilot_path.resolve())
+        except ValueError:
             abort(403)
         if not resolved.is_file():
             abort(404)

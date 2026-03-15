@@ -91,7 +91,7 @@ def safe_read_json(path: Path) -> dict | None:
             return None
         with open(path) as f:
             return json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -102,7 +102,7 @@ def safe_read_yaml(path: Path) -> dict | None:
             return None
         with open(path) as f:
             return yaml.safe_load(f)
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError, UnicodeDecodeError):
         return None
 
 

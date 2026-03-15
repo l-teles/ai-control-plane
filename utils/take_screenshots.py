@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 
-ASSETS = Path(__file__).parent / "assets"
+ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
 # Anonymization JS — replaces personal paths, UUIDs, secrets, URLs
 ANONYMIZE_JS = r"""
@@ -127,7 +127,11 @@ def main():
             print("Screenshots saved to assets/")
     finally:
         proc.terminate()
-        proc.wait()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 if __name__ == "__main__":
