@@ -10,10 +10,7 @@ from ai_ctrl_plane.db import CacheDB
 def test_schema_creates_tables(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "test.db")
     tables = [
-        r[0]
-        for r in db._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
+        r[0] for r in db._conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
     ]
     assert "cache_meta" in tables
     assert "sessions" in tables
@@ -91,9 +88,7 @@ def test_get_project_returns_none_for_missing(tmp_path: Path) -> None:
 
 def test_insert_and_get_project_memory(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "test.db")
-    db.insert_projects(
-        [{"encoded_name": "-proj", "path": "/proj", "name": "proj", "metadata": {}}]
-    )
+    db.insert_projects([{"encoded_name": "-proj", "path": "/proj", "name": "proj", "metadata": {}}])
     db.insert_project_memory(
         [
             {"project_encoded_name": "-proj", "filename": "MEMORY.md", "content": "# Notes"},
@@ -140,7 +135,6 @@ def test_project_global_stats(tmp_path: Path) -> None:
                 "path": "/p1",
                 "name": "p1",
                 "session_count": 3,
-                "last_cost": 1.5,
                 "metadata": {},
             },
             {
@@ -148,9 +142,15 @@ def test_project_global_stats(tmp_path: Path) -> None:
                 "path": "/p2",
                 "name": "p2",
                 "session_count": 7,
-                "last_cost": 2.0,
                 "metadata": {},
             },
+        ]
+    )
+    # Cost comes from sessions, not projects
+    db.insert_sessions(
+        [
+            {"source": "claude", "id": "s1", "cwd": "/p1", "estimated_cost": 1.5},
+            {"source": "claude", "id": "s2", "cwd": "/p2", "estimated_cost": 2.0},
         ]
     )
     db.insert_project_memory(
@@ -161,7 +161,7 @@ def test_project_global_stats(tmp_path: Path) -> None:
     )
     stats = db.get_project_global_stats()
     assert stats["total_projects"] == 2
-    assert stats["total_sessions"] == 10
+    assert stats["total_sessions"] == 2  # counts actual session rows, not project.session_count
     assert stats["aggregate_cost"] == 3.5
     assert stats["total_memory_files"] == 2
     db.close()
@@ -203,9 +203,7 @@ def test_cache_status_dict(tmp_path: Path) -> None:
 
 def test_clear_all(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "test.db")
-    db.insert_sessions(
-        [{"source": "claude", "id": "a-b-c-d-e", "summary": "x", "created_at": "", "cwd": ""}]
-    )
+    db.insert_sessions([{"source": "claude", "id": "a-b-c-d-e", "summary": "x", "created_at": "", "cwd": ""}])
     assert len(db.get_sessions()) == 1
     db._clear_all()
     assert len(db.get_sessions()) == 0

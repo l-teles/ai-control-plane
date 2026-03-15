@@ -687,9 +687,7 @@ def create_app(
         safe_hash = secure_filename(backup_hash)
         if not safe_hash or safe_hash != backup_hash:
             abort(400)
-        backup_file = (
-            session_dir / "rewind-snapshots" / "backups" / safe_hash
-        )
+        backup_file = session_dir / "rewind-snapshots" / "backups" / safe_hash
         resolved = backup_file.resolve()
         try:
             resolved.relative_to(copilot_path.resolve())
@@ -732,14 +730,17 @@ def create_app(
             mf["html"] = md_to_html(mf.get("content", ""))
         # Get sessions linked to this project by cwd
         project_sessions = []
+        project_cost = {"input_tokens": 0, "output_tokens": 0, "estimated_cost": 0}
         if project.get("path"):
             project_sessions = db.get_project_sessions(project["path"])
+            project_cost = db.get_project_cost(project["path"])
         desktop_config = db.get_tool_config("claude_desktop")
         return render_template(
             "project_detail.html",
             project=project,
             memory_files=memory_files,
             project_sessions=project_sessions,
+            project_cost=project_cost,
             desktop_config=desktop_config,
             ts_display=ts_display,
             json=json,
@@ -747,10 +748,12 @@ def create_app(
 
     @app.route("/api/projects")
     def api_projects():
-        return jsonify({
-            "projects": db.get_projects(),
-            "stats": db.get_project_global_stats(),
-        })
+        return jsonify(
+            {
+                "projects": db.get_projects(),
+                "stats": db.get_project_global_stats(),
+            }
+        )
 
     @app.route("/api/projects/<encoded_name>")
     def api_project(encoded_name: str):
@@ -768,7 +771,11 @@ def create_app(
 
     @app.route("/settings")
     def settings_view():
-        from .config_readers.claude_config import _default_claude_desktop_dir, _default_claude_home, _default_global_config_path
+        from .config_readers.claude_config import (
+            _default_claude_desktop_dir,
+            _default_claude_home,
+            _default_global_config_path,
+        )
         from .config_readers.copilot_config import _default_copilot_home
         from .config_readers.vscode_config import _default_vscode_user_dir
 

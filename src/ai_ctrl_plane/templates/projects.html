@@ -104,8 +104,8 @@
       <div class="stat-label">Memory Files</div>
     </div>
     <div class="stat-card orange">
-      <div class="stat-value">${{ stats.aggregate_cost }}</div>
-      <div class="stat-label">Total Cost</div>
+      <div class="stat-value">${{ "%.2f"|format(stats.aggregate_cost) }}</div>
+      <div class="stat-label">Est. Cost</div>
     </div>
     <div class="stat-card blue">
       <div class="stat-value">{{ stats.total_sessions }}</div>
@@ -129,8 +129,8 @@
           <div class="project-stat-label">Memory</div>
         </div>
         <div class="project-stat">
-          <div class="project-stat-value">${{ "%.2f"|format(p.last_cost or 0) }}</div>
-          <div class="project-stat-label">Cost</div>
+          <div class="project-stat-value">${{ "%.2f"|format(p.estimated_cost or 0) }}</div>
+          <div class="project-stat-label">Est. Cost</div>
         </div>
       </div>
       <div class="project-badges">

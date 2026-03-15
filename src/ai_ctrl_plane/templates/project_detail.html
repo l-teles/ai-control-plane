@@ -114,19 +114,19 @@
         <span class="info-value">{{ memory_files|length }}</span>
       </div>
       <div class="info-row">
-        <span class="info-label">Last Cost</span>
-        <span class="info-value">${{ "%.2f"|format(project.last_cost or 0) }}</span>
+        <span class="info-label">Est. Cost</span>
+        <span class="info-value">${{ "%.2f"|format(project_cost.estimated_cost) }}</span>
       </div>
-      {% if project.last_input_tokens %}
+      {% if project_cost.input_tokens %}
       <div class="info-row">
-        <span class="info-label">Last Input Tokens</span>
-        <span class="info-value">{{ "{:,}".format(project.last_input_tokens) }}</span>
+        <span class="info-label">Input Tokens</span>
+        <span class="info-value">{{ "{:,}".format(project_cost.input_tokens) }}</span>
       </div>
       {% endif %}
-      {% if project.last_output_tokens %}
+      {% if project_cost.output_tokens %}
       <div class="info-row">
-        <span class="info-label">Last Output Tokens</span>
-        <span class="info-value">{{ "{:,}".format(project.last_output_tokens) }}</span>
+        <span class="info-label">Output Tokens</span>
+        <span class="info-value">{{ "{:,}".format(project_cost.output_tokens) }}</span>
       </div>
       {% endif %}
       <div class="info-row">

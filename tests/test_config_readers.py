@@ -405,13 +405,7 @@ def test_read_claude_projects_masks_secrets(tmp_path):
         json.dumps(
             {
                 "projects": {
-                    "/proj": {
-                        "mcpServers": {
-                            "my-srv": {
-                                "env": {"TOKEN": "ghp_abcdefghijklmnopqrstuvwxyz1234567890"}
-                            }
-                        }
-                    }
+                    "/proj": {"mcpServers": {"my-srv": {"env": {"TOKEN": "ghp_abcdefghijklmnopqrstuvwxyz1234567890"}}}}
                 }
             }
         )

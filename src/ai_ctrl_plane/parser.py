@@ -59,9 +59,7 @@ def parse_events(session_dir: Path) -> list[dict]:
 
 def parse_snapshots(session_dir: Path) -> dict:
     """Read the rewind-snapshots/index.json file."""
-    content = _safe_open(
-        session_dir, "rewind-snapshots", "index.json"
-    )
+    content = _safe_open(session_dir, "rewind-snapshots", "index.json")
     if content is None:
         return {}
     return json.loads(content)

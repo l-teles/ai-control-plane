@@ -197,7 +197,9 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         return result
 
     # Global config (~/.claude.json)
-    global_path = (claude_home / ".claude.json") if claude_home else _default_global_config_path()
+    global_path = home / ".claude.json"
+    if claude_home and not global_path.is_file():
+        global_path = _default_global_config_path()
     global_cfg = safe_read_json(global_path) or {}
     result["main_settings"] = mask_dict(
         {
@@ -302,7 +304,12 @@ def read_claude_projects(claude_home: Path | None = None) -> dict:
         return empty
 
     # Read .claude.json for per-project metadata
-    global_path = (home / ".claude.json") if claude_home else _default_global_config_path()
+    # When claude_home is passed (e.g. from build_cache), try inside that dir
+    # first (works for tests), then fall back to the real default location
+    # (~/.claude.json lives at the user home root, not inside ~/.claude/).
+    global_path = home / ".claude.json"
+    if claude_home and not global_path.is_file():
+        global_path = _default_global_config_path()
     global_cfg = safe_read_json(global_path) or {}
     project_meta: dict = global_cfg.get("projects", {})
 
@@ -409,11 +416,13 @@ def _default_claude_desktop_dir() -> Path:
 
 
 # Keys to exclude entirely from Claude Desktop config.json (sensitive)
-_DESKTOP_EXCLUDED_KEYS = frozenset({
-    "oauthAccount",
-    "oauth:tokenCache",
-    "lastSyncedAccountCacheLifetimeMs",
-})
+_DESKTOP_EXCLUDED_KEYS = frozenset(
+    {
+        "oauthAccount",
+        "oauth:tokenCache",
+        "lastSyncedAccountCacheLifetimeMs",
+    }
+)
 
 
 def read_claude_desktop_config(desktop_dir: Path | None = None) -> dict:

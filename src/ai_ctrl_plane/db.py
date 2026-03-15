@@ -13,7 +13,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-_SCHEMA_VERSION = "1"
+_SCHEMA_VERSION = "2"
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS cache_meta (
@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     summary  TEXT,
     created  TEXT,
     cwd      TEXT,
+    model    TEXT,
+    input_tokens   INTEGER DEFAULT 0,
+    output_tokens  INTEGER DEFAULT 0,
+    cache_read_tokens    INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    estimated_cost REAL DEFAULT 0,
     raw_json TEXT
 );
 
@@ -65,6 +71,7 @@ CREATE TABLE IF NOT EXISTS tool_configs (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -98,6 +105,7 @@ def default_cache_dir() -> Path:
 # Cache manager
 # ---------------------------------------------------------------------------
 
+
 class CacheDB:
     """Thread-safe SQLite cache manager."""
 
@@ -110,6 +118,18 @@ class CacheDB:
 
     def _init_schema(self) -> None:
         with self._lock:
+            # Check if schema version changed — drop and recreate if so
+            existing_version = ""
+            try:
+                row = self._conn.execute("SELECT value FROM cache_meta WHERE key = 'version'").fetchone()
+                if row:
+                    existing_version = row[0]
+            except sqlite3.OperationalError:
+                pass  # cache_meta doesn't exist yet
+            if existing_version and existing_version != _SCHEMA_VERSION:
+                # Schema changed — drop all tables and recreate
+                for tbl in ("sessions", "projects", "project_memory", "tool_configs", "cache_meta"):
+                    self._conn.execute(f"DROP TABLE IF EXISTS {tbl}")  # noqa: S608
             self._conn.executescript(_DDL)
             self._conn.commit()
 
@@ -119,9 +139,7 @@ class CacheDB:
     # -- Meta helpers -------------------------------------------------------
 
     def get_meta(self, key: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT value FROM cache_meta WHERE key = ?", (key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM cache_meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
     def set_meta(self, key: str, value: str) -> None:
@@ -162,8 +180,11 @@ class CacheDB:
     def insert_sessions(self, sessions: list[dict]) -> None:
         with self._lock:
             self._conn.executemany(
-                "INSERT OR REPLACE INTO sessions (id, source, uuid, summary, created, cwd, raw_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO sessions "
+                "(id, source, uuid, summary, created, cwd, model, "
+                "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, "
+                "estimated_cost, raw_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         f"{s['source']}:{s['id']}",
@@ -172,6 +193,12 @@ class CacheDB:
                         s.get("summary", ""),
                         s.get("created_at", ""),
                         s.get("cwd", ""),
+                        s.get("model", ""),
+                        s.get("input_tokens", 0),
+                        s.get("output_tokens", 0),
+                        s.get("cache_read_tokens", 0),
+                        s.get("cache_creation_tokens", 0),
+                        s.get("estimated_cost", 0),
                         json.dumps(s, default=str),
                     )
                     for s in sessions
@@ -210,8 +237,7 @@ class CacheDB:
     def insert_project_memory(self, items: list[dict]) -> None:
         with self._lock:
             self._conn.executemany(
-                "INSERT INTO project_memory (project_encoded_name, filename, content) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO project_memory (project_encoded_name, filename, content) VALUES (?, ?, ?)",
                 [(m["project_encoded_name"], m["filename"], m["content"]) for m in items],
             )
             self._conn.commit()
@@ -219,8 +245,7 @@ class CacheDB:
     def insert_tool_config(self, tool: str, config: dict) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT OR REPLACE INTO tool_configs (tool, config_json, updated_at) "
-                "VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO tool_configs (tool, config_json, updated_at) VALUES (?, ?, ?)",
                 (tool, json.dumps(config, default=str), _now_iso()),
             )
             self._conn.commit()
@@ -228,9 +253,7 @@ class CacheDB:
     # -- Read helpers -------------------------------------------------------
 
     def get_sessions(self) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT raw_json FROM sessions ORDER BY created DESC"
-        ).fetchall()
+        rows = self._conn.execute("SELECT raw_json FROM sessions ORDER BY created DESC").fetchall()
         return [json.loads(r["raw_json"]) for r in rows]
 
     def get_session_index(self) -> dict[str, dict]:
@@ -240,8 +263,12 @@ class CacheDB:
     def get_projects(self) -> list[dict]:
         rows = self._conn.execute(
             "SELECT *, "
-            "(SELECT COUNT(*) FROM project_memory pm WHERE pm.project_encoded_name = p.encoded_name) "
-            "AS memory_count "
+            "(SELECT COUNT(*) FROM project_memory pm "
+            "WHERE pm.project_encoded_name = p.encoded_name) AS memory_count, "
+            "(SELECT COALESCE(SUM(s.estimated_cost), 0) FROM sessions s "
+            "WHERE p.path != '' AND s.cwd LIKE p.path || '%') AS estimated_cost, "
+            "(SELECT COUNT(*) FROM sessions s "
+            "WHERE p.path != '' AND s.cwd LIKE p.path || '%') AS real_session_count "
             "FROM projects p ORDER BY name"
         ).fetchall()
         result = []
@@ -250,13 +277,16 @@ class CacheDB:
             d["metadata"] = json.loads(d.pop("metadata_json", "{}"))
             d["has_trust_accepted"] = bool(d.get("has_trust_accepted"))
             d["memory_file_count"] = d.pop("memory_count", 0)
+            d["estimated_cost"] = d.get("estimated_cost", 0)
+            # Use actual session count from sessions table when path is available
+            real = d.pop("real_session_count", 0)
+            if real:
+                d["session_count"] = real
             result.append(d)
         return result
 
     def get_project(self, encoded_name: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT * FROM projects WHERE encoded_name = ?", (encoded_name,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM projects WHERE encoded_name = ?", (encoded_name,)).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -266,16 +296,13 @@ class CacheDB:
 
     def get_project_memory(self, encoded_name: str) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT filename, content FROM project_memory "
-            "WHERE project_encoded_name = ? ORDER BY filename",
+            "SELECT filename, content FROM project_memory WHERE project_encoded_name = ? ORDER BY filename",
             (encoded_name,),
         ).fetchall()
         return [dict(r) for r in rows]
 
     def get_tool_config(self, tool: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT config_json FROM tool_configs WHERE tool = ?", (tool,)
-        ).fetchone()
+        row = self._conn.execute("SELECT config_json FROM tool_configs WHERE tool = ?", (tool,)).fetchone()
         return json.loads(row["config_json"]) if row else None
 
     def get_all_tool_configs(self) -> dict[str, dict]:
@@ -283,19 +310,18 @@ class CacheDB:
         return {r["tool"]: json.loads(r["config_json"]) for r in rows}
 
     def get_project_global_stats(self) -> dict:
-        row = self._conn.execute(
-            "SELECT COUNT(*) AS total_projects, "
-            "COALESCE(SUM(session_count), 0) AS total_sessions, "
-            "COALESCE(SUM(last_cost), 0) AS aggregate_cost "
-            "FROM projects"
+        row = self._conn.execute("SELECT COUNT(*) AS total_projects FROM projects").fetchone()
+        mem_row = self._conn.execute("SELECT COUNT(*) AS total_memory_files FROM project_memory").fetchone()
+        cost_row = self._conn.execute(
+            "SELECT COALESCE(SUM(estimated_cost), 0) AS aggregate_cost FROM sessions"
         ).fetchone()
-        mem_row = self._conn.execute(
-            "SELECT COUNT(*) AS total_memory_files FROM project_memory"
+        session_row = self._conn.execute(
+            "SELECT COUNT(*) AS total_sessions FROM sessions WHERE source = 'claude'"
         ).fetchone()
         return {
             "total_projects": row["total_projects"],
-            "total_sessions": row["total_sessions"],
-            "aggregate_cost": round(row["aggregate_cost"], 2),
+            "total_sessions": session_row["total_sessions"],
+            "aggregate_cost": round(cost_row["aggregate_cost"], 2),
             "total_memory_files": mem_row["total_memory_files"],
         }
 
@@ -307,10 +333,34 @@ class CacheDB:
         ).fetchall()
         return [json.loads(r["raw_json"]) for r in rows]
 
+    def get_project_cost(self, project_path: str) -> dict:
+        """Get aggregated token usage and cost for sessions in a project."""
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(input_tokens), 0) AS input_tokens, "
+            "COALESCE(SUM(output_tokens), 0) AS output_tokens, "
+            "COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, "
+            "COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens, "
+            "COALESCE(SUM(estimated_cost), 0) AS estimated_cost "
+            "FROM sessions WHERE cwd LIKE ?",
+            (project_path + "%",),
+        ).fetchone()
+        return (
+            dict(row)
+            if row
+            else {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "estimated_cost": 0,
+            }
+        )
+
 
 # ---------------------------------------------------------------------------
 # Background cache builder
 # ---------------------------------------------------------------------------
+
 
 def build_cache(
     cache: CacheDB,
