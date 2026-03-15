@@ -56,7 +56,7 @@ def main():
 
     # Start the Flask app
     proc = subprocess.Popen(
-        [sys.executable, "-m", "ai_log_viewer", "--port", "5099"],
+        [sys.executable, "-m", "ai_control_plane", "--port", "5099"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

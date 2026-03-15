@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 
-from ai_log_viewer.config_readers._common import mask_dict, mask_secret, mask_value
-from ai_log_viewer.config_readers.claude_config import read_claude_config
-from ai_log_viewer.config_readers.copilot_config import read_copilot_config
-from ai_log_viewer.config_readers.vscode_config import read_vscode_config
+from ai_control_plane.config_readers._common import mask_dict, mask_secret, mask_value
+from ai_control_plane.config_readers.claude_config import read_claude_config
+from ai_control_plane.config_readers.copilot_config import read_copilot_config
+from ai_control_plane.config_readers.vscode_config import read_vscode_config
 
 # ---------------------------------------------------------------------------
 # mask_secret / mask_value tests
@@ -238,7 +238,7 @@ def test_vscode_config_missing_dir(tmp_path):
 
 def test_read_skills_basic(tmp_path):
     """read_skills should parse SKILL.md with YAML frontmatter."""
-    from ai_log_viewer.config_readers._common import read_skills
+    from ai_control_plane.config_readers._common import read_skills
 
     skills_dir = tmp_path / "skills"
     skill = skills_dir / "test-skill"
@@ -266,7 +266,7 @@ def test_read_skills_basic(tmp_path):
 
 def test_read_skills_empty_dir(tmp_path):
     """read_skills returns empty list for nonexistent dir."""
-    from ai_log_viewer.config_readers._common import read_skills
+    from ai_control_plane.config_readers._common import read_skills
 
     result = read_skills(tmp_path / "nonexistent")
     assert result == []
@@ -274,7 +274,7 @@ def test_read_skills_empty_dir(tmp_path):
 
 def test_read_skills_no_metadata(tmp_path):
     """read_skills works with minimal frontmatter (no metadata block)."""
-    from ai_log_viewer.config_readers._common import read_skills
+    from ai_control_plane.config_readers._common import read_skills
 
     skills_dir = tmp_path / "skills"
     skill = skills_dir / "simple"

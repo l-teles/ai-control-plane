@@ -33,7 +33,7 @@ coverage.xml
 
 # Build artifacts
 *.so
-src/ai_log_viewer/_version.py
+src/ai_control_plane/_version.py
 
 # Environment / secrets
 .env

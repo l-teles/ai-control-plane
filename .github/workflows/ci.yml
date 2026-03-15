@@ -34,4 +34,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest --cov=ai_log_viewer --cov-report=term-missing
+      - run: pytest --cov=ai_control_plane --cov-report=term-missing

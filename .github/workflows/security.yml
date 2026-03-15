@@ -24,7 +24,7 @@ jobs:
       - name: Install bandit
         run: pip install bandit
       - name: Run bandit
-        run: bandit -q -lll -r src/ai_log_viewer/
+        run: bandit -q -lll -r src/ai_control_plane/
 
   pip-audit:
     name: pip-audit (dependency vulnerabilities)

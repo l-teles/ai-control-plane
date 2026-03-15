@@ -1,4 +1,4 @@
-"""Entry point: ``python -m ai_log_viewer [LOG_DIR]``."""
+"""Entry point: ``ai-control-plane`` or ``python -m ai_control_plane``."""
 
 from __future__ import annotations
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ai_log_viewer.app import create_app
+from ai_control_plane.app import create_app
 
 
 def _client(tmp_path):
@@ -188,16 +188,16 @@ def test_skills_deduplication(tmp_path):
 
     from unittest.mock import patch
 
-    from ai_log_viewer.config_readers.claude_config import read_claude_config
-    from ai_log_viewer.config_readers.copilot_config import read_copilot_config
+    from ai_control_plane.config_readers.claude_config import read_claude_config
+    from ai_control_plane.config_readers.copilot_config import read_copilot_config
 
     with (
         patch(
-            "ai_log_viewer.config_readers.claude_config._default_claude_home",
+            "ai_control_plane.config_readers.claude_config._default_claude_home",
             return_value=claude_home,
         ),
         patch(
-            "ai_log_viewer.config_readers.copilot_config._default_copilot_home",
+            "ai_control_plane.config_readers.copilot_config._default_copilot_home",
             return_value=copilot_home,
         ),
     ):
@@ -230,7 +230,7 @@ def test_skill_detail_renders_body(tmp_path):
     app.config["TESTING"] = True
 
     with patch(
-        "ai_log_viewer.config_readers.claude_config._default_claude_home",
+        "ai_control_plane.config_readers.claude_config._default_claude_home",
         return_value=claude_home,
     ):
         with app.test_client() as client:

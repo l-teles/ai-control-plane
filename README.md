@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/logo.svg" alt="AI Control Plane logo" width="80">
+  <img src="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/logo.svg" alt="AI Control Plane logo" width="80">
 </p>
 
 <h1 align="center">AI Control Plane</h1>
@@ -25,20 +25,20 @@ those raw files into a readable, interactive dashboard so you can review session
   </tr>
   <tr>
     <td>
-      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
+      <a href="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_home.png">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_home.png">
-          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="400">
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_home.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_light_home.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="400">
         </picture>
       </a>
     </td>
     <td>
-      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
+      <a href="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_session.png">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_session.png">
-          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="400">
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_session.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_light_session.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="400">
         </picture>
       </a>
     </td>
@@ -49,20 +49,20 @@ those raw files into a readable, interactive dashboard so you can review session
   </tr>
   <tr>
     <td>
-      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_tools.png">
+      <a href="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_tools.png">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_tools.png">
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_tools.png">
-          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_tools.png" alt="Tool configuration page" width="400">
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_tools.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_light_tools.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_tools.png" alt="Tool configuration page" width="400">
         </picture>
       </a>
     </td>
     <td>
-      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_agents.png">
+      <a href="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_agents.png">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_agents.png">
-          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_agents.png">
-          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_agents.png" alt="Agents page" width="400">
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_agents.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_light_agents.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-control-plane/main/assets/screenshot_dark_agents.png" alt="Agents page" width="400">
         </picture>
       </a>
     </td>
@@ -130,8 +130,8 @@ those raw files into a readable, interactive dashboard so you can review session
 ### Install from source
 
 ```bash
-git clone https://github.com/l-teles/ai-log-viewer.git
-cd ai-log-viewer
+git clone https://github.com/l-teles/ai-control-plane.git
+cd ai-control-plane
 pip install .
 ```
 
@@ -151,7 +151,7 @@ ai-control-plane
 ai-control-plane --copilot-dir ~/.copilot/session-state/ --claude-dir ~/.claude/projects/ --vscode-dir "~/Library/Application Support/Code/User/"
 
 # Or use the module directly
-python -m ai_log_viewer
+python -m ai_control_plane
 ```
 
 Then open **http://127.0.0.1:5000** in your browser.
