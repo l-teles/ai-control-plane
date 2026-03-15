@@ -1,4 +1,4 @@
-"""Entry point: ``ai-control-plane`` or ``python -m ai_control_plane``."""
+"""Entry point: ``ai-ctrl-plane`` or ``python -m ai_ctrl_plane``."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from .vscode_parser import discover_sessions as vscode_discover
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="ai-control-plane",
+        prog="ai-ctrl-plane",
         description="Browse AI agent session logs (GitHub Copilot, Claude Code, and VS Code Chat) in a local web UI.",
     )
     parser.add_argument(

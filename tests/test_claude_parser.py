@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_control_plane.claude_parser import (
+from ai_ctrl_plane.claude_parser import (
     build_conversation,
     compute_stats,
     discover_sessions,

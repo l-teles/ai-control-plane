@@ -131,27 +131,27 @@ those raw files into a readable, interactive dashboard so you can review session
 
 ```bash
 git clone https://github.com/l-teles/ai-control-plane.git
-cd ai-control-plane
+cd ai-ctrl-plane
 pip install .
 ```
 
 ### Install from PyPI
 
 ```bash
-pip install ai-control-plane
+pip install ai-ctrl-plane
 ```
 
 ### Run
 
 ```bash
 # Auto-detect default directories for all sources
-ai-control-plane
+ai-ctrl-plane
 
 # Specify directories explicitly
-ai-control-plane --copilot-dir ~/.copilot/session-state/ --claude-dir ~/.claude/projects/ --vscode-dir "~/Library/Application Support/Code/User/"
+ai-ctrl-plane --copilot-dir ~/.copilot/session-state/ --claude-dir ~/.claude/projects/ --vscode-dir "~/Library/Application Support/Code/User/"
 
 # Or use the module directly
-python -m ai_control_plane
+python -m ai_ctrl_plane
 ```
 
 Then open **http://127.0.0.1:5000** in your browser.
@@ -167,7 +167,7 @@ Then open **http://127.0.0.1:5000** in your browser.
 ### Options
 
 ```
-usage: ai-control-plane [-h] [--copilot-dir DIR] [--claude-dir DIR]
+usage: ai-ctrl-plane [-h] [--copilot-dir DIR] [--claude-dir DIR]
                              [--vscode-dir DIR] [-p PORT] [--host HOST]
                           [--debug] [-V] [log_dir]
 

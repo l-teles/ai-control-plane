@@ -57,7 +57,7 @@ def main():
 
     # Start the Flask app
     proc = subprocess.Popen(  # noqa: S603
-        [sys.executable, "-m", "ai_control_plane", "--port", "5099"],
+        [sys.executable, "-m", "ai_ctrl_plane", "--port", "5099"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_control_plane.app import create_app
+from ai_ctrl_plane.app import create_app
 
 
 @pytest.fixture()

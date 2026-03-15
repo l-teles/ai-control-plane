@@ -26,7 +26,7 @@ jobs:
       - name: Install bandit
         run: pip install -r .github/requirements-security.txt
       - name: Run bandit
-        run: bandit -q -lll -r src/ai_control_plane/
+        run: bandit -q -lll -r src/ai_ctrl_plane/
 
   pip-audit:
     name: pip-audit (dependency vulnerabilities)
