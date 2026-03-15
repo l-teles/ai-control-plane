@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -13,47 +14,57 @@ import yaml
 def _default_copilot_dir() -> Path:
     """Return the platform-default Copilot session-state directory."""
     if sys.platform == "win32":
-        import os
-
         localappdata = os.environ.get("LOCALAPPDATA", "")
         if localappdata:
             return Path(localappdata) / "github-copilot" / "session-state"
     return Path.home() / ".copilot" / "session-state"
 
 
+def _safe_open(base_dir: Path, *parts: str) -> str | None:
+    """Read a file under base_dir, verifying it doesn't escape the directory."""
+    target = base_dir.joinpath(*parts)
+    real_base = os.path.realpath(base_dir)
+    real_target = os.path.realpath(target)
+    if not real_target.startswith(real_base):
+        return None
+    if not os.path.isfile(real_target):
+        return None
+    with open(real_target) as f:  # noqa: PTH123
+        return f.read()
+
+
 def parse_workspace(session_dir: Path) -> dict:
     """Read workspace.yaml metadata for a session."""
-    ws_file = session_dir / "workspace.yaml"
-    if not ws_file.exists():
+    content = _safe_open(session_dir, "workspace.yaml")
+    if content is None:
         return {}
-    with open(ws_file) as f:
-        return yaml.safe_load(f) or {}
+    return yaml.safe_load(content) or {}
 
 
 def parse_events(session_dir: Path) -> list[dict]:
     """Read the events.jsonl file and return a list of parsed event dicts."""
-    ev_file = session_dir / "events.jsonl"
-    if not ev_file.exists():
+    content = _safe_open(session_dir, "events.jsonl")
+    if content is None:
         return []
     events: list[dict] = []
-    with open(ev_file) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    events.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+    for line in content.splitlines():
+        line = line.strip()
+        if line:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
     return events
 
 
 def parse_snapshots(session_dir: Path) -> dict:
     """Read the rewind-snapshots/index.json file."""
-    idx = session_dir / "rewind-snapshots" / "index.json"
-    if not idx.exists():
+    content = _safe_open(
+        session_dir, "rewind-snapshots", "index.json"
+    )
+    if content is None:
         return {}
-    with open(idx) as f:
-        return json.loads(f.read())
+    return json.loads(content)
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import markdown
 import nh3
 from flask import Flask, Response, abort, jsonify, render_template, request
 from markupsafe import Markup
+from werkzeug.utils import secure_filename
 
 from . import claude_parser, vscode_parser
 from .config_readers import read_all_configs
@@ -63,7 +64,10 @@ def _validate_backup_hash(backup_hash: str) -> None:
 
 def _safe_copilot_dir(base: Path, session_id: str) -> Path:
     """Build and validate a Copilot session path, preventing traversal."""
-    resolved = (base / session_id).resolve()
+    safe_name = secure_filename(session_id)
+    if not safe_name or safe_name != session_id:
+        abort(400)
+    resolved = (base / safe_name).resolve()
     if not str(resolved).startswith(str(base.resolve())):
         abort(403)
     return resolved
@@ -630,7 +634,12 @@ def create_app(
         _validate_session_id(session_id)
         _validate_backup_hash(backup_hash)
         session_dir = _safe_copilot_dir(copilot_path, session_id)
-        backup_file = session_dir / "rewind-snapshots" / "backups" / backup_hash
+        safe_hash = secure_filename(backup_hash)
+        if not safe_hash or safe_hash != backup_hash:
+            abort(400)
+        backup_file = (
+            session_dir / "rewind-snapshots" / "backups" / safe_hash
+        )
         resolved = backup_file.resolve()
         if not str(resolved).startswith(str(copilot_path.resolve())):
             abort(403)

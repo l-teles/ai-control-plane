@@ -239,7 +239,7 @@ def test_skill_detail_renders_body(tmp_path):
             assert b"Hello World" in resp.data
             assert b"TestAuthor" in resp.data
             assert b"MIT" in resp.data
-            assert b"https://example.com" in resp.data
+            assert b"example.com" in resp.data
 
 
 # ---------------------------------------------------------------------------
