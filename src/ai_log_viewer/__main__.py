@@ -42,7 +42,8 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Directory containing VS Code Chat session logs (default: {_default_vscode_dir()})",
     )
     parser.add_argument(
-        "-p", "--port",
+        "-p",
+        "--port",
         type=int,
         default=5000,
         help="Port to listen on (default: 5000)",
@@ -59,7 +60,8 @@ def main(argv: list[str] | None = None) -> None:
         help="Run in Flask debug mode (do NOT use in production)",
     )
     parser.add_argument(
-        "-V", "--version",
+        "-V",
+        "--version",
         action="version",
         version=f"%(prog)s {__version__}",
     )
@@ -88,7 +90,7 @@ def main(argv: list[str] | None = None) -> None:
     claude_sessions = claude_discover(claude_path) if claude_path.is_dir() else []
     vscode_sessions = vscode_discover(vscode_path) if vscode_path.is_dir() else []
 
-    print(f"AI Session Log Viewer v{__version__}")
+    print(f"AI Control Plane v{__version__}")
     print()
     print(f"Copilot:     {copilot_path} ({len(copilot_sessions)} sessions)")
     for s in copilot_sessions[:5]:

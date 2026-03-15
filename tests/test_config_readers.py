@@ -122,9 +122,7 @@ def test_claude_config_reads_all(tmp_path):
     )
 
     # Settings
-    (claude_home / "settings.json").write_text(
-        json.dumps({"env": {"FOO": "bar"}, "telemetry": False})
-    )
+    (claude_home / "settings.json").write_text(json.dumps({"env": {"FOO": "bar"}, "telemetry": False}))
 
     result = read_claude_config(claude_home)
     assert result["installed"] is True
@@ -165,9 +163,7 @@ def test_copilot_config_reads_all(tmp_path):
         )
     )
 
-    (copilot_home / "command-history-state.json").write_text(
-        json.dumps({"commands": ["help", "explain", "fix"]})
-    )
+    (copilot_home / "command-history-state.json").write_text(json.dumps({"commands": ["help", "explain", "fix"]}))
 
     session_dir = copilot_home / "session-state"
     session_dir.mkdir()
@@ -233,3 +229,115 @@ def test_vscode_config_missing_dir(tmp_path):
     result = read_vscode_config(tmp_path / "nonexistent")
     assert result["installed"] is False
     assert result["mcp_servers"] == []
+
+
+# ---------------------------------------------------------------------------
+# Skills reading tests
+# ---------------------------------------------------------------------------
+
+
+def test_read_skills_basic(tmp_path):
+    """read_skills should parse SKILL.md with YAML frontmatter."""
+    from ai_log_viewer.config_readers._common import read_skills
+
+    skills_dir = tmp_path / "skills"
+    skill = skills_dir / "test-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: test-skill\ndescription: A test skill\n"
+        "license: MIT\nmetadata:\n  author: TestCo\n  version: '2.0'\n"
+        "  homepage: https://example.com\ntools: Read, Grep\n---\n"
+        "# Hello\n\nBody content.\n"
+    )
+
+    result = read_skills(skills_dir)
+    assert len(result) == 1
+    s = result[0]
+    assert s["name"] == "test-skill"
+    assert s["description"] == "A test skill"
+    assert s["author"] == "TestCo"
+    assert s["version"] == "2.0"
+    assert s["license"] == "MIT"
+    assert s["homepage"] == "https://example.com"
+    assert s["tools"] == "Read, Grep"
+    assert "Hello" in s["body"]
+    assert "Body content" in s["body"]
+
+
+def test_read_skills_empty_dir(tmp_path):
+    """read_skills returns empty list for nonexistent dir."""
+    from ai_log_viewer.config_readers._common import read_skills
+
+    result = read_skills(tmp_path / "nonexistent")
+    assert result == []
+
+
+def test_read_skills_no_metadata(tmp_path):
+    """read_skills works with minimal frontmatter (no metadata block)."""
+    from ai_log_viewer.config_readers._common import read_skills
+
+    skills_dir = tmp_path / "skills"
+    skill = skills_dir / "simple"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: simple\ndescription: Simple skill\n---\nJust a body.\n")
+
+    result = read_skills(skills_dir)
+    assert len(result) == 1
+    assert result[0]["name"] == "simple"
+    assert result[0]["author"] == ""
+    assert result[0]["version"] == ""
+    assert result[0]["homepage"] == ""
+    assert "Just a body" in result[0]["body"]
+
+
+def test_claude_config_reads_skills(tmp_path):
+    """Claude config should read skills from ~/.claude/skills/."""
+    claude_home = tmp_path / ".claude"
+    claude_home.mkdir()
+    skill_dir = claude_home / "skills" / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: Test\n---\nBody\n")
+
+    result = read_claude_config(claude_home)
+    assert len(result["skills"]) == 1
+    assert result["skills"][0]["name"] == "my-skill"
+
+
+def test_claude_config_reads_plugin_skills(tmp_path):
+    """Claude config should also read skills from plugin directories."""
+    claude_home = tmp_path / ".claude"
+    claude_home.mkdir()
+    plugin_skill = (
+        claude_home / "plugins" / "marketplaces" / "official" / "plugins" / "my-plugin" / "skills" / "plugin-skill"
+    )
+    plugin_skill.mkdir(parents=True)
+    (plugin_skill / "SKILL.md").write_text("---\nname: plugin-skill\ndescription: From plugin\n---\nPlugin body\n")
+
+    result = read_claude_config(claude_home)
+    assert any(s["name"] == "plugin-skill" for s in result["skills"])
+
+
+def test_copilot_config_reads_skills(tmp_path):
+    """Copilot config should read skills from ~/.copilot/skills/."""
+    copilot_home = tmp_path / ".copilot"
+    copilot_home.mkdir()
+    skill_dir = copilot_home / "skills" / "cop-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: cop-skill\ndescription: Copilot skill\n---\nBody\n")
+
+    result = read_copilot_config(copilot_home)
+    assert len(result["skills"]) == 1
+    assert result["skills"][0]["name"] == "cop-skill"
+
+
+def test_vscode_config_reads_skills(tmp_path):
+    """VS Code config should read skills from globalStorage."""
+    user_dir = tmp_path / "Code" / "User"
+    user_dir.mkdir(parents=True)
+    skill_dir = user_dir / "globalStorage" / "github.copilot-chat" / "skills" / "vs-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: vs-skill\ndescription: VS Code skill\n---\nBody\n")
+
+    result = read_vscode_config(user_dir)
+    assert len(result["skills"]) == 1
+    assert result["skills"][0]["name"] == "vs-skill"

@@ -1,104 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');</script>
-<title>{{ ws.get('summary', session_id) }} — AI Session Log Viewer</title>
+{% extends "base.html" %}
+{% set active_page = "sessions" %}
+
+{% block title %}{{ ws.get('summary', session_id) }} - AI Control Plane{% endblock %}
+
+{% block head_extra %}
 <style>
-/* Dark theme (default) */
-:root, [data-theme="dark"] {
-  --bg: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-secondary: #8b949e;
-  --accent: #58a6ff;
-  --accent-subtle: #1f6feb33;
-  --green: #3fb950;
-  --green-subtle: #3fb95022;
-  --orange: #d29922;
-  --orange-subtle: #d2992222;
-  --red: #f85149;
-  --red-subtle: #f8514922;
-  --purple: #bc8cff;
-  --purple-subtle: #bc8cff22;
-  --cyan: #39d353;
-  --radius: 8px;
-  --shadow: 0 3px 12px rgba(0,0,0,0.4);
-}
-/* Light theme */
-[data-theme="light"] {
-  --bg: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #eaeef2;
-  --border: #d0d7de;
-  --text: #1f2328;
-  --text-secondary: #656d76;
-  --accent: #0969da;
-  --accent-subtle: #0969da1a;
-  --green: #1a7f37;
-  --green-subtle: #1a7f371a;
-  --orange: #9a6700;
-  --orange-subtle: #9a67001a;
-  --red: #cf222e;
-  --red-subtle: #cf222e1a;
-  --purple: #8250df;
-  --purple-subtle: #8250df1a;
-  --cyan: #1a7f37;
-  --radius: 8px;
-  --shadow: 0 3px 12px rgba(0,0,0,0.12);
-}
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.6;
-  min-height: 100vh;
-}
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+/* ── Session-specific styles ────────────────────────────────────────── */
+/* Hide the default page-content padding, this page has its own layout */
+.page-content { padding: 0; }
 
 /* Layout */
-.top-bar {
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 0;
-  position: sticky; top: 0; z-index: 100;
-}
-.top-bar .inner {
-  max-width: 1200px; margin: 0 auto; padding: 0 20px;
-  display: flex; align-items: center; gap: 16px;
-}
-.top-bar .logo {
-  width: 32px; height: 32px;
-  background: linear-gradient(135deg, var(--accent), var(--purple));
-  border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: bold; color: #fff;
-  flex-shrink: 0;
-}
-.top-bar h1 { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.back-link { font-size: 13px; flex-shrink: 0; }
-.theme-toggle {
-  margin-left: auto;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 4px 10px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
-
-.page { max-width: 1200px; margin: 0 auto; padding: 24px 20px; display: flex; gap: 24px; }
-.sidebar { width: 300px; flex-shrink: 0; position: sticky; top: 76px; align-self: flex-start; max-height: calc(100vh - 100px); overflow-y: auto; }
+.session-page { max-width: 1200px; margin: 0 auto; padding: 24px 20px; display: flex; gap: 24px; }
+.sidebar { width: 320px; flex-shrink: 0; position: sticky; top: 100px; align-self: flex-start; max-height: calc(100vh - 120px); overflow-y: auto; }
 .main { flex: 1; min-width: 0; }
 
 /* Stats panel */
@@ -108,8 +21,14 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 16px;
+  overflow: hidden;
 }
-.stats-panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 12px; }
+.stats-panel h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);
+  margin: -16px -16px 12px; padding: 10px 16px;
+  background: var(--bg-tertiary); border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stat-item {
   background: var(--bg-tertiary);
@@ -128,7 +47,7 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
 }
 .tool-list li:last-child { border-bottom: none; }
-.tool-name { font-family: "SFMono-Regular", Consolas, monospace; color: var(--purple); }
+.tool-name { font-family: var(--font-mono); color: var(--purple); }
 .tool-count { color: var(--text-secondary); font-weight: 600; }
 .tool-bar-container { flex: 1; margin: 0 12px; height: 4px; background: var(--bg-tertiary); border-radius: 2px; }
 .tool-bar { height: 100%; background: var(--purple); border-radius: 2px; }
@@ -140,11 +59,32 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 16px;
+  overflow: hidden;
 }
-.info-panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 10px; }
-.info-row { font-size: 13px; margin-bottom: 6px; display: flex; gap: 8px; }
-.info-key { color: var(--text-secondary); min-width: 70px; flex-shrink: 0; }
-.info-val { font-family: "SFMono-Regular", Consolas, monospace; word-break: break-all; }
+.info-panel h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);
+  margin: -16px -16px 12px; padding: 10px 16px;
+  background: var(--bg-tertiary); border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.info-row {
+  font-size: 13px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.info-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.info-key { color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
+.info-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.4;
+}
 
 /* Filter buttons */
 .filters {
@@ -160,6 +100,7 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
+  font-family: inherit;
 }
 .filter-btn:hover, .filter-btn.active {
   background: var(--accent-subtle);
@@ -174,12 +115,19 @@ a:hover { text-decoration: underline; }
   position: absolute;
   left: 20px; top: 0; bottom: 0;
   width: 2px;
-  background: var(--border);
+  background: linear-gradient(to bottom, var(--border), color-mix(in srgb, var(--border) 40%, transparent));
 }
 .event {
   position: relative;
   margin-bottom: 8px;
   padding-left: 48px;
+  transition: opacity var(--transition);
+}
+.event .event-card {
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.event:hover .event-card {
+  box-shadow: var(--shadow);
 }
 .event-dot {
   position: absolute;
@@ -189,11 +137,16 @@ a:hover { text-decoration: underline; }
   border: 2px solid var(--border);
   background: var(--bg);
   z-index: 1;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.event:hover .event-dot {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .event-time {
   font-size: 11px;
   color: var(--text-secondary);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   margin-bottom: 4px;
 }
 
@@ -215,7 +168,7 @@ a:hover { text-decoration: underline; }
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 11px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--text-secondary);
   max-width: 400px;
   overflow: hidden;
@@ -254,10 +207,19 @@ a:hover { text-decoration: underline; }
 .event-assistant .msg-content ul, .event-assistant .msg-content ol { margin-left: 20px; margin-bottom: 8px; }
 
 .reasoning-toggle {
-  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
   margin-top: 8px; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 4px;
+  transition: color var(--transition), background var(--transition);
 }
-.reasoning-toggle:hover { color: var(--accent); }
+.reasoning-toggle:hover { color: var(--accent); background: var(--accent-subtle); }
+.reasoning-toggle .toggle-chevron {
+  width: 14px; height: 14px; flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.reasoning-toggle.open .toggle-chevron { transform: rotate(90deg); }
+.toggle-chevron.open { transform: rotate(90deg); }
 .reasoning-content {
   display: none;
   margin-top: 8px;
@@ -291,23 +253,40 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
 }
 .event-tool .tool-icon {
-  font-weight: 700; color: var(--orange);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  width: 16px; height: 16px; flex-shrink: 0; color: var(--orange);
 }
 .event-tool .tool-label { font-weight: 600; color: var(--orange); }
+.event-tool .expand-hint {
+  color: var(--text-secondary); font-size: 11px; margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.event-tool .expand-hint .toggle-chevron {
+  width: 12px; height: 12px; transition: transform 0.2s ease;
+}
+.event-tool-complete .result-toggle {
+  display: flex; align-items: center; gap: 6px;
+}
+.event-tool-complete .expand-hint {
+  color: var(--text-secondary); font-size: 11px; margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.event-tool-complete .expand-hint .toggle-chevron {
+  width: 12px; height: 12px; transition: transform 0.2s ease;
+}
 .event-tool .tool-details {
   display: none;
   margin-top: 8px;
   padding: 10px;
   background: var(--bg);
   border-radius: 6px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   overflow-x: auto;
   max-height: 400px;
   overflow-y: auto;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .event-tool .tool-details.visible { display: block; }
 
@@ -322,20 +301,21 @@ a:hover { text-decoration: underline; }
 }
 .event-tool-complete.success .event-card { background: var(--green-subtle); border: 1px solid #3fb95044; }
 .event-tool-complete.failure .event-card { background: var(--red-subtle); border: 1px solid #f8514944; }
-.event-tool-complete .result-toggle { cursor: pointer; user-select: none; }
+.event-tool-complete .result-toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
 .event-tool-complete .result-content {
   display: none;
   margin-top: 8px;
   padding: 10px;
   background: var(--bg);
   border-radius: 6px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   overflow-x: auto;
   max-height: 400px;
   overflow-y: auto;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .event-tool-complete .result-content.visible { display: block; }
 
@@ -350,6 +330,33 @@ a:hover { text-decoration: underline; }
   color: var(--cyan);
   font-weight: 500;
 }
+.event-subagent .tool-header {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+}
+.event-subagent .expand-hint {
+  color: var(--text-secondary); font-size: 11px; margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+}
+.event-subagent .expand-hint .toggle-chevron {
+  width: 12px; height: 12px; transition: transform 0.2s ease;
+}
+.event-subagent .tool-details {
+  display: none;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--bg);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  color: var(--text);
+}
+.event-subagent .tool-details.visible { display: block; }
 
 /* Error */
 .event-error .event-dot { background: var(--red); border-color: var(--red); }
@@ -472,7 +479,7 @@ a:hover { text-decoration: underline; }
   padding: 6px 14px;
   font-size: 11px;
   color: var(--text-secondary);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /* File snapshot marker */
@@ -534,8 +541,14 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
+  overflow: hidden;
 }
-.snapshots-panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 10px; }
+.snapshots-panel h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);
+  margin: -16px -16px 12px; padding: 10px 16px;
+  background: var(--bg-tertiary); border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
 .snapshot-item {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
@@ -545,32 +558,25 @@ a:hover { text-decoration: underline; }
 .snapshot-msg { color: var(--text); margin-bottom: 4px; font-size: 13px; }
 .snapshot-meta { color: var(--text-secondary); }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border); }
-
 @media (max-width: 900px) {
-  .page { flex-direction: column; }
+  .session-page { flex-direction: column; }
   .sidebar { width: 100%; position: static; max-height: none; }
 }
 </style>
-</head>
-<body>
+{% endblock %}
 
-<div class="top-bar">
-  <div class="inner">
-    <a href="/" class="logo" title="Back to sessions">C</a>
-    <div style="min-width:0;">
-      <h1>{{ ws.get('summary', session_id) }}</h1>
-    </div>
-    <a class="back-link" href="/">&larr; All Sessions</a>
-    <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle light/dark mode"></button>
+{% block breadcrumb %}
+<div class="breadcrumb-bar">
+  <div class="container">
+    <a href="/sessions">Sessions</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{ ws.get('summary', session_id)[:60] }}{% if ws.get('summary', session_id)|length > 60 %}&hellip;{% endif %}</span>
   </div>
 </div>
+{% endblock %}
 
-<div class="page">
+{% block content %}
+<div class="session-page">
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="info-panel">
@@ -794,7 +800,7 @@ a:hover { text-decoration: underline; }
           </div>
           {% endif %}
           {% if item.reasoning %}
-          <div class="reasoning-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">&#9654; Show reasoning</div>
+          <div class="reasoning-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('visible')"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg> Show reasoning</div>
           <div class="reasoning-content">{{ item.reasoning }}</div>
           {% endif %}
         </div>
@@ -805,10 +811,10 @@ a:hover { text-decoration: underline; }
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">
-          <div class="tool-header" onclick="this.parentElement.querySelector('.tool-details').classList.toggle('visible')">
-            <span class="tool-icon">&#9881;</span>
+          <div class="tool-header" onclick="this.parentElement.querySelector('.tool-details').classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open')">
+            <svg class="tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             <span class="tool-label">{% if item.mcp_server %}{{ item.mcp_server }} &rarr; {% endif %}{{ item.tool_name }}</span>
-            <span style="color:var(--text-secondary);font-size:11px;margin-left:auto;">click to expand</span>
+            <span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
           </div>
           {% if item.past_tense %}<div class="tool-past-tense">{{ item.past_tense }}</div>{% endif %}
           <div class="tool-details">{{ json.dumps(item.arguments, indent=2) }}</div>
@@ -820,9 +826,9 @@ a:hover { text-decoration: underline; }
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">
-          <div class="result-toggle" onclick="this.parentElement.querySelector('.result-content').classList.toggle('visible')">
-            {{ '&#10003; Tool succeeded' if item.success else '&#10007; Tool failed' }}
-            <span style="color:var(--text-secondary);font-size:11px;margin-left:8px;">click to expand result</span>
+          <div class="result-toggle" onclick="this.parentElement.querySelector('.result-content').classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open')">
+            {% if item.success %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Tool succeeded{% else %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Tool failed{% endif %}
+            <span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
           </div>
           <div class="result-content">{{ item.result }}</div>
         </div>
@@ -832,28 +838,46 @@ a:hover { text-decoration: underline; }
       <div class="event event-subagent" data-kind="subagent">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
-        <div class="event-card">&#9654; Sub-agent started: {{ item.agent_name }}</div>
+        <div class="event-card">
+          <div class="tool-header" onclick="var d=this.parentElement.querySelector('.tool-details');if(d){d.classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open');}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span style="font-weight:600;">Sub-agent started: {{ item.agent_name }}</span>
+            {% if item.agent_prompt %}<span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>{% endif %}
+          </div>
+          {% if item.agent_prompt %}
+          <div class="tool-details" style="color:var(--text-secondary);font-style:italic;">{{ item.agent_prompt }}</div>
+          {% endif %}
+        </div>
       </div>
 
       {% elif item.kind == 'subagent_complete' %}
       <div class="event event-subagent" data-kind="subagent">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
-        <div class="event-card">&#9632; Sub-agent completed: {{ item.agent_name }}</div>
+        <div class="event-card">
+          <div class="tool-header" onclick="var d=this.parentElement.querySelector('.tool-details');if(d){d.classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open');}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span style="font-weight:600;">Sub-agent completed</span>
+            {% if item.result %}<span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>{% endif %}
+          </div>
+          {% if item.result %}
+          <div class="tool-details">{{ item.result }}</div>
+          {% endif %}
+        </div>
       </div>
 
       {% elif item.kind == 'error' %}
       <div class="event event-error" data-kind="error">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
-        <div class="event-card">&#9888; {{ item.message }}</div>
+        <div class="event-card"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>{{ item.message }}</div>
       </div>
 
       {% elif item.kind == 'warning' %}
       <div class="event event-warning" data-kind="warning">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
-        <div class="event-card">&#9888; {{ item.message }}</div>
+        <div class="event-card"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>{{ item.message }}</div>
       </div>
 
       {% elif item.kind == 'session_summary' %}
@@ -861,7 +885,7 @@ a:hover { text-decoration: underline; }
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">
-          <div class="reasoning-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">&#9654; AI-generated session summary</div>
+          <div class="reasoning-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('visible')"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg> AI-generated session summary</div>
           <div class="reasoning-content">{{ item.content }}</div>
         </div>
       </div>
@@ -933,24 +957,10 @@ a:hover { text-decoration: underline; }
     </div>
   </div>
 </div>
+{% endblock %}
 
+{% block scripts_extra %}
 <script>
-/* Theme toggle */
-(function() {
-  var saved = localStorage.getItem('theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
-  var btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = saved === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
-})();
-function toggleTheme() {
-  var current = document.documentElement.getAttribute('data-theme') || 'dark';
-  var next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('theme', next);
-  var btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = next === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
-}
-
 function filterEvents(kind, btn) {
   document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
   btn.classList.add('active');
@@ -967,5 +977,4 @@ function filterEvents(kind, btn) {
   });
 }
 </script>
-</body>
-</html>
+{% endblock %}

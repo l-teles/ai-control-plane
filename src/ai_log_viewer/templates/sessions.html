@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% set active_page = "sessions" %}
+
+{% block title %}Sessions - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ── Sessions Page ──────────────────────────────────────────────────── */
+.sessions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.sessions-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+}
+/* Search */
+.search-bar {
+  margin-bottom: 20px;
+  position: relative;
+}
+.search-bar .search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+  transition: color var(--transition);
+}
+.search-bar input {
+  width: 100%;
+  padding: 10px 16px 10px 40px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.search-bar input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+.search-bar input:focus + .search-icon,
+.search-bar:focus-within .search-icon { color: var(--accent); }
+.search-bar input::placeholder { color: var(--text-secondary); }
+
+/* Source filters */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.filter-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.filter-btn:hover, .filter-btn.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.filter-btn.active-claude {
+  background: var(--purple-subtle);
+  border-color: var(--purple);
+  color: var(--purple);
+}
+.filter-btn.active-copilot {
+  background: var(--orange-subtle);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.filter-btn.active-vscode {
+  background: var(--green-subtle);
+  border-color: var(--green);
+  color: var(--green);
+}
+.filter-btn .count {
+  display: inline-block;
+  background: var(--bg-tertiary);
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* Sessions grid */
+.sessions-grid { display: flex; flex-direction: column; gap: 8px; }
+.session-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  display: block;
+}
+.session-card[data-source="claude"] { border-left: 3px solid var(--purple); }
+.session-card[data-source="copilot"] { border-left: 3px solid var(--orange); }
+.session-card[data-source="vscode"] { border-left: 3px solid var(--green); }
+.session-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+.session-card.loading {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+}
+.session-card.loading::after {
+  content: "Loading...";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+}
+.session-card h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  align-items: center;
+}
+.session-meta span { display: flex; align-items: center; gap: 4px; }
+
+.no-results {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  display: none;
+}
+.empty-state {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-secondary);
+}
+.empty-state h2 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
+.empty-state svg { margin-bottom: 16px; opacity: 0.4; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  {% if sessions %}
+  <div class="sessions-header">
+    <h1>Sessions</h1>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" id="search" placeholder="Search sessions by name, branch, directory, model..." autocomplete="off">
+    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  </div>
+
+  <div class="filters">
+    <button class="filter-btn active" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
+    <button class="filter-btn" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
+    <button class="filter-btn" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
+    <button class="filter-btn" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
+  </div>
+
+  <div class="sessions-grid" id="sessions-grid">
+    {% for s in sessions %}
+    <a class="session-card" href="/session/{{ s.id }}" data-source="{{ s.source }}"
+       data-search="{{ (s.summary or s.id)|lower }} {{ (s.branch or '')|lower }} {{ (s.cwd or '')|lower }} {{ (s.repository or '')|lower }} {{ (s.model or '')|lower }} {{ (s.slug or '')|lower }}">
+      <h2>{{ s.summary or s.id }}</h2>
+      <div class="session-meta">
+        {% if s.source == 'claude' %}
+        <span class="badge badge-source-claude">Claude Code</span>
+        {% elif s.source == 'vscode' %}
+        <span class="badge badge-source-vscode">VS Code Chat</span>
+        {% else %}
+        <span class="badge badge-source-copilot">Copilot</span>
+        {% endif %}
+        {% if s.max_tool_calls_exceeded %}
+        <span class="badge badge-warning">Tool limit hit</span>
+        {% endif %}
+        {% if s.has_pending_edits %}
+        <span class="badge badge-warning">Pending edits</span>
+        {% endif %}
+        {% if s.slug %}
+        <span class="badge badge-model">{{ s.slug }}</span>
+        {% endif %}
+        {% if s.model %}
+        <span class="badge badge-model">{{ s.model }}</span>
+        {% endif %}
+        {% if s.repository %}
+        <span class="badge badge-repo">{{ s.repository }}</span>
+        {% endif %}
+        {% if s.branch %}
+        <span class="badge badge-branch">{{ s.branch }}</span>
+        {% endif %}
+        {% if s.created_at %}
+        <span>{{ s.created_at[:19].replace('T', ' ') }} UTC</span>
+        {% endif %}
+        {% if s.cwd %}
+        <span style="font-family:var(--font-mono);font-size:12px;">{{ s.cwd }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="no-results" id="no-results">
+    <h2>No matching sessions</h2>
+    <p>Try a different search term or filter.</p>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+    <h2>No sessions found</h2>
+    <p>Point the viewer at directories containing Copilot, Claude Code, or VS Code Chat session logs.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+var currentFilter = 'all';
+var currentSearch = '';
+
+function applyFilters() {
+  var cards = document.querySelectorAll('#sessions-grid .session-card');
+  var visible = 0;
+  cards.forEach(function(card) {
+    var sourceMatch = currentFilter === 'all' || card.dataset.source === currentFilter;
+    var searchMatch = !currentSearch || card.dataset.search.indexOf(currentSearch) !== -1;
+    var show = sourceMatch && searchMatch;
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  var nr = document.getElementById('no-results');
+  if (nr) nr.style.display = visible === 0 ? '' : 'none';
+}
+
+function filterSessions(source, btn) {
+  document.querySelectorAll('.filter-btn').forEach(function(b) {
+    b.classList.remove('active', 'active-claude', 'active-copilot', 'active-vscode');
+  });
+  var activeClass = btn.dataset.activeClass || 'active';
+  btn.classList.add(activeClass);
+  currentFilter = source;
+  applyFilters();
+}
+
+var searchInput = document.getElementById('search');
+if (searchInput) {
+  searchInput.addEventListener('input', function() {
+    currentSearch = this.value.toLowerCase().trim();
+    applyFilters();
+  });
+}
+
+/* Loading indicator on session card click */
+document.querySelectorAll('#sessions-grid .session-card').forEach(function(card) {
+  card.addEventListener('click', function() {
+    this.classList.add('loading');
+  });
+});
+
+/* Clear loading state on back/forward navigation (bfcache) */
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) {
+    document.querySelectorAll('.session-card.loading').forEach(function(card) {
+      card.classList.remove('loading');
+    });
+  }
+});
+</script>
+{% endblock %}

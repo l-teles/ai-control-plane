@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-log-viewer"
 dynamic = ["version"]
-description = "A local web UI for browsing and understanding GitHub Copilot agent session logs."
+description = "AI Control Plane — a local web UI for browsing AI agent session logs and tool configurations (GitHub Copilot, Claude Code, VS Code Chat)."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"

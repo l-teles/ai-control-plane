@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% set active_page = "skills" %}
+
+{% block title %}Skills - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+.skills-header {
+  margin-bottom: 24px;
+}
+.skills-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 2px; letter-spacing: -0.02em; }
+.skills-header p { color: var(--text-secondary); font-size: 14px; }
+
+.skills-summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.filter-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;
+}
+.filter-pill:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.filter-pill.active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.filter-pill strong { font-weight: 600; }
+.filter-pill .badge { pointer-events: none; }
+
+.skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+a.skill-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+a.skill-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+a.skill-card.hidden { display: none; }
+.skill-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.skill-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  background: var(--accent-subtle); color: var(--accent);
+}
+.skill-name { font-size: 14px; font-weight: 600; flex: 1; }
+.skill-sources {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.skill-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.skill-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.skill-meta-sep { opacity: 0.4; }
+
+.empty-skills {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+}
+.empty-skills svg { margin-bottom: 12px; opacity: 0.4; }
+.empty-skills h2 { font-size: 18px; margin-bottom: 4px; color: var(--text); }
+
+.no-filter-results {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb-bar">
+  <div class="container">
+    <a href="/tools">Tools</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Skills</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="skills-header">
+    <h1>Skills</h1>
+    <p>Installed skills across your AI coding tools</p>
+  </div>
+
+  {% if skills %}
+  <div class="skills-summary">
+    <div class="filter-pill active" data-filter="all" onclick="filterSkills('all', this)">
+      <strong>{{ skills|length }}</strong> total skills
+    </div>
+    {% if claude_skill_count %}
+    <div class="filter-pill" data-filter="claude" onclick="filterSkills('claude', this)">
+      <span class="badge badge-source-claude">Claude</span>
+      <strong>{{ claude_skill_count }}</strong>
+    </div>
+    {% endif %}
+    {% if copilot_skill_count %}
+    <div class="filter-pill" data-filter="copilot" onclick="filterSkills('copilot', this)">
+      <span class="badge badge-source-copilot">Copilot</span>
+      <strong>{{ copilot_skill_count }}</strong>
+    </div>
+    {% endif %}
+    {% if vscode_skill_count %}
+    <div class="filter-pill" data-filter="vscode" onclick="filterSkills('vscode', this)">
+      <span class="badge badge-source-vscode">VS Code</span>
+      <strong>{{ vscode_skill_count }}</strong>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="skill-grid" id="skill-grid">
+    {% for s in skills %}
+    <a class="skill-card" href="/skills/{{ s.name }}" data-sources="{{ s.sources|join(',') }}">
+      <div class="skill-card-header">
+        <div class="skill-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </div>
+        <span class="skill-name">{{ s.name }}</span>
+        <div class="skill-sources">
+          {% for src in s.sources %}
+          {% if src == 'claude' %}<span class="badge badge-source-claude">Claude</span>
+          {% elif src == 'copilot' %}<span class="badge badge-source-copilot">Copilot</span>
+          {% else %}<span class="badge badge-source-vscode">VS Code</span>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% if s.description %}
+      <div class="skill-desc">{{ s.description }}</div>
+      {% endif %}
+      <div class="skill-meta">
+        {% if s.author %}<span>by {{ s.author }}</span>{% endif %}
+        {% if s.author and s.version %}<span class="skill-meta-sep">&middot;</span>{% endif %}
+        {% if s.version %}<span>v{{ s.version }}</span>{% endif %}
+        {% if (s.author or s.version) and s.license %}<span class="skill-meta-sep">&middot;</span>{% endif %}
+        {% if s.license %}<span>{{ s.license }}</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="no-filter-results" id="no-filter-results">No skills match this filter.</div>
+  {% else %}
+  <div class="empty-skills">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+    </svg>
+    <h2>No skills found</h2>
+    <p>Install skills by placing SKILL.md files in the appropriate tool directories.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+function filterSkills(source, pill) {
+  var pills = document.querySelectorAll('.filter-pill');
+  pills.forEach(function(p) { p.classList.remove('active'); });
+  pill.classList.add('active');
+
+  var cards = document.querySelectorAll('.skill-card');
+  var visible = 0;
+  cards.forEach(function(card) {
+    var sources = card.getAttribute('data-sources').split(',');
+    if (source === 'all' || sources.indexOf(source) !== -1) {
+      card.classList.remove('hidden');
+      visible++;
+    } else {
+      card.classList.add('hidden');
+    }
+  });
+  var msg = document.getElementById('no-filter-results');
+  if (msg) msg.style.display = visible === 0 ? 'block' : 'none';
+}
+</script>
+{% endblock %}

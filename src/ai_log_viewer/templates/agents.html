@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% set active_page = "agents" %}
+
+{% block title %}Agents - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+.agents-header {
+  margin-bottom: 24px;
+}
+.agents-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 2px; letter-spacing: -0.02em; }
+.agents-header p { color: var(--text-secondary); font-size: 14px; }
+
+.agents-summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.filter-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;
+}
+.filter-pill:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.filter-pill.active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.filter-pill strong { font-weight: 600; }
+.filter-pill .badge { pointer-events: none; }
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.agent-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+.agent-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+.agent-card.hidden { display: none; }
+.agent-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.agent-avatar {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.agent-avatar.claude { background: var(--purple-subtle); color: var(--purple); }
+.agent-avatar.vscode { background: var(--green-subtle); color: var(--green); }
+.agent-name { font-size: 14px; font-weight: 600; flex: 1; }
+.agent-source {
+  font-size: 11px; font-weight: 500; padding: 2px 8px;
+  border-radius: 12px;
+}
+.agent-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.agent-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-link { color: var(--accent); text-decoration: none; font-size: 12px; }
+.agent-link:hover { text-decoration: underline; }
+
+.empty-agents {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+}
+.empty-agents svg { margin-bottom: 12px; opacity: 0.4; }
+.empty-agents h2 { font-size: 18px; margin-bottom: 4px; color: var(--text); }
+
+.no-filter-results {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb-bar">
+  <div class="container">
+    <a href="/tools">Tools</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Agents</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="agents-header">
+    <h1>Agents</h1>
+    <p>All AI agents across your installed tools</p>
+  </div>
+
+  {% if agents %}
+  <div class="agents-summary">
+    <div class="filter-pill active" data-filter="all" onclick="filterAgents('all', this)">
+      <strong>{{ agents|length }}</strong> total agents
+    </div>
+    {% if claude_agent_count %}
+    <div class="filter-pill" data-filter="claude" onclick="filterAgents('claude', this)">
+      <span class="badge badge-source-claude">Claude</span>
+      <strong>{{ claude_agent_count }}</strong>
+    </div>
+    {% endif %}
+    {% if vscode_agent_count %}
+    <div class="filter-pill" data-filter="vscode" onclick="filterAgents('vscode', this)">
+      <span class="badge badge-source-vscode">VS Code</span>
+      <strong>{{ vscode_agent_count }}</strong>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="agent-grid" id="agent-grid">
+    {% for a in agents %}
+    <div class="agent-card" data-source="{{ a.source }}">
+      <div class="agent-card-header">
+        <div class="agent-avatar {{ a.source }}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <span class="agent-name">{{ a.name }}</span>
+        {% if a.source == 'claude' %}
+        <span class="agent-source badge badge-source-claude">Claude</span>
+        {% else %}
+        <span class="agent-source badge badge-source-vscode">VS Code</span>
+        {% endif %}
+      </div>
+      {% if a.description %}
+      <div class="agent-desc">{{ a.description[:200] }}</div>
+      {% endif %}
+      <div class="agent-meta">
+        {% if a.model %}
+        <span class="badge badge-model">{{ a.model }}</span>
+        {% endif %}
+        {% if a.plugin %}
+        <span class="badge badge-off">{{ a.plugin }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="no-filter-results" id="no-filter-results">No agents match this filter.</div>
+  {% else %}
+  <div class="empty-agents">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+    <h2>No agents found</h2>
+    <p>Install Claude Code plugins or VS Code extensions that provide agents.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+function filterAgents(source, pill) {
+  var pills = document.querySelectorAll('.filter-pill');
+  pills.forEach(function(p) { p.classList.remove('active'); });
+  pill.classList.add('active');
+
+  var cards = document.querySelectorAll('.agent-card');
+  var visible = 0;
+  cards.forEach(function(card) {
+    if (source === 'all' || card.getAttribute('data-source') === source) {
+      card.classList.remove('hidden');
+      visible++;
+    } else {
+      card.classList.add('hidden');
+    }
+  });
+  var msg = document.getElementById('no-filter-results');
+  if (msg) msg.style.display = visible === 0 ? 'block' : 'none';
+}
+</script>
+{% endblock %}

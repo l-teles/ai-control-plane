@@ -38,8 +38,13 @@ def _make_user_event(content, *, ts="2026-03-12T10:00:01Z", session_id="aaaaaaaa
 
 
 def _make_assistant_event(
-    content_blocks, *, ts="2026-03-12T10:00:02Z", request_id="req_001",
-    output_tokens=50, model="claude-opus-4-6", **kw,
+    content_blocks,
+    *,
+    ts="2026-03-12T10:00:02Z",
+    request_id="req_001",
+    output_tokens=50,
+    model="claude-opus-4-6",
+    **kw,
 ):
     return {
         "type": "assistant",
@@ -70,32 +75,51 @@ def claude_project(tmp_path: Path) -> Path:
         {"type": "file-history-snapshot", "snapshot": {}, "messageId": "x"},
         {
             "type": "progress",
-            "data": {"type": "hook_progress", "hookEvent": "PreToolUse",
-                     "hookName": "PreToolUse:Bash", "command": "echo ok"},
-            "uuid": "p0", "timestamp": "2026-03-12T10:00:00Z",
-            "sessionId": "s1", "cwd": "/tmp/project",
-            "version": "2.1.74", "gitBranch": "main",
+            "data": {
+                "type": "hook_progress",
+                "hookEvent": "PreToolUse",
+                "hookName": "PreToolUse:Bash",
+                "command": "echo ok",
+            },
+            "uuid": "p0",
+            "timestamp": "2026-03-12T10:00:00Z",
+            "sessionId": "s1",
+            "cwd": "/tmp/project",
+            "version": "2.1.74",
+            "gitBranch": "main",
         },
         _make_user_event("Hello, help me write tests", uuid="u1", ts="2026-03-12T10:00:01Z"),
         _make_assistant_event(
             [{"type": "thinking", "thinking": "Let me think about this...", "signature": "sig1"}],
-            ts="2026-03-12T10:00:02Z", request_id="req_001", uuid="a1",
+            ts="2026-03-12T10:00:02Z",
+            request_id="req_001",
+            uuid="a1",
         ),
         _make_assistant_event(
             [{"type": "text", "text": "Sure, I will help you write tests."}],
-            ts="2026-03-12T10:00:03Z", request_id="req_001", uuid="a2", output_tokens=30,
+            ts="2026-03-12T10:00:03Z",
+            request_id="req_001",
+            uuid="a2",
+            output_tokens=30,
         ),
         _make_assistant_event(
             [{"type": "tool_use", "id": "toolu_01", "name": "Bash", "input": {"command": "ls"}}],
-            ts="2026-03-12T10:00:04Z", request_id="req_001", uuid="a3", output_tokens=50,
+            ts="2026-03-12T10:00:04Z",
+            request_id="req_001",
+            uuid="a3",
+            output_tokens=50,
         ),
         _make_user_event(
             [{"type": "tool_result", "tool_use_id": "toolu_01", "content": "file1.py\nfile2.py", "is_error": False}],
-            uuid="u2", ts="2026-03-12T10:00:05Z",
+            uuid="u2",
+            ts="2026-03-12T10:00:05Z",
         ),
         _make_assistant_event(
             [{"type": "text", "text": "I can see two files."}],
-            ts="2026-03-12T10:00:06Z", request_id="req_002", uuid="a4", output_tokens=20,
+            ts="2026-03-12T10:00:06Z",
+            request_id="req_002",
+            uuid="a4",
+            output_tokens=20,
         ),
         _make_user_event("Thanks!", uuid="u3", ts="2026-03-12T10:00:07Z"),
     ]
@@ -223,8 +247,7 @@ def test_build_conversation_xml_context_with_user_text() -> None:
     """XML context tags are split into notification + user message."""
     events = [
         _make_user_event(
-            "<ide_opened_file>The user opened foo.py in the IDE.</ide_opened_file> "
-            "Heya, Please fix the TF diffs."
+            "<ide_opened_file>The user opened foo.py in the IDE.</ide_opened_file> Heya, Please fix the TF diffs."
         ),
     ]
     conv = build_conversation(events)
@@ -255,15 +278,24 @@ def test_build_conversation_requestid_merge() -> None:
         _make_user_event("Hi"),
         _make_assistant_event(
             [{"type": "thinking", "thinking": "hmm", "signature": "s"}],
-            request_id="req_X", uuid="a1", ts="2026-03-12T10:00:02Z", output_tokens=0,
+            request_id="req_X",
+            uuid="a1",
+            ts="2026-03-12T10:00:02Z",
+            output_tokens=0,
         ),
         _make_assistant_event(
             [{"type": "text", "text": "Hello!"}],
-            request_id="req_X", uuid="a2", ts="2026-03-12T10:00:03Z", output_tokens=10,
+            request_id="req_X",
+            uuid="a2",
+            ts="2026-03-12T10:00:03Z",
+            output_tokens=10,
         ),
         _make_assistant_event(
             [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file": "a.py"}}],
-            request_id="req_X", uuid="a3", ts="2026-03-12T10:00:04Z", output_tokens=20,
+            request_id="req_X",
+            uuid="a3",
+            ts="2026-03-12T10:00:04Z",
+            output_tokens=20,
         ),
     ]
     conv = build_conversation(events)
@@ -511,3 +543,79 @@ def test_last_prompt() -> None:
     lp = [c for c in conv if c["kind"] == "last_prompt"]
     assert len(lp) == 1
     assert "Fix the bug" in lp[0]["content"]
+
+
+def test_subagent_count_in_stats() -> None:
+    """compute_stats counts Agent tool calls as subagents."""
+    events = [
+        _make_user_event("Do something complex"),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_agent1",
+                    "name": "Agent",
+                    "input": {"description": "Search code", "prompt": "Find the bug"},
+                },
+                {"type": "tool_use", "id": "toolu_bash1", "name": "Bash", "input": {"command": "ls"}},
+            ],
+            request_id="req_sub1",
+        ),
+        _make_user_event(
+            [
+                {"type": "tool_result", "tool_use_id": "toolu_agent1", "content": "Found the bug"},
+                {"type": "tool_result", "tool_use_id": "toolu_bash1", "content": "file1.py"},
+            ],
+            ts="2026-03-12T10:00:05Z",
+        ),
+        _make_assistant_event(
+            [
+                {"type": "tool_use", "id": "toolu_agent2", "name": "dispatch_agent", "input": {"prompt": "Fix it"}},
+            ],
+            request_id="req_sub2",
+            ts="2026-03-12T10:00:06Z",
+        ),
+    ]
+    stats = compute_stats(events)
+    assert stats["subagents"] == 2  # Agent + dispatch_agent
+    assert stats["total_tool_calls"] == 3  # Agent + Bash + dispatch_agent
+    assert stats["tool_calls"]["Agent"] == 1
+    assert stats["tool_calls"]["Bash"] == 1
+    assert stats["tool_calls"]["dispatch_agent"] == 1
+
+
+def test_subagent_conversation_events() -> None:
+    """build_conversation emits subagent_start / subagent_complete for Agent tools."""
+    events = [
+        _make_user_event("Run an agent"),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_ag",
+                    "name": "Agent",
+                    "input": {"description": "Explore codebase", "prompt": "Look around"},
+                },
+            ],
+            request_id="req_ag",
+        ),
+        _make_user_event(
+            [{"type": "tool_result", "tool_use_id": "toolu_ag", "content": "Done exploring"}],
+            ts="2026-03-12T10:00:05Z",
+        ),
+    ]
+    conv = build_conversation(events)
+    starts = [c for c in conv if c["kind"] == "subagent_start"]
+    completes = [c for c in conv if c["kind"] == "subagent_complete"]
+    assert len(starts) == 1
+    assert starts[0]["agent_name"] == "Explore codebase"
+    assert starts[0]["tool_call_id"] == "toolu_ag"
+    assert len(completes) == 1
+    assert completes[0]["tool_call_id"] == "toolu_ag"
+
+    # Regular tool_start/tool_complete should NOT be emitted for Agent
+    tool_starts = [c for c in conv if c["kind"] == "tool_start"]
+    tool_completes = [c for c in conv if c["kind"] == "tool_complete"]
+    assert all(ts["tool_name"] != "Agent" for ts in tool_starts)
+    # The tool_complete for the agent should be subagent_complete instead
+    assert all(tc.get("tool_call_id") != "toolu_ag" for tc in tool_completes)

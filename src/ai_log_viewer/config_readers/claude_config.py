@@ -8,6 +8,7 @@ from pathlib import Path
 from ._common import (
     mask_dict,
     parse_yaml_frontmatter,
+    read_skills,
     safe_read_json,
     safe_read_text,
     safe_read_yaml,
@@ -82,9 +83,7 @@ def _read_single_plugin(plugin_dir: Path, *, external: bool) -> dict:
     has_commands = bool(list(plugin_dir.glob("commands/*")))
 
     description = (
-        manifest.get("description")
-        or plugin_yaml.get("description")
-        or _extract_readme_description(plugin_dir)
+        manifest.get("description") or plugin_yaml.get("description") or _extract_readme_description(plugin_dir)
     )
 
     return {
@@ -107,17 +106,13 @@ def _read_hooks(plugins_dir: Path) -> list[dict]:
             hooks.append(
                 {
                     "name": manifest.get("name") or hook_dir.name,
-                    "event": hook_dir.parent.parent.name
-                    if hook_dir.parent.name == "hooks"
-                    else hook_dir.name,
+                    "event": hook_dir.parent.parent.name if hook_dir.parent.name == "hooks" else hook_dir.name,
                     "plugin": hook_dir.parent.parent.name,
                     "command": manifest.get("command", ""),
                 }
             )
     # Also check external plugins
-    for hook_dir in sorted(
-        plugins_dir.glob("marketplaces/*/external_plugins/*/hooks/*")
-    ):
+    for hook_dir in sorted(plugins_dir.glob("marketplaces/*/external_plugins/*/hooks/*")):
         if hook_dir.is_dir():
             manifest = safe_read_json(hook_dir / "manifest.json") or {}
             hooks.append(
@@ -148,6 +143,29 @@ def _read_agents(plugins_dir: Path) -> list[dict]:
     return agents
 
 
+def _read_commands(plugins_dir: Path) -> list[dict]:
+    """Read slash commands from all plugins (official + external)."""
+    commands: list[dict] = []
+    for pattern in (
+        "marketplaces/*/plugins/*/commands/*.md",
+        "marketplaces/*/external_plugins/*/commands/*.md",
+    ):
+        for cmd_file in sorted(plugins_dir.glob(pattern)):
+            if not cmd_file.is_file():
+                continue
+            fm = parse_yaml_frontmatter(cmd_file) or {}
+            # Plugin name is 2 levels up from the command file
+            plugin_name = cmd_file.parent.parent.name
+            commands.append(
+                {
+                    "name": cmd_file.stem,
+                    "plugin": plugin_name,
+                    "description": fm.get("description", ""),
+                }
+            )
+    return commands
+
+
 def read_claude_config(claude_home: Path | None = None) -> dict:
     """Read Claude Code configuration.
 
@@ -169,16 +187,17 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "plugin_blocklist": [],
         "agents": [],
         "hooks": [],
+        "commands": [],
+        "skills": [],
         "feature_flags": {},
+        "growthbook_flags": {},
     }
 
     if not home.is_dir():
         return result
 
     # Global config (~/.claude.json)
-    global_path = (
-        (claude_home / ".claude.json") if claude_home else _default_global_config_path()
-    )
+    global_path = (claude_home / ".claude.json") if claude_home else _default_global_config_path()
     global_cfg = safe_read_json(global_path) or {}
     result["main_settings"] = mask_dict(
         {
@@ -194,10 +213,12 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
             }
         }
     )
-    # Feature flags are typically any boolean keys
-    result["feature_flags"] = {
-        k: v for k, v in global_cfg.items() if isinstance(v, bool)
-    }
+    # Feature flags: top-level booleans (user-visible settings)
+    result["feature_flags"] = {k: v for k, v in global_cfg.items() if isinstance(v, bool)}
+    # GrowthBook flags: server-side feature flags cached by Claude Code
+    growthbook = global_cfg.get("cachedGrowthBookFeatures", {})
+    if isinstance(growthbook, dict):
+        result["growthbook_flags"] = {k: v for k, v in growthbook.items() if isinstance(v, bool)}
 
     # MCP servers (claude_code_config.json)
     mcp_cfg = safe_read_json(home / "claude_code_config.json") or {}
@@ -230,9 +251,23 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         result["plugins"], result["external_plugins"] = _read_plugins(plugins_dir)
         result["hooks"] = _read_hooks(plugins_dir)
         result["agents"] = _read_agents(plugins_dir)
+        result["commands"] = _read_commands(plugins_dir)
 
         blocklist = safe_read_json(plugins_dir / "blocklist.json")
         if blocklist and isinstance(blocklist, list):
             result["plugin_blocklist"] = blocklist
+
+    # Skills — from ~/.claude/skills/ AND from plugin skills directories
+    all_skills = read_skills(home / "skills")
+    plugins_dir = home / "plugins"
+    if plugins_dir.is_dir():
+        for pattern in (
+            "marketplaces/*/plugins/*/skills",
+            "marketplaces/*/external_plugins/*/skills",
+        ):
+            for skills_dir in sorted(plugins_dir.glob(pattern)):
+                if skills_dir.is_dir():
+                    all_skills.extend(read_skills(skills_dir))
+    result["skills"] = all_skills
 
     return result

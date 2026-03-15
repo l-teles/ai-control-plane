@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% set active_page = "skills" %}
+
+{% block title %}{{ skill.name }} - Skills - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+.skill-detail-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+}
+@media (max-width: 768px) { .skill-detail-layout { grid-template-columns: 1fr; } }
+
+/* Sidebar */
+.skill-sidebar {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  align-self: start;
+}
+.skill-sidebar h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+.skill-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.skill-info-row:last-child { border-bottom: none; }
+.skill-info-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.skill-info-value {
+  font-weight: 500;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+}
+.skill-info-value a { color: var(--accent); }
+.skill-sources-list {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* Main content */
+.skill-body {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 32px;
+  min-width: 0;
+}
+
+/* Markdown rendering */
+.skill-body h1 { font-size: 22px; font-weight: 700; margin: 24px 0 12px; letter-spacing: -0.01em; }
+.skill-body h1:first-child { margin-top: 0; }
+.skill-body h2 { font-size: 18px; font-weight: 600; margin: 20px 0 10px; }
+.skill-body h3 { font-size: 15px; font-weight: 600; margin: 16px 0 8px; }
+.skill-body p { font-size: 14px; line-height: 1.7; margin-bottom: 12px; color: var(--text); }
+.skill-body ul, .skill-body ol { font-size: 14px; line-height: 1.7; margin-bottom: 12px; padding-left: 24px; }
+.skill-body li { margin-bottom: 4px; }
+.skill-body code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.skill-body pre {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+.skill-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.skill-body blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 16px;
+  margin: 12px 0;
+  color: var(--text-secondary);
+}
+.skill-body strong { font-weight: 600; }
+.skill-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
+}
+.skill-body a { color: var(--accent); }
+
+.empty-body {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 14px;
+}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb-bar">
+  <div class="container">
+    <a href="/skills">Skills</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{ skill.name }}</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="skill-detail-layout">
+    <div class="skill-sidebar">
+      <h2>{{ skill.name }}</h2>
+
+      <div class="skill-info-row">
+        <span class="skill-info-label">Installed In</span>
+        <div class="skill-sources-list">
+          {% for src in skill.sources %}
+          {% if src == 'claude' %}<span class="badge badge-source-claude">Claude Code</span>
+          {% elif src == 'copilot' %}<span class="badge badge-source-copilot">GitHub Copilot</span>
+          {% else %}<span class="badge badge-source-vscode">VS Code Chat</span>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if skill.description %}
+      <div class="skill-info-row">
+        <span class="skill-info-label">Description</span>
+        <span class="skill-info-value">{{ skill.description }}</span>
+      </div>
+      {% endif %}
+
+      {% if skill.author %}
+      <div class="skill-info-row">
+        <span class="skill-info-label">Author</span>
+        <span class="skill-info-value">{{ skill.author }}</span>
+      </div>
+      {% endif %}
+
+      {% if skill.version %}
+      <div class="skill-info-row">
+        <span class="skill-info-label">Version</span>
+        <span class="skill-info-value">{{ skill.version }}</span>
+      </div>
+      {% endif %}
+
+      {% if skill.license %}
+      <div class="skill-info-row">
+        <span class="skill-info-label">License</span>
+        <span class="skill-info-value">{{ skill.license }}</span>
+      </div>
+      {% endif %}
+
+      {% if skill.tools %}
+      <div class="skill-info-row">
+        <span class="skill-info-label">Tools Used</span>
+        <span class="skill-info-value">{{ skill.tools }}</span>
+      </div>
+      {% endif %}
+
+      {% if skill.homepage %}
+      <div class="skill-info-row">
+        <span class="skill-info-label">Homepage</span>
+        <span class="skill-info-value"><a href="{{ skill.homepage }}" target="_blank" rel="noopener">{{ skill.homepage }} &#x2197;</a></span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="skill-body">
+      {% if skill.body %}
+      {{ md_to_html(skill.body) | safe }}
+      {% else %}
+      <p class="empty-body">This skill has no additional documentation beyond the description above.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

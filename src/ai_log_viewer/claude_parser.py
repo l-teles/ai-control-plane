@@ -14,10 +14,12 @@ def _default_claude_dir() -> Path:
     """Return the platform-default Claude Code projects directory."""
     if sys.platform == "win32":
         import os
+
         localappdata = os.environ.get("LOCALAPPDATA", "")
         if localappdata:
             return Path(localappdata) / "claude" / "projects"
     return Path.home() / ".claude" / "projects"
+
 
 # Matches a complete XML-style tag block: <tag>...</tag> or self-closing <tag .../>
 _XML_BLOCK_RE = re.compile(
@@ -89,6 +91,7 @@ def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Session discovery
 # ---------------------------------------------------------------------------
+
 
 def _first_metadata(jsonl_path: Path) -> dict:
     """Read just enough of a JSONL to extract session metadata."""
@@ -249,6 +252,7 @@ def discover_sessions(base: Path) -> list[dict]:
 # Workspace metadata (synthesized from events)
 # ---------------------------------------------------------------------------
 
+
 def extract_workspace(events: list[dict]) -> dict:
     """Synthesize a workspace-like dict from Claude events."""
     ws: dict = {}
@@ -288,6 +292,7 @@ def extract_workspace(events: list[dict]) -> dict:
 # Conversation builder
 # ---------------------------------------------------------------------------
 
+
 def build_conversation(events: list[dict]) -> list[dict]:
     """Build a conversation view from Claude JSONL events.
 
@@ -295,19 +300,22 @@ def build_conversation(events: list[dict]) -> list[dict]:
     templates can render them identically.
     """
     conversation: list[dict] = []
+    subagent_tool_ids: set[str] = set()  # track Agent tool_use IDs
 
     # Synthesize session_start from first meaningful event
     for evt in events:
         if evt.get("type") in _DISCOVERY_SKIP_TYPES or evt.get("isMeta"):
             continue
-        conversation.append({
-            "kind": "session_start",
-            "timestamp": evt.get("timestamp", ""),
-            "version": evt.get("version", ""),
-            "repo": "",
-            "branch": evt.get("gitBranch", ""),
-            "cwd": evt.get("cwd", ""),
-        })
+        conversation.append(
+            {
+                "kind": "session_start",
+                "timestamp": evt.get("timestamp", ""),
+                "version": evt.get("version", ""),
+                "repo": "",
+                "branch": evt.get("gitBranch", ""),
+                "cwd": evt.get("cwd", ""),
+            }
+        )
         break
 
     # Merge assistant entries by requestId to reconstruct full turns
@@ -369,10 +377,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
             # Tool results
             if isinstance(content, list):
-                has_tool_result = any(
-                    isinstance(b, dict) and b.get("type") == "tool_result"
-                    for b in content
-                )
+                has_tool_result = any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
                 if has_tool_result:
                     for block in content:
                         if not isinstance(block, dict) or block.get("type") != "tool_result":
@@ -387,48 +392,64 @@ def build_conversation(events: list[dict]) -> list[dict]:
                             result_content = str(result_content)[:MAX_RESULT_CHARS]
 
                         tc_id = block.get("tool_use_id", "")
-                        conversation.append({
-                            "kind": "tool_complete",
-                            "timestamp": ts,
-                            "tool_call_id": tc_id,
-                            "success": not block.get("is_error", False),
-                            "result": result_content,
-                        })
+                        if tc_id in subagent_tool_ids:
+                            conversation.append(
+                                {
+                                    "kind": "subagent_complete",
+                                    "timestamp": ts,
+                                    "agent_name": "",
+                                    "tool_call_id": tc_id,
+                                    "result": result_content,
+                                }
+                            )
+                        else:
+                            conversation.append(
+                                {
+                                    "kind": "tool_complete",
+                                    "timestamp": ts,
+                                    "tool_call_id": tc_id,
+                                    "success": not block.get("is_error", False),
+                                    "result": result_content,
+                                }
+                            )
                     continue
 
                 # Array of text blocks (non-tool-result)
-                texts = [
-                    b.get("text", "") for b in content
-                    if isinstance(b, dict) and b.get("type") == "text"
-                ]
+                texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
                 if texts:
                     joined = "\n".join(texts)
                     if joined.startswith("<"):
                         notif_text, user_text = _split_xml_and_text(joined)
                         if notif_text:
-                            conversation.append({
-                                "kind": "notification",
-                                "timestamp": ts,
-                                "message": notif_text[:500],
-                            })
+                            conversation.append(
+                                {
+                                    "kind": "notification",
+                                    "timestamp": ts,
+                                    "message": notif_text[:500],
+                                }
+                            )
                         if user_text:
-                            conversation.append({
+                            conversation.append(
+                                {
+                                    "kind": "user_message",
+                                    "timestamp": ts,
+                                    "content": user_text,
+                                    "attachments": [],
+                                    "permission_mode": _perm,
+                                    "is_sidechain": _sidechain,
+                                }
+                            )
+                    else:
+                        conversation.append(
+                            {
                                 "kind": "user_message",
                                 "timestamp": ts,
-                                "content": user_text,
+                                "content": joined,
                                 "attachments": [],
                                 "permission_mode": _perm,
                                 "is_sidechain": _sidechain,
-                            })
-                    else:
-                        conversation.append({
-                            "kind": "user_message",
-                            "timestamp": ts,
-                            "content": joined,
-                            "attachments": [],
-                            "permission_mode": _perm,
-                            "is_sidechain": _sidechain,
-                        })
+                            }
+                        )
                 continue
 
             # String content — user message
@@ -438,29 +459,35 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 if content.startswith("<"):
                     notif_text, user_text = _split_xml_and_text(content)
                     if notif_text:
-                        conversation.append({
-                            "kind": "notification",
-                            "timestamp": ts,
-                            "message": notif_text[:500],
-                        })
+                        conversation.append(
+                            {
+                                "kind": "notification",
+                                "timestamp": ts,
+                                "message": notif_text[:500],
+                            }
+                        )
                     if user_text:
-                        conversation.append({
-                            "kind": "user_message",
-                            "timestamp": ts,
-                            "content": user_text,
-                            "attachments": [],
-                            "permission_mode": _perm,
-                            "is_sidechain": _sidechain,
-                        })
+                        conversation.append(
+                            {
+                                "kind": "user_message",
+                                "timestamp": ts,
+                                "content": user_text,
+                                "attachments": [],
+                                "permission_mode": _perm,
+                                "is_sidechain": _sidechain,
+                            }
+                        )
                     continue
-                conversation.append({
-                    "kind": "user_message",
-                    "timestamp": ts,
-                    "content": content,
-                    "attachments": [],
-                    "permission_mode": _perm,
-                    "is_sidechain": _sidechain,
-                })
+                conversation.append(
+                    {
+                        "kind": "user_message",
+                        "timestamp": ts,
+                        "content": content,
+                        "attachments": [],
+                        "permission_mode": _perm,
+                        "is_sidechain": _sidechain,
+                    }
+                )
 
         elif etype == "assistant":
             rid = evt.get("requestId", evt.get("uuid", ""))
@@ -500,91 +527,118 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
             # Emit assistant_message if there's text content or only reasoning
             if text_parts or (reasoning and not tool_uses):
-                conversation.append({
-                    "kind": "assistant_message",
-                    "timestamp": info["timestamp"],
-                    "content": "\n\n".join(text_parts),
-                    "reasoning": reasoning,
-                    "tool_requests": [
-                        {"toolCallId": tu["id"], "toolName": tu.get("name", "unknown")}
-                        for tu in tool_uses
-                    ],
-                    "parent_tool_call_id": None,
-                    "output_tokens": output_tokens,
-                    "stop_reason": stop_reason,
-                    "is_sidechain": is_sidechain,
-                })
+                conversation.append(
+                    {
+                        "kind": "assistant_message",
+                        "timestamp": info["timestamp"],
+                        "content": "\n\n".join(text_parts),
+                        "reasoning": reasoning,
+                        "tool_requests": [
+                            {"toolCallId": tu["id"], "toolName": tu.get("name", "unknown")} for tu in tool_uses
+                        ],
+                        "parent_tool_call_id": None,
+                        "output_tokens": output_tokens,
+                        "stop_reason": stop_reason,
+                        "is_sidechain": is_sidechain,
+                    }
+                )
             elif tool_uses:
                 # No text — just emit a minimal assistant message with tool requests
-                conversation.append({
-                    "kind": "assistant_message",
-                    "timestamp": info["timestamp"],
-                    "content": "",
-                    "reasoning": reasoning,
-                    "tool_requests": [
-                        {"toolCallId": tu["id"], "toolName": tu.get("name", "unknown")}
-                        for tu in tool_uses
-                    ],
-                    "parent_tool_call_id": None,
-                    "output_tokens": output_tokens,
-                    "stop_reason": stop_reason,
-                    "is_sidechain": is_sidechain,
-                })
+                conversation.append(
+                    {
+                        "kind": "assistant_message",
+                        "timestamp": info["timestamp"],
+                        "content": "",
+                        "reasoning": reasoning,
+                        "tool_requests": [
+                            {"toolCallId": tu["id"], "toolName": tu.get("name", "unknown")} for tu in tool_uses
+                        ],
+                        "parent_tool_call_id": None,
+                        "output_tokens": output_tokens,
+                        "stop_reason": stop_reason,
+                        "is_sidechain": is_sidechain,
+                    }
+                )
 
-            # Emit tool_start for each tool_use
+            # Emit tool_start for each tool_use (and subagent_start for Agent tools)
             for tu in tool_uses:
-                conversation.append({
-                    "kind": "tool_start",
-                    "timestamp": info["timestamp"],
-                    "tool_call_id": tu["id"],
-                    "tool_name": tu.get("name", "unknown"),
-                    "arguments": tu.get("input", {}),
-                })
+                tu_name = tu.get("name", "unknown")
+                if tu_name in ("Agent", "dispatch_agent"):
+                    agent_input = tu.get("input", {})
+                    agent_name = agent_input.get("description", agent_input.get("prompt", tu_name))
+                    agent_prompt = agent_input.get("prompt", "")
+                    subagent_tool_ids.add(tu["id"])
+                    conversation.append(
+                        {
+                            "kind": "subagent_start",
+                            "timestamp": info["timestamp"],
+                            "agent_name": str(agent_name)[:120],
+                            "agent_prompt": str(agent_prompt)[:2000],
+                            "tool_call_id": tu["id"],
+                        }
+                    )
+                else:
+                    conversation.append(
+                        {
+                            "kind": "tool_start",
+                            "timestamp": info["timestamp"],
+                            "tool_call_id": tu["id"],
+                            "tool_name": tu_name,
+                            "arguments": tu.get("input", {}),
+                        }
+                    )
 
         elif etype == "system":
             content = evt.get("message", {}).get("content", "")
             if isinstance(content, list):
                 content = " ".join(
-                    b.get("text", "") for b in content
-                    if isinstance(b, dict) and b.get("type") == "text"
+                    b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
                 )
             if content:
-                conversation.append({
-                    "kind": "notification",
-                    "timestamp": ts,
-                    "message": str(content)[:500],
-                })
+                conversation.append(
+                    {
+                        "kind": "notification",
+                        "timestamp": ts,
+                        "message": str(content)[:500],
+                    }
+                )
 
         elif etype == "progress":
             data = evt.get("data", {})
             if data.get("type") == "hook_progress":
-                conversation.append({
-                    "kind": "hook",
-                    "timestamp": ts,
-                    "hook_event": data.get("hookEvent", ""),
-                    "hook_name": data.get("hookName", ""),
-                    "command": data.get("command", ""),
-                })
+                conversation.append(
+                    {
+                        "kind": "hook",
+                        "timestamp": ts,
+                        "hook_event": data.get("hookEvent", ""),
+                        "hook_name": data.get("hookName", ""),
+                        "command": data.get("command", ""),
+                    }
+                )
 
         elif etype == "file-history-snapshot":
             snapshot = evt.get("snapshot", {})
             backups = snapshot.get("trackedFileBackups", {})
             if backups:
-                conversation.append({
-                    "kind": "file_snapshot",
-                    "timestamp": ts,
-                    "file_count": len(backups),
-                    "files": list(backups.keys())[:5],
-                })
+                conversation.append(
+                    {
+                        "kind": "file_snapshot",
+                        "timestamp": ts,
+                        "file_count": len(backups),
+                        "files": list(backups.keys())[:5],
+                    }
+                )
 
         elif etype == "last-prompt":
             prompt = evt.get("lastPrompt", "")
             if prompt:
-                conversation.append({
-                    "kind": "last_prompt",
-                    "timestamp": ts,
-                    "content": prompt[:500],
-                })
+                conversation.append(
+                    {
+                        "kind": "last_prompt",
+                        "timestamp": ts,
+                        "content": prompt[:500],
+                    }
+                )
 
     # Synthesize session_end from last event
     if events:
@@ -602,6 +656,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Statistics
 # ---------------------------------------------------------------------------
+
 
 def compute_stats(events: list[dict]) -> dict:
     """Compute aggregate statistics from Claude session events."""
@@ -636,10 +691,7 @@ def compute_stats(events: list[dict]) -> dict:
                 stats["user_messages"] += 1
                 stats["turns"] += 1
             elif isinstance(content, list):
-                has_tool_result = any(
-                    isinstance(b, dict) and b.get("type") == "tool_result"
-                    for b in content
-                )
+                has_tool_result = any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
                 if not has_tool_result:
                     stats["user_messages"] += 1
                     stats["turns"] += 1
@@ -677,6 +729,8 @@ def compute_stats(events: list[dict]) -> dict:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
                     tn = block.get("name", "unknown")
                     stats["tool_calls"][tn] = stats["tool_calls"].get(tn, 0) + 1
+                    if tn in ("Agent", "dispatch_agent"):
+                        stats["subagents"] += 1
 
     stats["total_output_tokens"] = sum(token_by_request.values())
     stats["total_input_tokens"] = sum(input_by_request.values())

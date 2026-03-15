@@ -66,15 +66,39 @@ def _validate_backup_hash(backup_hash: str) -> None:
 # ---------------------------------------------------------------------------
 
 _SAFE_TAGS = {
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "br", "hr",
-    "ul", "ol", "li",
-    "pre", "code", "blockquote",
-    "strong", "em", "del", "a", "img",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "div", "span",
-    "dl", "dt", "dd",
-    "sub", "sup",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "br",
+    "hr",
+    "ul",
+    "ol",
+    "li",
+    "pre",
+    "code",
+    "blockquote",
+    "strong",
+    "em",
+    "del",
+    "a",
+    "img",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "div",
+    "span",
+    "dl",
+    "dt",
+    "dd",
+    "sub",
+    "sup",
 }
 _SAFE_ATTRS = {
     "a": {"href", "title"},
@@ -107,6 +131,7 @@ def md_to_html(text: str) -> str:
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
+
 
 def create_app(
     log_dir: str | Path | None = None,
@@ -198,8 +223,7 @@ def create_app(
             return idx.get(session_id)
 
         # Bare UUID — collect all matches and detect ambiguity
-        matches = [s for src in ("claude", "copilot", "vscode")
-                   if (s := idx.get(f"{src}:{session_id}"))]
+        matches = [s for src in ("claude", "copilot", "vscode") if (s := idx.get(f"{src}:{session_id}"))]
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
@@ -231,8 +255,41 @@ def create_app(
         copilot_count = sum(1 for s in sessions if s.get("source") == "copilot")
         claude_count = sum(1 for s in sessions if s.get("source") == "claude")
         vscode_count = sum(1 for s in sessions if s.get("source") == "vscode")
+        configs = read_all_configs()
+        c = configs["claude"]
+        cp = configs["copilot"]
+        v = configs["vscode"]
         return render_template(
             "index.html",
+            sessions=sessions,
+            copilot_dir=str(copilot_path),
+            claude_dir=str(claude_path),
+            vscode_dir=str(vscode_path),
+            copilot_count=copilot_count,
+            claude_count=claude_count,
+            vscode_count=vscode_count,
+            configs=configs,
+            total_sessions=len(sessions),
+            total_mcp_servers=len(c.get("mcp_servers", []))
+            + len(cp.get("mcp_servers", []))
+            + len(v.get("mcp_servers", [])),
+            total_plugins=len(c.get("plugins", [])) + len(c.get("external_plugins", [])),
+            total_agents=len(c.get("agents", [])) + len(v.get("agents", [])),
+            total_hooks=len(c.get("hooks", [])),
+            total_commands=len(c.get("commands", [])),
+            total_feature_flags=len(c.get("feature_flags", {})) + len(c.get("growthbook_flags", {})),
+            total_skills=len(c.get("skills", [])) + len(cp.get("skills", [])) + len(v.get("skills", [])),
+        )
+
+    @app.route("/sessions")
+    def sessions_view():
+        force = request.args.get("refresh") == "1"
+        sessions, _ = _build_session_index(force=force)
+        copilot_count = sum(1 for s in sessions if s.get("source") == "copilot")
+        claude_count = sum(1 for s in sessions if s.get("source") == "claude")
+        vscode_count = sum(1 for s in sessions if s.get("source") == "vscode")
+        return render_template(
+            "sessions.html",
             sessions=sessions,
             copilot_dir=str(copilot_path),
             claude_dir=str(claude_path),
@@ -309,6 +366,66 @@ def create_app(
         elif tool == "vscode":
             return read_vscode_config()
         abort(404)
+
+    @app.route("/agents")
+    def agents_view():
+        configs = read_all_configs()
+        agents: list[dict] = []
+        for a in configs["claude"].get("agents", []):
+            agents.append({**a, "source": "claude"})
+        for a in configs["vscode"].get("agents", []):
+            agents.append({**a, "source": "vscode"})
+        claude_agent_count = sum(1 for a in agents if a["source"] == "claude")
+        vscode_agent_count = sum(1 for a in agents if a["source"] == "vscode")
+        return render_template(
+            "agents.html",
+            agents=agents,
+            claude_agent_count=claude_agent_count,
+            vscode_agent_count=vscode_agent_count,
+        )
+
+    def _collect_skills() -> list[dict]:
+        """Collect skills from all tools, deduplicated by name.
+
+        When the same skill is installed in multiple tools, merge into a
+        single entry with a ``sources`` list.
+        """
+        configs = read_all_configs()
+        by_name: dict[str, dict] = {}
+        for source in ("claude", "copilot", "vscode"):
+            for s in configs[source].get("skills", []):
+                name = s["name"]
+                if name in by_name:
+                    by_name[name]["sources"].append(source)
+                else:
+                    by_name[name] = {**s, "sources": [source]}
+        return sorted(by_name.values(), key=lambda s: s["name"])
+
+    @app.route("/skills")
+    def skills_view():
+        skills = _collect_skills()
+        claude_skill_count = sum(1 for s in skills if "claude" in s["sources"])
+        copilot_skill_count = sum(1 for s in skills if "copilot" in s["sources"])
+        vscode_skill_count = sum(1 for s in skills if "vscode" in s["sources"])
+        return render_template(
+            "skills.html",
+            skills=skills,
+            claude_skill_count=claude_skill_count,
+            copilot_skill_count=copilot_skill_count,
+            vscode_skill_count=vscode_skill_count,
+        )
+
+    @app.route("/skills/<skill_name>")
+    def skill_detail_view(skill_name: str):
+        skills = _collect_skills()
+        skill = next((s for s in skills if s["name"] == skill_name), None)
+        if not skill:
+            abort(404)
+        return render_template(
+            "skill_detail.html",
+            skill=skill,
+            md_to_html=md_to_html,
+        )
 
     @app.route("/tools")
     def tools_overview():

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from ._common import mask_dict, safe_read_json
+from ._common import mask_dict, read_skills, safe_read_json
 
 
 def _default_copilot_home() -> Path:
@@ -34,6 +34,7 @@ def read_copilot_config(copilot_home: Path | None = None) -> dict:
         "config": {},
         "mcp_servers": [],
         "recent_commands": [],
+        "skills": [],
         "session_count": 0,
     }
 
@@ -69,8 +70,9 @@ def read_copilot_config(copilot_home: Path | None = None) -> dict:
     # Session count
     session_dir = home / "session-state"
     if session_dir.is_dir():
-        result["session_count"] = sum(
-            1 for d in session_dir.iterdir() if d.is_dir()
-        )
+        result["session_count"] = sum(1 for d in session_dir.iterdir() if d.is_dir())
+
+    # Skills (~/.copilot/skills/)
+    result["skills"] = read_skills(home / "skills")
 
     return result

@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from ._common import mask_dict, safe_read_json, safe_read_text
+from ._common import mask_dict, read_skills, safe_read_json, safe_read_text
 
 # Settings keys relevant to AI/Copilot features
 _AI_SETTINGS_RE = re.compile(
@@ -76,6 +76,7 @@ def read_vscode_config(vscode_user_dir: Path | None = None) -> dict:
         "mcp_servers": [],
         "copilot_settings": {},
         "agents": [],
+        "skills": [],
         "language_models": [],
     }
 
@@ -102,9 +103,14 @@ def read_vscode_config(vscode_user_dir: Path | None = None) -> dict:
     ai_settings = {k: v for k, v in settings.items() if _AI_SETTINGS_RE.search(k)}
     result["copilot_settings"] = mask_dict(ai_settings)
 
-    # Agents from globalStorage
-    global_storage = user_dir.parent / "globalStorage" if user_dir.name == "User" else user_dir / "globalStorage"
+    # Agents from globalStorage (inside the User directory)
+    global_storage = user_dir / "globalStorage"
     result["agents"] = _read_agents(global_storage)
+
+    # Skills from globalStorage/github.copilot-chat/skills/
+    copilot_chat_dir = global_storage / "github.copilot-chat"
+    if copilot_chat_dir.is_dir():
+        result["skills"] = read_skills(copilot_chat_dir / "skills")
 
     # Language models
     models = safe_read_json(user_dir / "chatLanguageModels.json")

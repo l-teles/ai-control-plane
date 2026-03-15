@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/banner.png" alt="AI Log Viewer banner" width="600">
+  <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/logo.svg" alt="AI Control Plane logo" width="80">
 </p>
 
-<h1 align="center">AI Session Log Viewer</h1>
+<h1 align="center">AI Control Plane</h1>
 
 <p align="center">
-  A local web UI for browsing and understanding <strong>GitHub Copilot</strong>, <strong>Claude Code</strong>, and <strong>VS Code Chat</strong> agent session logs.
+  A local web UI for browsing <strong>GitHub Copilot</strong>, <strong>Claude Code</strong>, and <strong>VS Code Chat</strong> agent session logs and tool configurations — all in one place.
 </p>
 
 <p align="center">
@@ -13,10 +13,10 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT">
 </p>
 
-AI coding agents produce rich session logs (JSONL events, workspace metadata,
-rewind snapshots, chat session JSON). This tool turns those raw files into a readable,
-interactive timeline so you can review what happened — the user prompts, assistant
-reasoning, tool calls, sub-agent activity, errors, and file snapshots — all in one place.
+AI coding agents produce rich session logs and configuration files. This tool turns
+those raw files into a readable, interactive dashboard so you can review sessions
+(prompts, reasoning, tool calls, sub-agents, errors) and inspect tool configurations
+(MCP servers, plugins, agents, skills, slash commands, hooks, feature flags) — all in one place.
 
 <table>
   <tr>
@@ -25,18 +25,46 @@ reasoning, tool calls, sub-agent activity, errors, and file snapshots — all in
   </tr>
   <tr>
     <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_home.png">
-        <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="400">
-      </picture>
+      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_home.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_home.png" alt="Dashboard homepage" width="400">
+        </picture>
+      </a>
     </td>
     <td>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_session.png">
-        <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="400">
-      </picture>
+      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_session.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_session.png" alt="Session timeline view" width="400">
+        </picture>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Tool Configuration</strong></td>
+    <td align="center"><strong>Agents</strong></td>
+  </tr>
+  <tr>
+    <td>
+      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_tools.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_tools.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_tools.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_tools.png" alt="Tool configuration page" width="400">
+        </picture>
+      </a>
+    </td>
+    <td>
+      <a href="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_agents.png">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_agents.png">
+          <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_light_agents.png">
+          <img src="https://raw.githubusercontent.com/l-teles/ai-log-viewer/main/assets/screenshot_dark_agents.png" alt="Agents page" width="400">
+        </picture>
+      </a>
     </td>
   </tr>
 </table>
@@ -46,29 +74,54 @@ reasoning, tool calls, sub-agent activity, errors, and file snapshots — all in
 
 ## Features
 
+### Dashboard & Navigation
+- **Metrics dashboard** — aggregated counts for MCP servers, plugins, agents,
+  slash commands, hooks, feature flags, and sessions across all tools.
+- **Tool cards** — at-a-glance status for Claude Code, GitHub Copilot, and
+  VS Code Chat with key stats per tool.
+- **Shared navbar** — sticky navigation with brand SVG icons, breadcrumbs,
+  and dark/light theme toggle.
+
+### Session Browser
 - **Multi-source support** — browse sessions from GitHub Copilot, Claude Code, and
-  VS Code Chat side by side, with color-coded source badges (purple for Claude,
-  orange for Copilot, green for VS Code Chat).
-- **Dashboard homepage** — session counts per source, directory paths, search bar,
-  and source filters to quickly find what you need.
-- **Session index** — lists every session found, with summary, repo/cwd,
-  branch, model, and timestamps.
+  VS Code Chat side by side, with color-coded source badges.
+- **Search & filters** — full-text search across session names, branches, directories,
+  and models; filter by source on the sessions page, by event type in timelines.
 - **Interactive timeline** — color-coded conversation view with:
   - User messages (with file attachments)
   - Assistant responses (rendered Markdown, expandable reasoning/thinking)
   - Tool calls & results (expandable arguments / output)
-  - Sub-agent launches & completions
-  - System notifications (auto-detected from XML context tags)
-  - Errors
-- **Statistics sidebar** — message counts, token usage, tool breakdown with visual
-  bars, model name, and rewind snapshot history.
-- **Filters everywhere** — filter by source (Claude / Copilot / VS Code Chat) on the homepage,
-  filter by event type (User / Assistant / Tools / Sub-Agents / Errors) in sessions.
-- **Search** — full-text search across session names, branches, directories, and models.
-- **Dark / Light mode** — toggle between themes with one click; preference is
-  persisted in `localStorage`.
-- **JSON API** — programmatic access at `/api/sessions` and
-  `/api/session/<id>/events`.
+  - Sub-agent launches & completions (expandable prompt / result)
+  - System notifications, hooks, file snapshots, model changes
+  - Errors and warnings
+- **Statistics sidebar** — message counts, token usage (input/output/cache),
+  tool breakdown with visual bars, MCP tool usage, rewind snapshots.
+
+### Tool Configuration Inspector
+- **Claude Code** — MCP servers, plugins (official + external), agents, skills
+  (standalone + plugin-bundled), slash commands, hooks, feature flags (including
+  GrowthBook server-side flags with toggle), settings, policy limits.
+- **GitHub Copilot** — MCP servers, configuration, recent commands, skills.
+- **VS Code Chat** — MCP servers, agents, skills, AI settings, language models.
+- **Vertical tool navigation** — switch between tools from the sidebar.
+
+### Agents
+- **Aggregated agents page** — view all agents across Claude Code and VS Code
+  in one place.
+- **Clickable source filters** — filter agents by tool (Claude / VS Code) with
+  pill-style toggle buttons.
+
+### Skills
+- **Skills browser** (`/skills`) — deduplicated list of all installed skills
+  across Claude Code, GitHub Copilot, and VS Code Chat, with source badges
+  showing which tools each skill is installed in.
+- **Skill detail page** (`/skills/<name>`) — full rendered SKILL.md content
+  with metadata sidebar (author, version, license, tools, homepage).
+
+### General
+- **Dark / Light mode** — toggle with one click; persisted in `localStorage`.
+- **JSON API** — programmatic access at `/api/sessions`, `/api/session/<id>/events`,
+  `/api/tools`, and `/api/tools/<tool>`.
 - **Security** — UUID & backup-hash validation, path-traversal protection,
   Content-Security-Policy headers, localhost-only by default.
 

@@ -1,446 +1,453 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');</script>
-<title>AI Session Log Viewer</title>
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+
+{% block title %}Dashboard - AI Control Plane{% endblock %}
+
+{% block head_extra %}
 <style>
-/* Dark theme (default) */
-:root, [data-theme="dark"] {
-  --bg: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-secondary: #8b949e;
-  --accent: #58a6ff;
-  --accent-subtle: #1f6feb33;
-  --green: #3fb950;
-  --green-subtle: #3fb95022;
-  --orange: #d29922;
-  --orange-subtle: #d2992222;
-  --red: #f85149;
-  --red-subtle: #f8514922;
-  --purple: #bc8cff;
-  --purple-subtle: #bc8cff22;
-  --radius: 8px;
-  --shadow: 0 3px 12px rgba(0,0,0,0.4);
-}
-/* Light theme */
-[data-theme="light"] {
-  --bg: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #eaeef2;
-  --border: #d0d7de;
-  --text: #1f2328;
-  --text-secondary: #656d76;
-  --accent: #0969da;
-  --accent-subtle: #0969da1a;
-  --green: #1a7f37;
-  --green-subtle: #1a7f371a;
-  --orange: #9a6700;
-  --orange-subtle: #9a67001a;
-  --red: #cf222e;
-  --red-subtle: #cf222e1a;
-  --purple: #8250df;
-  --purple-subtle: #8250df1a;
-  --radius: 8px;
-  --shadow: 0 3px 12px rgba(0,0,0,0.12);
-}
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.6;
-  min-height: 100vh;
-}
-.container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
-header {
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  padding: 20px 0;
+/* ── Dashboard Hero ─────────────────────────────────────────────────── */
+.dashboard-header {
   margin-bottom: 32px;
 }
-header .container { display: flex; align-items: center; gap: 16px; }
-.logo {
-  width: 40px; height: 40px;
-  background: linear-gradient(135deg, var(--accent), var(--purple));
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; font-weight: bold; color: #fff;
+.dashboard-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 2px;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
-header h1 { font-size: 22px; font-weight: 600; }
-header p { color: var(--text-secondary); font-size: 14px; }
-.refresh-btn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 6px 12px;
-  cursor: pointer;
+.dashboard-header p {
   color: var(--text-secondary);
   font-size: 14px;
-  line-height: 1;
-  transition: all 0.15s;
-  flex-shrink: 0;
 }
-.refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
-.refresh-btn.spinning { animation: spin 0.6s linear infinite; pointer-events: none; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.theme-toggle {
-  margin-left: auto;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 6px 12px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Summary stats row */
-.stats-row {
-  display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap;
+/* ── Metric Cards (hero row) ────────────────────────────────────────── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 32px;
 }
-.stat-card {
+a.metric-card { text-decoration: none; color: inherit; }
+a.metric-card:hover { text-decoration: none; }
+.metric-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 20px;
-  flex: 1;
-  min-width: 180px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
-.stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--accent); }
-.stat-card .stat-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
-.stat-card .stat-detail {
-  font-size: 11px; color: var(--text-secondary);
-  font-family: "SFMono-Regular", Consolas, monospace;
-  margin-top: 4px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.metric-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
 }
-
-/* Source filters */
-.filters {
-  display: flex; flex-wrap: wrap; gap: 8px;
-  margin-bottom: 20px;
-}
-.filter-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 6px 16px;
-  border-radius: 20px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: inherit;
-}
-.filter-btn:hover, .filter-btn.active {
-  background: var(--accent-subtle);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.filter-btn.active-claude {
-  background: var(--purple-subtle);
-  border-color: var(--purple);
-  color: var(--purple);
-}
-.filter-btn.active-copilot {
-  background: var(--orange-subtle);
-  border-color: var(--orange);
-  color: var(--orange);
-}
-.filter-btn.active-vscode {
-  background: var(--green-subtle);
-  border-color: var(--green);
-  color: var(--green);
-}
-.filter-btn .count {
-  display: inline-block;
-  background: var(--bg-tertiary);
-  padding: 0 6px;
-  border-radius: 10px;
-  font-size: 11px;
-  margin-left: 4px;
-}
-
-/* Search */
-.search-bar {
-  margin-bottom: 20px;
-}
-.search-bar input {
-  width: 100%;
-  padding: 10px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  opacity: 0.05;
   border-radius: var(--radius);
+  pointer-events: none;
+}
+.metric-card.purple::before { background: linear-gradient(135deg, var(--purple), transparent 60%); }
+.metric-card.orange::before { background: linear-gradient(135deg, var(--orange), transparent 60%); }
+.metric-card.green::before { background: linear-gradient(135deg, var(--green), transparent 60%); }
+.metric-card.blue::before { background: linear-gradient(135deg, var(--accent), transparent 60%); }
+.metric-icon {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+.metric-card.blue .metric-icon { color: var(--accent); opacity: 0.7; }
+.metric-card.purple .metric-icon { color: var(--purple); opacity: 0.7; }
+.metric-card.green .metric-icon { color: var(--green); opacity: 0.7; }
+.metric-card.orange .metric-icon { color: var(--orange); opacity: 0.7; }
+.metric-value {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
   color: var(--text);
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.2s;
 }
-.search-bar input:focus {
-  border-color: var(--accent);
+.metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-top: 4px;
 }
-.search-bar input::placeholder { color: var(--text-secondary); }
 
-/* Sessions grid */
-.sessions-grid { display: flex; flex-direction: column; gap: 12px; }
-.session-card {
+/* ── Section heading ────────────────────────────────────────────────── */
+.section-heading {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+/* ── Tool Cards (3-col grid) ────────────────────────────────────────── */
+.tool-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.tool-card {
+  display: block;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px 24px;
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  display: block;
-}
-.session-card:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), var(--shadow);
-}
-.session-card.loading {
-  opacity: 0.6;
-  pointer-events: none;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
   position: relative;
+  overflow: hidden;
 }
-.session-card.loading::after {
-  content: "Loading...";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  padding: 6px 16px;
-  border-radius: 20px;
-  font-size: 13px;
+.tool-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  text-decoration: none;
 }
-.session-card h2 {
-  font-size: 18px; font-weight: 600; margin-bottom: 8px;
-  color: var(--accent);
+.tool-card.claude { border-left: 3px solid var(--purple); }
+.tool-card.claude:hover { border-color: var(--purple); }
+.tool-card.copilot { border-left: 3px solid var(--orange); }
+.tool-card.copilot:hover { border-color: var(--orange); }
+.tool-card.vscode { border-left: 3px solid var(--green); }
+.tool-card.vscode:hover { border-color: var(--green); }
+
+.tool-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.tool-card-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
-.session-meta {
-  display: flex; flex-wrap: wrap; gap: 16px;
-  font-size: 13px; color: var(--text-secondary);
-}
-.session-meta span { display: flex; align-items: center; gap: 4px; }
-.badge {
-  display: inline-block;
+.tool-card.claude .tool-card-icon { background: var(--purple-subtle); color: var(--purple); }
+.tool-card.copilot .tool-card-icon { background: var(--orange-subtle); color: var(--orange); }
+.tool-card.vscode .tool-card-icon { background: var(--green-subtle); color: var(--green); }
+
+.tool-card-header h3 { font-size: 16px; font-weight: 600; flex: 1; }
+.tool-card.claude h3 { color: var(--purple); }
+.tool-card.copilot h3 { color: var(--orange); }
+.tool-card.vscode h3 { color: var(--green); }
+
+.tool-card .status-badge {
+  font-size: 11px;
+  font-weight: 500;
   padding: 2px 8px;
   border-radius: 12px;
-  font-size: 12px;
+}
+.status-installed { background: var(--green-subtle); color: var(--green); }
+.status-not-found { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+.tool-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.tool-stat {
+  text-align: center;
+  padding: 10px 4px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+}
+.tool-stat-value { font-size: 20px; font-weight: 700; color: var(--text); }
+.tool-stat-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── Session Breakdown ──────────────────────────────────────────────── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+.breakdown-bars {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.breakdown-bars .section-heading { margin-bottom: 16px; }
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+.bar-row + .bar-row { border-top: 1px solid var(--border); }
+.bar-row a { text-decoration: none; }
+.bar-source {
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.bar-track {
+  flex: 1;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 2px;
+}
+.bar-fill.claude { background: var(--purple); }
+.bar-fill.copilot { background: var(--orange); }
+.bar-fill.vscode { background: var(--green); }
+.bar-count {
+  width: 40px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+/* ── Recent Sessions ────────────────────────────────────────────────── */
+.recent-sessions {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.recent-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+.view-all-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity var(--transition);
+}
+.view-all-link:hover { text-decoration: none; opacity: 0.8; }
+.recent-list { list-style: none; }
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--transition);
+}
+.recent-item:last-child { border-bottom: none; }
+.recent-item:hover { background: var(--bg-tertiary); text-decoration: none; }
+.recent-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
   font-weight: 500;
 }
-.badge-repo { background: var(--accent-subtle); color: var(--accent); }
-.badge-branch { background: #3fb95022; color: var(--green); }
-.badge-source-claude { background: var(--purple-subtle); color: var(--purple); }
-.badge-source-copilot { background: var(--orange-subtle); color: var(--orange); }
-.badge-source-vscode { background: var(--green-subtle); color: var(--green); }
-.badge-model {
-  background: var(--bg-tertiary);
+.recent-time {
+  font-size: 12px;
   color: var(--text-secondary);
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
 }
-.badge-warning {
-  background: var(--orange-subtle);
-  color: var(--orange);
-  font-weight: 600;
-}
-.no-results {
-  text-align: center; padding: 40px 20px;
-  color: var(--text-secondary);
-  display: none;
-}
+
+/* ── Empty state ────────────────────────────────────────────────────── */
 .empty-state {
-  text-align: center; padding: 80px 20px;
+  text-align: center;
+  padding: 80px 20px;
   color: var(--text-secondary);
 }
 .empty-state h2 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
+.empty-state svg { margin-bottom: 16px; opacity: 0.4; }
 </style>
-</head>
-<body>
-<header>
-  <div class="container">
-    <div class="logo">A</div>
-    <div>
-      <h1>AI Session Log Viewer</h1>
-      <p>Browse and understand AI agent session logs</p>
-    </div>
-    <button class="refresh-btn" onclick="refreshSessions(this)" id="refresh-btn" title="Refresh session list" aria-label="Refresh session list">&#x21bb;</button>
-    <a class="refresh-btn" href="/tools" style="text-decoration:none;">Tools</a>
-    <button class="theme-toggle" onclick="toggleTheme()" id="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle light/dark mode"></button>
-  </div>
-</header>
+{% endblock %}
+
+{% block content %}
 <div class="container">
-  {% if sessions %}
-  <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-value">{{ sessions|length }}</div>
-      <div class="stat-label">Total Sessions</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:var(--purple);">{{ claude_count }}</div>
-      <div class="stat-label">Claude Code</div>
-      <div class="stat-detail" title="{{ claude_dir }}">{{ claude_dir }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:var(--orange);">{{ copilot_count }}</div>
-      <div class="stat-label">GitHub Copilot</div>
-      <div class="stat-detail" title="{{ copilot_dir }}">{{ copilot_dir }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:var(--green);">{{ vscode_count }}</div>
-      <div class="stat-label">VS Code Chat</div>
-      <div class="stat-detail" title="{{ vscode_dir }}">{{ vscode_dir }}</div>
-    </div>
+  <div class="dashboard-header">
+    <h1>AI Control Plane</h1>
+    <p>Your AI coding tools at a glance</p>
   </div>
 
-  <div class="search-bar">
-    <input type="text" id="search" placeholder="Search sessions by name, branch, directory, model..." autocomplete="off">
+  {# ── Hero Metrics (clickable) ──────────────────────────────────────── #}
+  <div class="metrics-grid">
+    <a class="metric-card blue" href="/tools">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></div>
+      <div class="metric-value">{{ total_mcp_servers }}</div>
+      <div class="metric-label">MCP Servers</div>
+    </a>
+    <a class="metric-card purple" href="/tools/claude">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+      <div class="metric-value">{{ total_plugins }}</div>
+      <div class="metric-label">Plugins</div>
+    </a>
+    <a class="metric-card green" href="/agents">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div class="metric-value">{{ total_agents }}</div>
+      <div class="metric-label">Agents</div>
+    </a>
+    <a class="metric-card" href="/sessions">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+      <div class="metric-value">{{ total_sessions }}</div>
+      <div class="metric-label">Sessions</div>
+    </a>
+    <a class="metric-card orange" href="/tools/claude">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+      <div class="metric-value">{{ total_hooks }}</div>
+      <div class="metric-label">Hooks</div>
+    </a>
+    <a class="metric-card" href="/tools/claude">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg></div>
+      <div class="metric-value">{{ total_commands }}</div>
+      <div class="metric-label">Commands</div>
+    </a>
+    <a class="metric-card" href="/tools/claude">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></div>
+      <div class="metric-value">{{ total_feature_flags }}</div>
+      <div class="metric-label">Feature Flags</div>
+    </a>
+    <a class="metric-card blue" href="/skills">
+      <div class="metric-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
+      <div class="metric-value">{{ total_skills }}</div>
+      <div class="metric-label">Skills</div>
+    </a>
   </div>
 
-  <div class="filters">
-    <button class="filter-btn active" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
-  </div>
-
-  <div class="sessions-grid" id="sessions-grid">
-    {% for s in sessions %}
-    <a class="session-card" href="/session/{{ s.id }}" data-source="{{ s.source }}"
-       data-search="{{ (s.summary or s.id)|lower }} {{ (s.branch or '')|lower }} {{ (s.cwd or '')|lower }} {{ (s.repository or '')|lower }} {{ (s.model or '')|lower }} {{ (s.slug or '')|lower }}">
-      <h2>{{ s.summary or s.id }}</h2>
-      <div class="session-meta">
-        {% if s.source == 'claude' %}
-        <span class="badge badge-source-claude">Claude Code</span>
-        {% elif s.source == 'vscode' %}
-        <span class="badge badge-source-vscode">VS Code Chat</span>
-        {% else %}
-        <span class="badge badge-source-copilot">Copilot</span>
-        {% endif %}
-        {% if s.max_tool_calls_exceeded %}
-        <span class="badge badge-warning">Tool limit hit</span>
-        {% endif %}
-        {% if s.has_pending_edits %}
-        <span class="badge badge-warning">Pending edits</span>
-        {% endif %}
-        {% if s.slug %}
-        <span class="badge badge-model">{{ s.slug }}</span>
-        {% endif %}
-        {% if s.model %}
-        <span class="badge badge-model">{{ s.model }}</span>
-        {% endif %}
-        {% if s.repository %}
-        <span class="badge badge-repo">{{ s.repository }}</span>
-        {% endif %}
-        {% if s.branch %}
-        <span class="badge badge-branch">{{ s.branch }}</span>
-        {% endif %}
-        {% if s.created_at %}
-        <span>{{ s.created_at[:19].replace('T', ' ') }} UTC</span>
-        {% endif %}
-        {% if s.cwd %}
-        <span style="font-family:monospace;font-size:12px;">{{ s.cwd }}</span>
-        {% endif %}
+  {# ── Tool Cards ────────────────────────────────────────────────────── #}
+  <div class="section-heading">Tools</div>
+  <div class="tool-cards">
+    {% set c = configs.claude %}
+    <a class="tool-card claude" href="/tools/claude">
+      <div class="tool-card-header">
+        <div class="tool-card-icon">{{ icon_claude(20) }}</div>
+        <h3>Claude Code</h3>
+        <span class="status-badge {% if c.installed %}status-installed{% else %}status-not-found{% endif %}">
+          {{ "Installed" if c.installed else "Not found" }}
+        </span>
+      </div>
+      <div class="tool-stats">
+        <div class="tool-stat"><div class="tool-stat-value">{{ c.mcp_servers|length }}</div><div class="tool-stat-label">MCP</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ c.plugins|length + c.external_plugins|length }}</div><div class="tool-stat-label">Plugins</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ c.agents|length }}</div><div class="tool-stat-label">Agents</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ c.skills|length }}</div><div class="tool-stat-label">Skills</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ c.commands|length }}</div><div class="tool-stat-label">Commands</div></div>
       </div>
     </a>
-    {% endfor %}
+
+    {% set cp = configs.copilot %}
+    <a class="tool-card copilot" href="/tools/copilot">
+      <div class="tool-card-header">
+        <div class="tool-card-icon">{{ icon_copilot(20) }}</div>
+        <h3>GitHub Copilot</h3>
+        <span class="status-badge {% if cp.installed %}status-installed{% else %}status-not-found{% endif %}">
+          {{ "Installed" if cp.installed else "Not found" }}
+        </span>
+      </div>
+      <div class="tool-stats">
+        <div class="tool-stat"><div class="tool-stat-value">{{ cp.mcp_servers|length }}</div><div class="tool-stat-label">MCP</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cp.skills|length }}</div><div class="tool-stat-label">Skills</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cp.session_count }}</div><div class="tool-stat-label">Sessions</div></div>
+      </div>
+    </a>
+
+    {% set v = configs.vscode %}
+    <a class="tool-card vscode" href="/tools/vscode">
+      <div class="tool-card-header">
+        <div class="tool-card-icon">{{ icon_vscode(20) }}</div>
+        <h3>VS Code Chat</h3>
+        <span class="status-badge {% if v.installed %}status-installed{% else %}status-not-found{% endif %}">
+          {{ "Installed" if v.installed else "Not found" }}
+        </span>
+      </div>
+      <div class="tool-stats">
+        <div class="tool-stat"><div class="tool-stat-value">{{ v.mcp_servers|length }}</div><div class="tool-stat-label">MCP</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ v.agents|length }}</div><div class="tool-stat-label">Agents</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ v.skills|length }}</div><div class="tool-stat-label">Skills</div></div>
+      </div>
+    </a>
   </div>
-  <div class="no-results" id="no-results">
-    <h2>No matching sessions</h2>
-    <p>Try a different search term or filter.</p>
+
+  {# ── Session Breakdown + Recent Sessions (side by side) ─────────── #}
+  {% if total_sessions > 0 %}
+  <div class="two-col">
+    <div class="breakdown-bars">
+      <div class="section-heading">Sessions by Source</div>
+      {% set max_count = [claude_count, copilot_count, vscode_count]|max or 1 %}
+      <div class="bar-row">
+        <span class="bar-source">Claude</span>
+        <div class="bar-track"><div class="bar-fill claude" style="width: {{ (claude_count / max_count * 100)|round|int }}%"></div></div>
+        <span class="bar-count">{{ claude_count }}</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-source">Copilot</span>
+        <div class="bar-track"><div class="bar-fill copilot" style="width: {{ (copilot_count / max_count * 100)|round|int }}%"></div></div>
+        <span class="bar-count">{{ copilot_count }}</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-source">VS Code</span>
+        <div class="bar-track"><div class="bar-fill vscode" style="width: {{ (vscode_count / max_count * 100)|round|int }}%"></div></div>
+        <span class="bar-count">{{ vscode_count }}</span>
+      </div>
+    </div>
+
+    <div class="recent-sessions">
+      <div class="recent-header">
+        <h3>Recent Sessions</h3>
+        <a class="view-all-link" href="/sessions">View all <span>&rarr;</span></a>
+      </div>
+      <div class="recent-list">
+        {% for s in sessions[:5] %}
+        <a class="recent-item" href="/session/{{ s.id }}">
+          {% if s.source == 'claude' %}
+          <span class="badge badge-source-claude">Claude</span>
+          {% elif s.source == 'vscode' %}
+          <span class="badge badge-source-vscode">VS Code</span>
+          {% else %}
+          <span class="badge badge-source-copilot">Copilot</span>
+          {% endif %}
+          <span class="recent-summary">{{ s.summary or s.id }}</span>
+          {% if s.created_at %}
+          <span class="recent-time">{{ s.created_at[:16].replace('T', ' ') }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
   </div>
   {% else %}
   <div class="empty-state">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
     <h2>No sessions found</h2>
     <p>Point the viewer at directories containing Copilot, Claude Code, or VS Code Chat session logs.</p>
   </div>
   {% endif %}
 </div>
-
-<script>
-/* Theme toggle */
-(function() {
-  var saved = localStorage.getItem('theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
-  var btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = saved === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
-})();
-function toggleTheme() {
-  var current = document.documentElement.getAttribute('data-theme') || 'dark';
-  var next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('theme', next);
-  var btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = next === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
-}
-
-var currentFilter = 'all';
-var currentSearch = '';
-
-function applyFilters() {
-  var cards = document.querySelectorAll('#sessions-grid .session-card');
-  var visible = 0;
-  cards.forEach(function(card) {
-    var sourceMatch = currentFilter === 'all' || card.dataset.source === currentFilter;
-    var searchMatch = !currentSearch || card.dataset.search.indexOf(currentSearch) !== -1;
-    var show = sourceMatch && searchMatch;
-    card.style.display = show ? '' : 'none';
-    if (show) visible++;
-  });
-  var nr = document.getElementById('no-results');
-  if (nr) nr.style.display = visible === 0 ? '' : 'none';
-}
-
-function filterSessions(source, btn) {
-  document.querySelectorAll('.filter-btn').forEach(function(b) {
-    b.classList.remove('active', 'active-claude', 'active-copilot', 'active-vscode');
-  });
-  var activeClass = btn.dataset.activeClass || 'active';
-  btn.classList.add(activeClass);
-  currentFilter = source;
-  applyFilters();
-}
-
-var searchInput = document.getElementById('search');
-if (searchInput) {
-  searchInput.addEventListener('input', function() {
-    currentSearch = this.value.toLowerCase().trim();
-    applyFilters();
-  });
-}
-
-/* Refresh sessions */
-function refreshSessions(btn) {
-  btn.classList.add('spinning');
-  window.location.href = '/?refresh=1';
-}
-
-/* Loading indicator on session card click */
-document.querySelectorAll('#sessions-grid .session-card').forEach(function(card) {
-  card.addEventListener('click', function() {
-    this.classList.add('loading');
-  });
-});
-
-/* Clear loading state on back/forward navigation (bfcache) */
-window.addEventListener('pageshow', function(e) {
-  if (e.persisted) {
-    document.querySelectorAll('.session-card.loading').forEach(function(card) {
-      card.classList.remove('loading');
-    });
-  }
-});
-</script>
-</body>
-</html>
+{% endblock %}

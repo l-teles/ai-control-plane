@@ -124,6 +124,62 @@ def parse_yaml_frontmatter(path: Path) -> dict | None:
         return None
 
 
+def _extract_skill_body(path: Path) -> str:
+    """Extract the markdown body after YAML frontmatter."""
+    try:
+        if not path.is_file():
+            return ""
+        with open(path) as f:
+            content = f.read(100_000)
+        if not content.startswith("---"):
+            return content
+        end = content.find("\n---", 3)
+        if end == -1:
+            return content
+        return content[end + 4 :].strip()
+    except OSError:
+        return ""
+
+
+def read_skills(skills_dir: Path) -> list[dict]:
+    """Read SKILL.md files from a skills directory.
+
+    Each skill is a subdirectory containing a ``SKILL.md`` with YAML frontmatter.
+    """
+    skills: list[dict] = []
+    if not skills_dir.is_dir():
+        return skills
+    for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
+        fm = parse_yaml_frontmatter(skill_file) or {}
+        # Extract homepage URL from metadata.homepage or top-level homepage
+        metadata = fm.get("metadata", {})
+        homepage = ""
+        author = ""
+        version = ""
+        if isinstance(metadata, dict):
+            homepage = metadata.get("homepage", "")
+            author = metadata.get("author", "")
+            version = metadata.get("version", "")
+        if not homepage:
+            homepage = fm.get("homepage", "")
+        if not author:
+            author = fm.get("author", "")
+        skills.append(
+            {
+                "name": fm.get("name") or skill_file.parent.name,
+                "description": fm.get("description", "").strip()[:200],
+                "path": str(skill_file.parent),
+                "homepage": str(homepage) if homepage else "",
+                "author": str(author) if author else "",
+                "version": str(version) if version else "",
+                "license": str(fm.get("license", "")) or "",
+                "tools": fm.get("tools", ""),
+                "body": _extract_skill_body(skill_file),
+            }
+        )
+    return skills
+
+
 def safe_read_text(path: Path, max_bytes: int = 50_000) -> str | None:
     """Read a text file with size limit, returning None if missing."""
     try:

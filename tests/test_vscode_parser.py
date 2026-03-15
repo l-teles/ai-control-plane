@@ -143,18 +143,14 @@ def vscode_workspace(tmp_path: Path) -> Path:
     chat_dir.mkdir(parents=True)
 
     # workspace.json
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///Users/test/my-project"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///Users/test/my-project"}))
 
     # Session with tool calls
     session = _make_session(
         custom_title="Fix the bug in auth module",
         requests=[_make_request(), _make_request_with_tools()],
     )
-    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(
-        json.dumps(session)
-    )
+    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(json.dumps(session))
 
     return tmp_path
 
@@ -170,9 +166,7 @@ def vscode_global_session(tmp_path: Path) -> Path:
         custom_title="NPM not found",
     )
     wrapper = {"kind": 0, "v": session}
-    (global_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl").write_text(
-        json.dumps(wrapper) + "\n"
-    )
+    (global_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl").write_text(json.dumps(wrapper) + "\n")
 
     return tmp_path
 
@@ -180,6 +174,7 @@ def vscode_global_session(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # discover_sessions
 # ---------------------------------------------------------------------------
+
 
 def test_discover_sessions(vscode_workspace: Path) -> None:
     sessions = discover_sessions(vscode_workspace)
@@ -213,9 +208,7 @@ def test_jsonl_patch_reconstruction(tmp_path: Path) -> None:
     ws_dir = tmp_path / "workspaceStorage" / "patchhash"
     chat_dir = ws_dir / "chatSessions"
     chat_dir.mkdir(parents=True)
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///tmp/proj"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
 
     # kind 0: initial snapshot with one request
     session = _make_session(
@@ -245,9 +238,7 @@ def test_jsonl_patch_two_level_dict_key(tmp_path: Path) -> None:
     ws_dir = tmp_path / "workspaceStorage" / "dicthash"
     chat_dir = ws_dir / "chatSessions"
     chat_dir.mkdir(parents=True)
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///tmp/proj"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
 
     session = _make_session(
         session_id="dddddddd-eeee-ffff-0000-111111111111",
@@ -270,9 +261,7 @@ def test_jsonl_malformed_patch_ignored(tmp_path: Path) -> None:
     ws_dir = tmp_path / "workspaceStorage" / "badhash"
     chat_dir = ws_dir / "chatSessions"
     chat_dir.mkdir(parents=True)
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///tmp/proj"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
 
     session = _make_session(
         session_id="eeeeeeee-ffff-0000-1111-222222222222",
@@ -295,10 +284,14 @@ def test_jsonl_malformed_patch_ignored(tmp_path: Path) -> None:
 # parse_events
 # ---------------------------------------------------------------------------
 
+
 def test_parse_events(vscode_workspace: Path) -> None:
     session_file = (
-        vscode_workspace / "workspaceStorage" / "abc123hash"
-        / "chatSessions" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+        vscode_workspace
+        / "workspaceStorage"
+        / "abc123hash"
+        / "chatSessions"
+        / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
     )
     events = parse_events(session_file)
     assert len(events) == 3  # 1 meta + 2 requests
@@ -309,7 +302,9 @@ def test_parse_events(vscode_workspace: Path) -> None:
 
 def test_parse_events_global(vscode_global_session: Path) -> None:
     session_file = (
-        vscode_global_session / "globalStorage" / "emptyWindowChatSessions"
+        vscode_global_session
+        / "globalStorage"
+        / "emptyWindowChatSessions"
         / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl"
     )
     events = parse_events(session_file)
@@ -321,10 +316,14 @@ def test_parse_events_global(vscode_global_session: Path) -> None:
 # build_conversation
 # ---------------------------------------------------------------------------
 
+
 def test_build_conversation_session_start(vscode_workspace: Path) -> None:
     session_file = (
-        vscode_workspace / "workspaceStorage" / "abc123hash"
-        / "chatSessions" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+        vscode_workspace
+        / "workspaceStorage"
+        / "abc123hash"
+        / "chatSessions"
+        / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
     )
     events = parse_events(session_file)
     conv = build_conversation(events)
@@ -334,8 +333,11 @@ def test_build_conversation_session_start(vscode_workspace: Path) -> None:
 
 def test_build_conversation_user_message(vscode_workspace: Path) -> None:
     session_file = (
-        vscode_workspace / "workspaceStorage" / "abc123hash"
-        / "chatSessions" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+        vscode_workspace
+        / "workspaceStorage"
+        / "abc123hash"
+        / "chatSessions"
+        / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
     )
     events = parse_events(session_file)
     conv = build_conversation(events)
@@ -406,10 +408,14 @@ def test_build_conversation_tool_rounds_interleaved() -> None:
 # compute_stats
 # ---------------------------------------------------------------------------
 
+
 def test_compute_stats(vscode_workspace: Path) -> None:
     session_file = (
-        vscode_workspace / "workspaceStorage" / "abc123hash"
-        / "chatSessions" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+        vscode_workspace
+        / "workspaceStorage"
+        / "abc123hash"
+        / "chatSessions"
+        / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
     )
     events = parse_events(session_file)
     stats = compute_stats(events)
@@ -433,10 +439,14 @@ def test_compute_stats_canceled() -> None:
 # extract_workspace
 # ---------------------------------------------------------------------------
 
+
 def test_extract_workspace(vscode_workspace: Path) -> None:
     session_file = (
-        vscode_workspace / "workspaceStorage" / "abc123hash"
-        / "chatSessions" / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+        vscode_workspace
+        / "workspaceStorage"
+        / "abc123hash"
+        / "chatSessions"
+        / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
     )
     events = parse_events(session_file)
     ws = extract_workspace(events)
@@ -468,15 +478,11 @@ def test_max_tool_calls_on_session_entry(tmp_path: Path) -> None:
     ws_dir = tmp_path / "workspaceStorage" / "hash1"
     chat_dir = ws_dir / "chatSessions"
     chat_dir.mkdir(parents=True)
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///tmp/proj"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
     req = _make_request()
     req["result"]["metadata"]["maxToolCallsExceeded"] = True
     session = _make_session(requests=[req])
-    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(
-        json.dumps(session)
-    )
+    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(json.dumps(session))
     sessions = discover_sessions(tmp_path)
     assert len(sessions) == 1
     assert sessions[0].get("max_tool_calls_exceeded") is True
@@ -670,14 +676,10 @@ def test_has_pending_edits(tmp_path: Path) -> None:
     ws_dir = tmp_path / "workspaceStorage" / "hash2"
     chat_dir = ws_dir / "chatSessions"
     chat_dir.mkdir(parents=True)
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///tmp/proj"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
     session = _make_session()
     session["hasPendingEdits"] = True
-    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(
-        json.dumps(session)
-    )
+    (chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json").write_text(json.dumps(session))
     sessions = discover_sessions(tmp_path)
     assert len(sessions) == 1
     assert sessions[0].get("has_pending_edits") is True

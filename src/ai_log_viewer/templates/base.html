@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');</script>
+<title>{% block title %}AI Control Plane{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c2128'/%3E%3Crect x='6' y='8' width='16' height='3' rx='1.5' fill='%23bc8cff'/%3E%3Crect x='6' y='14.5' width='11' height='3' rx='1.5' fill='%23d29922'/%3E%3Crect x='6' y='21' width='14' height='3' rx='1.5' fill='%233fb950'/%3E%3Ccircle cx='22' cy='9.5' r='2.5' fill='white' stroke='%23bc8cff'/%3E%3Ccircle cx='17' cy='16' r='2.5' fill='white' stroke='%23d29922'/%3E%3Ccircle cx='20' cy='22.5' r='2.5' fill='white' stroke='%233fb950'/%3E%3C/svg%3E">
+<style>
+/* ── Theme Variables ────────────────────────────────────────────────── */
+:root, [data-theme="dark"] {
+  --bg: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent: #58a6ff;
+  --accent-subtle: #1f6feb33;
+  --green: #3fb950;
+  --green-subtle: #3fb95022;
+  --orange: #d29922;
+  --orange-subtle: #d2992222;
+  --red: #f85149;
+  --red-subtle: #f8514922;
+  --purple: #bc8cff;
+  --purple-subtle: #bc8cff22;
+  --cyan: #39d353;
+  --radius: 8px;
+  --shadow: 0 3px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eaeef2;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-secondary: #656d76;
+  --accent: #0969da;
+  --accent-subtle: #0969da1a;
+  --green: #1a7f37;
+  --green-subtle: #1a7f371a;
+  --orange: #9a6700;
+  --orange-subtle: #9a67001a;
+  --red: #cf222e;
+  --red-subtle: #cf222e1a;
+  --purple: #8250df;
+  --purple-subtle: #8250df1a;
+  --cyan: #1a7f37;
+  --radius: 8px;
+  --shadow: 0 3px 12px rgba(0,0,0,0.12);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.16);
+}
+
+/* ── Reset & Base ───────────────────────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 4%, transparent) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border); }
+html { scrollbar-width: thin; scrollbar-color: var(--bg-tertiary) var(--bg); }
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* ── Navbar ─────────────────────────────────────────────────────────── */
+.navbar {
+  background: color-mix(in srgb, var(--bg-secondary) 85%, transparent);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+.navbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+}
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+.navbar-brand:hover { text-decoration: none; }
+.navbar-brand svg { flex-shrink: 0; }
+.navbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--transition), background var(--transition);
+  position: relative;
+}
+.nav-item:hover {
+  color: var(--text);
+  background: var(--bg-tertiary);
+  text-decoration: none;
+}
+.nav-item.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+.nav-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.nav-spacer { flex: 1; }
+
+/* Theme toggle — SVG sun/moon */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+  flex-shrink: 0;
+  padding: 0;
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.theme-toggle:hover svg { transform: rotate(15deg); }
+.theme-icon-sun, .theme-icon-moon { display: none; }
+[data-theme="dark"] .theme-icon-sun { display: block; }
+[data-theme="light"] .theme-icon-moon { display: block; }
+
+/* ── Breadcrumb ─────────────────────────────────────────────────────── */
+.breadcrumb-bar {
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.breadcrumb-bar a { color: var(--text-secondary); }
+.breadcrumb-bar a:hover { color: var(--accent); text-decoration: none; }
+.breadcrumb-sep { margin: 0 6px; opacity: 0.5; }
+
+/* ── Card ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+.card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+a.card:hover { text-decoration: none; }
+
+/* ── Badge ──────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.badge-on { background: var(--green-subtle); color: var(--green); }
+.badge-off { background: var(--bg-tertiary); color: var(--text-secondary); }
+.badge-source-claude { background: var(--purple-subtle); color: var(--purple); }
+.badge-source-copilot { background: var(--orange-subtle); color: var(--orange); }
+.badge-source-vscode { background: var(--green-subtle); color: var(--green); }
+.badge-repo { background: var(--accent-subtle); color: var(--accent); }
+.badge-branch { background: var(--green-subtle); color: var(--green); }
+.badge-model { background: var(--bg-tertiary); color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; }
+.badge-warning { background: var(--orange-subtle); color: var(--orange); font-weight: 600; }
+.badge-official { background: var(--accent-subtle); color: var(--accent); }
+.badge-external { background: var(--orange-subtle); color: var(--orange); }
+.badge-stdio { background: var(--bg-tertiary); color: var(--text-secondary); }
+.badge-http { background: var(--accent-subtle); color: var(--accent); }
+
+/* ── Data Table ─────────────────────────────────────────────────────── */
+table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-secondary); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.data-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.data-table tbody tr { transition: background var(--transition); }
+.data-table tbody tr:hover { background: var(--bg-tertiary); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table code {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px;
+}
+
+/* ── Pill Button ────────────────────────────────────────────────────── */
+.btn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  transition: all var(--transition);
+  text-decoration: none;
+}
+.btn-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle);
+  text-decoration: none;
+}
+
+/* ── Empty Note ─────────────────────────────────────────────────────── */
+.empty-note { color: var(--text-secondary); font-size: 13px; font-style: italic; }
+
+/* ── Typography helpers ─────────────────────────────────────────────── */
+.overline {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+/* ── Focus States ───────────────────────────────────────────────────── */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: 4px;
+}
+button:focus-visible, a:focus-visible { border-radius: inherit; }
+
+/* ── Page Content ───────────────────────────────────────────────────── */
+.page-content { padding: 24px 0; animation: fadeIn 0.2s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Footer ────────────────────────────────────────────────────────── */
+.site-footer {
+  padding: 24px 0;
+  margin-top: 48px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+{% block head_extra %}{% endblock %}
+</style>
+</head>
+
+{# ── Brand icon macros (official SVGs) ─────────────────────────────── #}
+{# Claude — official Anthropic logo from Bootstrap Icons / Wikimedia #}
+{% macro icon_claude(size=20) %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="m3.127 10.604 3.135-1.76.053-.153-.053-.085H6.11l-.525-.032-1.791-.048-1.554-.065-1.505-.08-.38-.081L0 7.832l.036-.234.32-.214.455.04 1.009.069 1.513.105 1.097.064 1.626.17h.259l.036-.105-.089-.065-.068-.064-1.566-1.062-1.695-1.121-.887-.646-.48-.327-.243-.306-.104-.67.435-.48.585.04.15.04.593.456 1.267.981 1.654 1.218.242.202.097-.068.012-.049-.109-.181-.9-1.626-.96-1.655-.428-.686-.113-.411a2 2 0 0 1-.068-.484l.496-.674L4.446 0l.662.089.279.242.411.94.666 1.48 1.033 2.014.302.597.162.553.06.17h.105v-.097l.085-1.134.157-1.392.154-1.792.052-.504.25-.605.497-.327.387.186.319.456-.045.294-.19 1.23-.37 1.93-.243 1.29h.142l.161-.16.654-.868 1.097-1.372.484-.545.565-.601.363-.287h.686l.505.751-.226.775-.707.895-.585.759-.839 1.13-.524.904.048.072.125-.012 1.897-.403 1.024-.186 1.223-.21.553.258.06.263-.218.536-1.307.323-1.533.307-2.284.54-.028.02.032.04 1.029.098.44.024h1.077l2.005.15.525.346.315.424-.053.323-.807.411-3.631-.863-.872-.218h-.12v.073l.726.71 1.331 1.202 1.667 1.55.084.383-.214.302-.226-.032-1.464-1.101-.565-.497-1.28-1.077h-.084v.113l.295.432 1.557 2.34.08.718-.112.234-.404.141-.444-.08-.911-1.28-.94-1.44-.759-1.291-.093.053-.448 4.821-.21.246-.484.186-.403-.307-.214-.496.214-.98.258-1.28.21-1.016.19-1.263.112-.42-.008-.028-.092.012-.953 1.307-1.448 1.957-1.146 1.227-.274.109-.477-.247.045-.44.266-.39 1.586-2.018.956-1.25.617-.723-.004-.105h-.036l-4.212 2.736-.75.096-.324-.302.04-.496.154-.162 1.267-.871z"/></svg>
+{% endmacro %}
+
+{# GitHub Copilot — official icon from Primer Octicons (copilot-24) #}
+{% macro icon_copilot(size=20) %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M23.922 16.992c-.861 1.495-5.859 5.023-11.922 5.023-6.063 0-11.061-3.528-11.922-5.023A.641.641 0 0 1 0 16.736v-2.869a.841.841 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.195 10.195 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952 1.399-1.136 3.392-2.093 6.122-2.093 2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.832.832 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256ZM12.172 11h-.344a4.323 4.323 0 0 1-.355.508C10.703 12.455 9.555 13 7.965 13c-1.725 0-2.989-.359-3.782-1.259a2.005 2.005 0 0 1-.085-.104L4 11.741v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.323 4.323 0 0 1-.355-.508h-.016.016Zm.641-2.935c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/><path d="M14.5 14.25a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Zm-5 0a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Z"/></svg>
+{% endmacro %}
+
+{# VS Code — official icon shape from Microsoft (simplified monochrome) #}
+{% macro icon_vscode(size=20) %}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 100 100" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M70.912 99.317a6.223 6.223 0 0 0 4.96-.19l20.589-9.907A6.25 6.25 0 0 0 100 83.59V16.41a6.25 6.25 0 0 0-3.539-5.63L75.872.873a6.228 6.228 0 0 0-7.104 1.21L29.355 38.04l-17.163-13.03a4.163 4.163 0 0 0-5.318.237l-5.506 5.009a4.168 4.168 0 0 0-.005 6.162L16.247 50 1.363 63.582a4.168 4.168 0 0 0 .005 6.162l5.506 5.01a4.163 4.163 0 0 0 5.318.236l17.163-13.03 39.413 35.957a6.216 6.216 0 0 0 2.144 1.4ZM75.024 27.3 45.097 50l29.927 22.7V27.3Z"/></svg>
+{% endmacro %}
+
+{# Chevron icon for collapsible sections #}
+{% macro chevron() %}
+<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+{% endmacro %}
+<body>
+
+<nav class="navbar">
+  <div class="container navbar-inner">
+    <a href="/" class="navbar-brand">
+      <!-- Logo: Three horizontal slider bars (control plane / mixing console) -->
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="32" height="32" rx="8" fill="#1c2128"/>
+        <!-- Three slider tracks -->
+        <rect x="6" y="8" width="20" height="3" rx="1.5" fill="rgba(255,255,255,0.1)"/>
+        <rect x="6" y="14.5" width="20" height="3" rx="1.5" fill="rgba(255,255,255,0.1)"/>
+        <rect x="6" y="21" width="20" height="3" rx="1.5" fill="rgba(255,255,255,0.1)"/>
+        <!-- Filled portions (different levels = control plane) -->
+        <rect x="6" y="8" width="16" height="3" rx="1.5" fill="#bc8cff"/><!-- Claude/purple -->
+        <rect x="6" y="14.5" width="11" height="3" rx="1.5" fill="#d29922"/><!-- Copilot/orange -->
+        <rect x="6" y="21" width="14" height="3" rx="1.5" fill="#3fb950"/><!-- VSCode/green -->
+        <!-- Slider knobs -->
+        <circle cx="22" cy="9.5" r="2.5" fill="white" stroke="#bc8cff" stroke-width="1"/>
+        <circle cx="17" cy="16" r="2.5" fill="white" stroke="#d29922" stroke-width="1"/>
+        <circle cx="20" cy="22.5" r="2.5" fill="white" stroke="#3fb950" stroke-width="1"/>
+      </svg>
+      <span class="navbar-title">AI Control Plane</span>
+    </a>
+
+    <div class="nav-links">
+      <a href="/" class="nav-item{% if active_page == 'dashboard' %} active{% endif %}">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1.75a.75.75 0 00-1.5 0V5H1.75a.75.75 0 000 1.5H5v3H1.75a.75.75 0 000 1.5H5v3.25a.75.75 0 001.5 0V11h3v3.25a.75.75 0 001.5 0V11h3.25a.75.75 0 000-1.5H11v-3h3.25a.75.75 0 000-1.5H11V1.75a.75.75 0 00-1.5 0V5h-3V1.75zM9.5 9.5v-3h-3v3h3z"/></svg>
+        Dashboard
+      </a>
+      <a href="/sessions" class="nav-item{% if active_page == 'sessions' %} active{% endif %}">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13.75a.75.75 0 010 1.5H.75a.75.75 0 01-.75-.75V1.75a.75.75 0 011.5 0zm14.28 2.53l-5.25 5.25a.75.75 0 01-1.06 0L7 7.06 4.28 9.78a.75.75 0 01-1.06-1.06l3.25-3.25a.75.75 0 011.06 0L10 8.06l4.72-4.72a.75.75 0 111.06 1.06v-.01z"/></svg>
+        Sessions
+      </a>
+      <a href="/tools" class="nav-item{% if active_page == 'tools' %} active{% endif %}">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.433 2.304A4.494 4.494 0 003.5 6c0 1.598.832 3.002 2.09 3.802.518.328.929.923.902 1.64v.008l-.164 3.337a.75.75 0 11-1.498-.073l.163-3.33c.002-.085-.058-.282-.382-.477A5.999 5.999 0 012 6a5.999 5.999 0 0114 0 5.999 5.999 0 01-2.611 4.907c-.324.195-.384.392-.382.477l.164 3.33a.75.75 0 11-1.499.074l-.163-3.337v-.008c-.027-.717.384-1.312.902-1.64A4.494 4.494 0 0012.5 6a4.494 4.494 0 00-7.067-3.696z"/></svg>
+        Tools
+      </a>
+      <a href="/agents" class="nav-item{% if active_page == 'agents' %} active{% endif %}">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10.5 5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zm.061 3.073a4 4 0 1 0-5.123 0 6.004 6.004 0 0 0-3.431 5.142.75.75 0 0 0 1.498.07 4.5 4.5 0 0 1 8.99 0 .75.75 0 1 0 1.498-.07 6.005 6.005 0 0 0-3.432-5.142z"/></svg>
+        Agents
+      </a>
+      <a href="/skills" class="nav-item{% if active_page == 'skills' %} active{% endif %}">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.828c.885-.37 2.154-.769 3.388-.893 1.33-.134 2.458.063 3.112.752v9.746c-.935-.53-2.12-.603-3.213-.493-1.18.12-2.37.461-3.287.811V2.828zm7.5-.141c.654-.689 1.782-.886 3.112-.752 1.234.124 2.503.523 3.388.893v9.923c-.918-.35-2.107-.692-3.287-.81-1.094-.111-2.278-.039-3.213.492V2.687zM8 1.783C7.015.936 5.587.81 4.287.94c-1.514.153-3.042.672-3.994 1.105A.5.5 0 0 0 0 2.5v11a.5.5 0 0 0 .707.455c.882-.4 2.303-.881 3.68-1.02 1.409-.142 2.59.087 3.223.877a.5.5 0 0 0 .78 0c.633-.79 1.814-1.019 3.222-.877 1.378.139 2.8.62 3.681 1.02A.5.5 0 0 0 16 13.5v-11a.5.5 0 0 0-.293-.455c-.952-.433-2.48-.952-3.994-1.105C10.413.81 8.985.936 8 1.783z"/></svg>
+        Skills
+      </a>
+    </div>
+
+    <div class="nav-spacer"></div>
+
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark mode">
+      <!-- Sun icon (shown in dark mode → click to go light) -->
+      <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/>
+        <line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+      <!-- Moon icon (shown in light mode → click to go dark) -->
+      <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+
+{% block breadcrumb %}{% endblock %}
+
+<div class="page-content">
+  {% block content %}{% endblock %}
+</div>
+
+<footer class="site-footer">
+  <div class="container">AI Control Plane</div>
+</footer>
+
+<script>
+function toggleTheme() {
+  var current = document.documentElement.getAttribute('data-theme') || 'dark';
+  var next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+}
+</script>
+{% block scripts_extra %}{% endblock %}
+</body>
+</html>

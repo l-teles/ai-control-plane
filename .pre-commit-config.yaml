@@ -1,0 +1,57 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ["--unsafe"]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: b969e2851312ca2b24bbec879ba4954341d1bd12  # frozen: v0.15.5
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/sirosen/check-jsonschema
+    rev: 8db279a37c552206d2df62269ff6f9d31125815a  # frozen: 0.37.0
+    hooks:
+      - id: check-github-actions
+      - id: check-github-workflows
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        description: "Static type checking"
+        entry: mypy src/ai_log_viewer/
+        language: system
+        files: '.*\.py'
+        pass_filenames: false
+
+      - id: bandit
+        name: bandit
+        description: "Find common security issues in Python code"
+        entry: bandit -q -lll -r src/ai_log_viewer/
+        language: system
+        files: '.*\.py'
+        pass_filenames: false
+
+      - id: pip-audit
+        name: pip-audit
+        description: "Check dependencies for known security vulnerabilities"
+        entry: pip-audit
+        language: system
+        pass_filenames: false
+
+      - id: vulture
+        name: vulture
+        description: "Find unused code"
+        entry: vulture --min-confidence 100 src/ai_log_viewer/
+        language: system
+        files: '.*\.py'
+        pass_filenames: false

@@ -29,12 +29,13 @@ def app_with_data(tmp_path: Path):
     )
 
     events = [
-        {"type": "session.start", "data": {"copilotVersion": "1.0.0", "context": {}},
-         "timestamp": "2026-03-12T10:00:00Z"},
-        {"type": "user.message", "data": {"content": "hello"},
-         "timestamp": "2026-03-12T10:00:01Z"},
-        {"type": "session.shutdown", "data": {},
-         "timestamp": "2026-03-12T10:05:00Z"},
+        {
+            "type": "session.start",
+            "data": {"copilotVersion": "1.0.0", "context": {}},
+            "timestamp": "2026-03-12T10:00:00Z",
+        },
+        {"type": "user.message", "data": {"content": "hello"}, "timestamp": "2026-03-12T10:00:01Z"},
+        {"type": "session.shutdown", "data": {}, "timestamp": "2026-03-12T10:05:00Z"},
     ]
     with open(session_dir / "events.jsonl", "w") as f:
         for evt in events:
@@ -127,6 +128,7 @@ def test_security_headers(app_with_data) -> None:
 # Claude Code session tests
 # ---------------------------------------------------------------------------
 
+
 def _write_jsonl(path: Path, events: list[dict]) -> None:
     with open(path, "w") as f:
         for evt in events:
@@ -215,12 +217,13 @@ def app_mixed(tmp_path: Path):
         """)
     )
     events_copilot = [
-        {"type": "session.start", "data": {"copilotVersion": "1.0.0", "context": {}},
-         "timestamp": "2026-03-12T09:00:00Z"},
-        {"type": "user.message", "data": {"content": "copilot msg"},
-         "timestamp": "2026-03-12T09:00:01Z"},
-        {"type": "session.shutdown", "data": {},
-         "timestamp": "2026-03-12T09:05:00Z"},
+        {
+            "type": "session.start",
+            "data": {"copilotVersion": "1.0.0", "context": {}},
+            "timestamp": "2026-03-12T09:00:00Z",
+        },
+        {"type": "user.message", "data": {"content": "copilot msg"}, "timestamp": "2026-03-12T09:00:01Z"},
+        {"type": "session.shutdown", "data": {}, "timestamp": "2026-03-12T09:05:00Z"},
     ]
     _write_jsonl(session_dir / "events.jsonl", events_copilot)
 
@@ -230,19 +233,30 @@ def app_mixed(tmp_path: Path):
     project_dir.mkdir(parents=True)
     events_claude = [
         {
-            "type": "user", "message": {"role": "user", "content": "claude msg"},
-            "uuid": "u1", "timestamp": "2026-03-12T10:00:01Z",
+            "type": "user",
+            "message": {"role": "user", "content": "claude msg"},
+            "uuid": "u1",
+            "timestamp": "2026-03-12T10:00:01Z",
             "sessionId": "cccccccc-dddd-eeee-ffff-111111111111",
-            "cwd": "/tmp/p", "version": "2.1.74", "gitBranch": "main",
+            "cwd": "/tmp/p",
+            "version": "2.1.74",
+            "gitBranch": "main",
         },
         {
             "type": "assistant",
-            "message": {"model": "claude-opus-4-6", "role": "assistant",
-                        "content": [{"type": "text", "text": "OK"}],
-                        "usage": {"input_tokens": 10, "output_tokens": 5}},
-            "uuid": "a1", "requestId": "r1", "timestamp": "2026-03-12T10:00:02Z",
+            "message": {
+                "model": "claude-opus-4-6",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "OK"}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+            "uuid": "a1",
+            "requestId": "r1",
+            "timestamp": "2026-03-12T10:00:02Z",
             "sessionId": "cccccccc-dddd-eeee-ffff-111111111111",
-            "cwd": "/tmp/p", "version": "2.1.74", "gitBranch": "main",
+            "cwd": "/tmp/p",
+            "version": "2.1.74",
+            "gitBranch": "main",
         },
     ]
     _write_jsonl(project_dir / "cccccccc-dddd-eeee-ffff-111111111111.jsonl", events_claude)
@@ -266,6 +280,7 @@ def test_mixed_sessions_index(app_mixed) -> None:
 # VS Code Chat session tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def app_with_vscode(tmp_path: Path):
     """Create an app with a VS Code Chat session."""
@@ -274,9 +289,7 @@ def app_with_vscode(tmp_path: Path):
     chat_dir = ws_dir / "chatSessions"
     chat_dir.mkdir(parents=True)
 
-    (ws_dir / "workspace.json").write_text(
-        json.dumps({"folder": "file:///Users/test/my-project"})
-    )
+    (ws_dir / "workspace.json").write_text(json.dumps({"folder": "file:///Users/test/my-project"}))
 
     session = {
         "version": 3,
@@ -309,9 +322,7 @@ def app_with_vscode(tmp_path: Path):
         "lastMessageDate": 1710237601000,
         "customTitle": "Fix auth bug",
     }
-    (chat_dir / "dddddddd-eeee-ffff-1111-222222222222.json").write_text(
-        json.dumps(session)
-    )
+    (chat_dir / "dddddddd-eeee-ffff-1111-222222222222.json").write_text(json.dumps(session))
 
     app = create_app(tmp_path / "empty_copilot", tmp_path / "empty_claude", vscode_dir)
     app.config["TESTING"] = True
@@ -355,40 +366,71 @@ def test_all_three_sources(tmp_path: Path) -> None:
         updated_at: 2026-03-12T09:05:00.000Z
         """)
     )
-    _write_jsonl(copilot_dir / "events.jsonl", [
-        {"type": "session.start", "data": {"copilotVersion": "1.0.0", "context": {}},
-         "timestamp": "2026-03-12T09:00:00Z"},
-    ])
+    _write_jsonl(
+        copilot_dir / "events.jsonl",
+        [
+            {
+                "type": "session.start",
+                "data": {"copilotVersion": "1.0.0", "context": {}},
+                "timestamp": "2026-03-12T09:00:00Z",
+            },
+        ],
+    )
 
     # Claude
     claude_dir = tmp_path / "claude" / "-Users-test"
     claude_dir.mkdir(parents=True)
-    _write_jsonl(claude_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl", [
-        {"type": "user", "message": {"role": "user", "content": "hi"},
-         "uuid": "u1", "timestamp": "2026-03-12T10:00:01Z",
-         "sessionId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
-         "cwd": "/tmp", "version": "2.1.74", "gitBranch": "main"},
-    ])
+    _write_jsonl(
+        claude_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl",
+        [
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "hi"},
+                "uuid": "u1",
+                "timestamp": "2026-03-12T10:00:01Z",
+                "sessionId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                "cwd": "/tmp",
+                "version": "2.1.74",
+                "gitBranch": "main",
+            },
+        ],
+    )
 
     # VS Code
     vscode_dir = tmp_path / "vscode"
     vs_ws = vscode_dir / "workspaceStorage" / "hash1" / "chatSessions"
     vs_ws.mkdir(parents=True)
     (vs_ws.parent / "workspace.json").write_text(json.dumps({"folder": "file:///tmp/proj"}))
-    (vs_ws / "cccccccc-dddd-eeee-ffff-111111111111.json").write_text(json.dumps({
-        "version": 3, "sessionId": "cccccccc-dddd-eeee-ffff-111111111111",
-        "creationDate": 1710237600000, "lastMessageDate": 1710237601000,
-        "requests": [{
-            "requestId": "req_1", "message": {"text": "hello", "parts": []},
-            "variableData": {"variables": []},
-            "response": [{"value": "Hi!"}],
-            "result": {"timings": {}, "metadata": {"toolCallRounds": [], "toolCallResults": {}}, "details": ""},
-            "followups": [], "isCanceled": False,
-            "agent": {"id": "agent", "name": "agent"},
-            "contentReferences": [], "codeCitations": [],
-            "timestamp": 1710237601000, "modelId": "copilot/gpt-4o",
-        }],
-    }))
+    (vs_ws / "cccccccc-dddd-eeee-ffff-111111111111.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "sessionId": "cccccccc-dddd-eeee-ffff-111111111111",
+                "creationDate": 1710237600000,
+                "lastMessageDate": 1710237601000,
+                "requests": [
+                    {
+                        "requestId": "req_1",
+                        "message": {"text": "hello", "parts": []},
+                        "variableData": {"variables": []},
+                        "response": [{"value": "Hi!"}],
+                        "result": {
+                            "timings": {},
+                            "metadata": {"toolCallRounds": [], "toolCallResults": {}},
+                            "details": "",
+                        },
+                        "followups": [],
+                        "isCanceled": False,
+                        "agent": {"id": "agent", "name": "agent"},
+                        "contentReferences": [],
+                        "codeCitations": [],
+                        "timestamp": 1710237601000,
+                        "modelId": "copilot/gpt-4o",
+                    }
+                ],
+            }
+        )
+    )
 
     app = create_app(tmp_path / "copilot", tmp_path / "claude", vscode_dir)
     app.config["TESTING"] = True
