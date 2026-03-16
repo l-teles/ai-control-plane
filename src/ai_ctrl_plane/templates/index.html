@@ -123,6 +123,8 @@ a.metric-card:hover { text-decoration: none; }
 .tool-card.copilot:hover { border-color: var(--orange); }
 .tool-card.vscode { border-left: 3px solid var(--green); }
 .tool-card.vscode:hover { border-color: var(--green); }
+.tool-card.claude_desktop { border-left: 3px solid var(--blue); }
+.tool-card.claude_desktop:hover { border-color: var(--blue); }
 
 .tool-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .tool-card-icon {
@@ -133,11 +135,13 @@ a.metric-card:hover { text-decoration: none; }
 .tool-card.claude .tool-card-icon { background: var(--purple-subtle); color: var(--purple); }
 .tool-card.copilot .tool-card-icon { background: var(--orange-subtle); color: var(--orange); }
 .tool-card.vscode .tool-card-icon { background: var(--green-subtle); color: var(--green); }
+.tool-card.claude_desktop .tool-card-icon { background: var(--blue-subtle); color: var(--blue); }
 
 .tool-card-header h3 { font-size: 16px; font-weight: 600; flex: 1; }
 .tool-card.claude h3 { color: var(--purple); }
 .tool-card.copilot h3 { color: var(--orange); }
 .tool-card.vscode h3 { color: var(--green); }
+.tool-card.claude_desktop h3 { color: var(--blue); }
 
 .tool-card .status-badge {
   font-size: 11px;
@@ -398,6 +402,22 @@ a.metric-card:hover { text-decoration: none; }
         <div class="tool-stat"><div class="tool-stat-value">{{ v.agents|length }}</div><div class="tool-stat-label">Agents</div></div>
         <div class="tool-stat"><div class="tool-stat-value">{{ vscode_count }}</div><div class="tool-stat-label">Sessions</div></div>
         <div class="tool-stat"><div class="tool-stat-value">{{ v.skills|length }}</div><div class="tool-stat-label">Skills</div></div>
+      </div>
+    </a>
+
+    {% set cd = configs.claude_desktop %}
+    <a class="tool-card claude_desktop" href="/tools/claude_desktop">
+      <div class="tool-card-header">
+        <div class="tool-card-icon">{{ icon_claude(20) }}</div>
+        <h3>Claude Desktop</h3>
+        <span class="status-badge {% if cd.installed %}status-installed{% else %}status-not-found{% endif %}">
+          {{ "Installed" if cd.installed else "Not found" }}
+        </span>
+      </div>
+      <div class="tool-stats">
+        <div class="tool-stat"><div class="tool-stat-value">{{ cd.mcp_servers|length }}</div><div class="tool-stat-label">MCP</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cd.skills|length }}</div><div class="tool-stat-label">Skills</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cd.cowork_plugins|length }}</div><div class="tool-stat-label">Cowork</div></div>
       </div>
     </a>
   </div>

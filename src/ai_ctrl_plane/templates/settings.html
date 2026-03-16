@@ -23,6 +23,24 @@
 }
 .settings-section h3 svg { color: var(--text-secondary); }
 
+.ds-tool { margin-bottom: 20px; }
+.ds-tool:last-child { margin-bottom: 0; }
+.ds-tool-name {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 8px;
+}
+.ds-os { margin-bottom: 10px; }
+.ds-os-label {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;
+}
+.ds-paths { list-style: none; margin: 0; padding: 0; }
+.ds-paths li {
+  font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary);
+  padding: 3px 0; border-bottom: 1px solid var(--border);
+}
+.ds-paths li:last-child { border-bottom: none; }
+
 .info-row {
   display: flex; justify-content: space-between; align-items: baseline;
   padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
@@ -102,6 +120,27 @@
       <div class="info-row">
         <span class="info-label">{{ label }}</span>
         <span class="info-value">{{ path }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="settings-section">
+      <h3>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Data Sources
+      </h3>
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">All filesystem paths read by this app, per tool and platform.</p>
+      {% for tool_key, os_map in tool_paths.items() %}
+      <div class="ds-tool">
+        <div class="ds-tool-name">{{ tool_key | replace('_', ' ') | title }}</div>
+        {% for os_name, paths in os_map.items() %}
+        <div class="ds-os">
+          <div class="ds-os-label">{{ os_name }}</div>
+          <ul class="ds-paths">
+            {% for p in paths %}<li>{{ p }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
       </div>
       {% endfor %}
     </div>

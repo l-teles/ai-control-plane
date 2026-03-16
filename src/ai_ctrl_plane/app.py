@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 
 from . import claude_parser, vscode_parser
 from .config_readers import read_all_configs
-from .config_readers.claude_config import read_claude_config
+from .config_readers.claude_config import _default_claude_desktop_dir, read_claude_config, read_claude_desktop_config
 from .config_readers.copilot_config import read_copilot_config
 from .config_readers.vscode_config import read_vscode_config
 from .db import CacheDB, default_cache_dir, start_background_build
@@ -157,6 +157,7 @@ def create_app(
     claude_dir: str | Path | None = None,
     vscode_dir: str | Path | None = None,
     cache_dir: str | Path | None = None,
+    desktop_dir: str | Path | None = None,
 ) -> Flask:
     """Create and configure the Flask application.
 
@@ -174,6 +175,9 @@ def create_app(
     cache_dir:
         Directory for the SQLite cache database.
         Falls back to platform-specific cache dir.
+    desktop_dir:
+        Claude Desktop config directory.
+        Falls back to ``CLAUDE_DESKTOP_DIR`` env var, then platform default.
     """
     import os
 
@@ -192,6 +196,10 @@ def create_app(
     if cache_dir is None:
         cache_dir = default_cache_dir()
     cache_path = Path(cache_dir)
+
+    if desktop_dir is None:
+        desktop_dir = os.environ.get("CLAUDE_DESKTOP_DIR", str(_default_claude_desktop_dir()))
+    desktop_path = Path(desktop_dir).resolve()
 
     app = Flask(
         __name__,
@@ -215,7 +223,7 @@ def create_app(
 
     # Start background cache build if not already ready
     if db.status != "ready":
-        start_background_build(db, copilot_path, claude_path, vscode_path)
+        start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
 
     # -- Unified session index (cached) ---------------------------------------
     # Reads from DB when available, falls back to filesystem scan
@@ -405,15 +413,17 @@ def create_app(
 
     # -- Tools configuration routes ------------------------------------------
 
-    _VALID_TOOLS = {"claude", "copilot", "vscode"}
+    _VALID_TOOLS = {"claude", "copilot", "vscode", "claude_desktop"}
 
     def _get_all_configs() -> dict[str, dict]:
         """Read all tool configs from DB when available, else from filesystem."""
         if db.status in ("ready", "building"):
             cached = db.get_all_tool_configs()
-            if cached and all(k in cached for k in ("claude", "copilot", "vscode")):
+            if cached and all(k in cached for k in ("claude", "copilot", "vscode", "claude_desktop")):
                 return cached
-        return read_all_configs()
+        result = read_all_configs()
+        result["claude_desktop"] = read_claude_desktop_config(desktop_dir=desktop_path)
+        return result
 
     def _get_tool_config(tool: str) -> dict:
         if tool not in _VALID_TOOLS:
@@ -428,6 +438,8 @@ def create_app(
             return read_copilot_config()
         elif tool == "vscode":
             return read_vscode_config()
+        elif tool == "claude_desktop":
+            return read_claude_desktop_config(desktop_dir=desktop_path)
         abort(404)
 
     @app.route("/agents")
@@ -455,7 +467,7 @@ def create_app(
         """
         configs = _get_all_configs()
         by_name: dict[str, dict] = {}
-        for source in ("claude", "copilot", "vscode"):
+        for source in ("claude", "copilot", "vscode", "claude_desktop"):
             for s in configs[source].get("skills", []):
                 name = s["name"]
                 if name in by_name:
@@ -471,12 +483,14 @@ def create_app(
         claude_skill_count = sum(1 for s in skills if "claude" in s["sources"])
         copilot_skill_count = sum(1 for s in skills if "copilot" in s["sources"])
         vscode_skill_count = sum(1 for s in skills if "vscode" in s["sources"])
+        claude_desktop_skill_count = sum(1 for s in skills if "claude_desktop" in s["sources"])
         return render_template(
             "skills.html",
             skills=skills,
             claude_skill_count=claude_skill_count,
             copilot_skill_count=copilot_skill_count,
             vscode_skill_count=vscode_skill_count,
+            claude_desktop_skill_count=claude_desktop_skill_count,
         )
 
     @app.route("/skills/<skill_name>")
@@ -496,7 +510,7 @@ def create_app(
         configs = _get_all_configs()
         # Compute shared MCP servers (present in 2+ tools)
         server_sources: dict[str, list[str]] = {}
-        for source in ("claude", "copilot", "vscode"):
+        for source in ("claude", "copilot", "vscode", "claude_desktop"):
             for srv in configs[source].get("mcp_servers", []):
                 server_sources.setdefault(srv["name"], []).append(source)
         shared_servers = [
@@ -627,6 +641,119 @@ def create_app(
             )
         return result
 
+    _DESKTOP_PREFS_META: dict[str, dict] = {
+        "coworkScheduledTasksEnabled": {
+            "desc": "Enable background scheduled tasks for Cowork",
+            "type": "bool",
+        },
+        "ccdScheduledTasksEnabled": {
+            "desc": "Enable background tasks for Claude Code Desktop",
+            "type": "bool",
+        },
+        "sidebarMode": {"desc": "Default sidebar layout mode", "type": "string"},
+        "coworkWebSearchEnabled": {"desc": "Enable web search in Cowork", "type": "bool"},
+        "autoUpdates": {"desc": "Automatically install application updates", "type": "bool"},
+        "telemetry": {"desc": "Send anonymous usage telemetry to Anthropic", "type": "bool"},
+        "launchAtLogin": {"desc": "Start Claude Desktop when you log in", "type": "bool"},
+        "notificationsEnabled": {"desc": "Show desktop notifications", "type": "bool"},
+    }
+
+    def _parse_desktop_preferences(prefs: dict) -> list[dict]:
+        """Parse Claude Desktop preferences into annotated list with descriptions."""
+        result = []
+        for key, value in sorted(prefs.items()):
+            meta = _DESKTOP_PREFS_META.get(key, {})
+            result.append(
+                {
+                    "key": key,
+                    "value": value,
+                    "desc": meta.get("desc", ""),
+                    "type": meta.get("type", "unknown"),
+                }
+            )
+        return result
+
+    # Filesystem paths read by the app, per tool and platform — shown in "Data Sources" section
+    _TOOL_PATHS: dict[str, dict[str, list[str]]] = {
+        "claude": {
+            "macOS / Linux": [
+                "~/.claude/ (home directory)",
+                "~/.claude.json (global config)",
+                "~/.claude/claude_code_config.json (MCP servers)",
+                "~/.claude/settings.json",
+                "~/.claude/policy-limits.json",
+                "~/.claude/plugins/ (plugins, agents, hooks, commands, skills)",
+                "~/.claude/skills/ (user skills)",
+                "~/.claude/projects/ (session logs)",
+            ],
+            "Windows": [
+                "%LOCALAPPDATA%\\claude\\ (home directory)",
+                "%LOCALAPPDATA%\\claude\\.claude.json",
+                "%LOCALAPPDATA%\\claude\\claude_code_config.json",
+                "%LOCALAPPDATA%\\claude\\settings.json",
+                "%LOCALAPPDATA%\\claude\\policy-limits.json",
+                "%LOCALAPPDATA%\\claude\\plugins\\",
+                "%LOCALAPPDATA%\\claude\\skills\\",
+                "%LOCALAPPDATA%\\claude\\projects\\",
+            ],
+        },
+        "claude_desktop": {
+            "macOS": [
+                "~/Library/Application Support/Claude/claude_desktop_config.json (MCP servers, preferences)",
+                "~/Library/Application Support/Claude/config.json (UI settings)",
+                "~/Library/Application Support/Claude/local-agent-mode-sessions/"
+                "skills-plugin/<uuid>/<uuid>/manifest.json (skill index)",
+                "~/Library/Application Support/Claude/local-agent-mode-sessions/"
+                "skills-plugin/<uuid>/<uuid>/skills/ (user skills)",
+                "~/Library/Application Support/Claude/local-agent-mode-sessions/"
+                "<uuid>/<uuid>/cowork_plugins/ (Cowork plugins)",
+            ],
+            "Windows": [
+                "%APPDATA%\\Claude\\claude_desktop_config.json",
+                "%APPDATA%\\Claude\\config.json",
+                "%APPDATA%\\Claude\\local-agent-mode-sessions\\skills-plugin\\<uuid>\\<uuid>\\skills\\",
+                "%APPDATA%\\Claude\\local-agent-mode-sessions\\<uuid>\\<uuid>\\cowork_plugins\\",
+            ],
+            "Linux": [
+                "~/.config/Claude/claude_desktop_config.json",
+                "~/.config/Claude/config.json",
+                "~/.config/Claude/local-agent-mode-sessions/skills-plugin/<uuid>/<uuid>/skills/",
+                "~/.config/Claude/local-agent-mode-sessions/<uuid>/<uuid>/cowork_plugins/",
+            ],
+        },
+        "copilot": {
+            "macOS / Linux": [
+                "~/.copilot/config.json",
+                "~/.copilot/mcp-config.json (MCP servers)",
+                "~/.copilot/command-history-state.json",
+                "~/.copilot/session-state/ (session logs)",
+                "~/.copilot/skills/ (skills)",
+            ],
+            "Windows": [
+                "%LOCALAPPDATA%\\github-copilot\\config.json",
+                "%LOCALAPPDATA%\\github-copilot\\mcp-config.json",
+                "%LOCALAPPDATA%\\github-copilot\\session-state\\",
+                "%LOCALAPPDATA%\\github-copilot\\skills\\",
+            ],
+        },
+        "vscode": {
+            "macOS": [
+                "~/Library/Application Support/Code/User/mcp.json (MCP servers)",
+                "~/Library/Application Support/Code/User/settings.json",
+                "~/Library/Application Support/Code/User/chatLanguageModels.json",
+                "~/Library/Application Support/Code/User/workspaceStorage/<hash>/chatSessions/ (sessions)",
+                "~/Library/Application Support/Code/User/globalStorage/github.copilot-chat/skills/",
+            ],
+            "Windows": [
+                "%APPDATA%\\Code\\User\\mcp.json",
+                "%APPDATA%\\Code\\User\\settings.json",
+                "%APPDATA%\\Code\\User\\workspaceStorage\\<hash>\\chatSessions\\",
+                "%APPDATA%\\Code\\User\\globalStorage\\github.copilot-chat\\skills\\",
+            ],
+            "Linux": ["~/.config/Code/User/ (same structure as macOS)"],
+        },
+    }
+
     @app.route("/tools/<tool>")
     def tool_detail(tool: str):
         if tool not in _VALID_TOOLS:
@@ -635,20 +762,17 @@ def create_app(
         parsed_settings = []
         if tool == "claude" and config.get("settings"):
             parsed_settings = _parse_claude_settings(config["settings"])
-        desktop_config = None
-        if tool == "claude":
-            desktop_config = db.get_tool_config("claude_desktop")
-            if not desktop_config:
-                from .config_readers.claude_config import read_claude_desktop_config
-
-                desktop_config = read_claude_desktop_config()
+        parsed_preferences = []
+        if tool == "claude_desktop" and config.get("preferences"):
+            parsed_preferences = _parse_desktop_preferences(config["preferences"])
         return render_template(
             "tool_detail.html",
             tool=tool,
             config=config,
             json=json,
             parsed_settings=parsed_settings,
-            desktop_config=desktop_config,
+            parsed_preferences=parsed_preferences,
+            md_to_html=md_to_html,
         )
 
     @app.route("/api/tools")
@@ -810,6 +934,7 @@ def create_app(
             cache_status=db.cache_status(),
             db_size=db_size,
             data_dirs=data_dirs,
+            tool_paths=_TOOL_PATHS,
         )
 
     @app.route("/settings/rebuild-cache", methods=["POST"])

@@ -22,6 +22,7 @@
 .tab-link.active-claude { border-left-color: var(--purple); color: var(--purple); background: color-mix(in srgb, var(--purple) 8%, transparent); }
 .tab-link.active-copilot { border-left-color: var(--orange); color: var(--orange); background: color-mix(in srgb, var(--orange) 8%, transparent); }
 .tab-link.active-vscode { border-left-color: var(--green); color: var(--green); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.tab-link.active-claude_desktop { border-left-color: var(--blue); color: var(--blue); background: color-mix(in srgb, var(--blue) 8%, transparent); }
 .tab-link svg { flex-shrink: 0; }
 
 /* Layout */
@@ -73,6 +74,15 @@
 .kv-value { font-weight: 500; overflow-wrap: break-word; word-break: normal; text-align: right; flex-shrink: 0; max-width: 60%; }
 
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.cowork-plugin-card { transition: box-shadow var(--transition), transform var(--transition); }
+.cowork-plugin-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.skill-body-prose h1,.skill-body-prose h2,.skill-body-prose h3 { font-size:13px;font-weight:600;margin:10px 0 4px; }
+.skill-body-prose p { margin:0 0 8px; }
+.skill-body-prose ul,.skill-body-prose ol { margin:0 0 8px;padding-left:18px; }
+.skill-body-prose li { margin-bottom:3px; }
+.skill-body-prose code { font-family:var(--font-mono);font-size:11px;background:var(--bg-secondary);padding:1px 4px;border-radius:3px; }
+.skill-body-prose pre { background:var(--bg-secondary);padding:10px;border-radius:var(--radius);overflow-x:auto;margin:8px 0; }
+.skill-body-prose pre code { background:none;padding:0; }
 .plugin-card {
   background: var(--bg-tertiary); border-radius: var(--radius); padding: 14px;
   transition: box-shadow var(--transition);
@@ -150,7 +160,7 @@
   <div class="container">
     <a href="/tools">Tools</a>
     <span class="breadcrumb-sep">/</span>
-    <span>{% if tool == 'claude' %}Claude Code{% elif tool == 'copilot' %}GitHub Copilot{% else %}VS Code Chat{% endif %}</span>
+    <span>{% if tool == 'claude' %}Claude Code{% elif tool == 'copilot' %}GitHub Copilot{% elif tool == 'claude_desktop' %}Claude Desktop{% else %}VS Code Chat{% endif %}</span>
   </div>
 </div>
 {% endblock %}
@@ -161,6 +171,7 @@
     <div class="sidebar">
       <div class="tool-nav">
         <a class="tab-link {% if tool == 'claude' %}active-claude{% endif %}" href="/tools/claude">{{ icon_claude(16) }} Claude Code</a>
+        <a class="tab-link {% if tool == 'claude_desktop' %}active-claude_desktop{% endif %}" href="/tools/claude_desktop">{{ icon_claude(16) }} Claude Desktop</a>
         <a class="tab-link {% if tool == 'copilot' %}active-copilot{% endif %}" href="/tools/copilot">{{ icon_copilot(16) }} GitHub Copilot</a>
         <a class="tab-link {% if tool == 'vscode' %}active-vscode{% endif %}" href="/tools/vscode">{{ icon_vscode(16) }} VS Code Chat</a>
       </div>
@@ -171,7 +182,7 @@
       </div>
       <div class="info-row">
         <span class="info-label">Directory</span>
-        <span class="info-value" style="font-family:var(--font-mono);font-size:11px;">{{ config.get('home_dir') or config.get('user_dir', '') }}</span>
+        <span class="info-value" style="font-family:var(--font-mono);font-size:11px;">{% if tool == 'claude_desktop' %}{{ config.get('desktop_dir', '') }}{% else %}{{ config.get('home_dir') or config.get('user_dir', '') }}{% endif %}</span>
       </div>
       {% if tool == 'claude' %}
       <div class="info-row"><span class="info-label">MCP Servers</span><span class="info-value">{{ config.mcp_servers|length }}</span></div>
@@ -186,11 +197,16 @@
       <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
       <div class="info-row"><span class="info-label">Sessions</span><span class="info-value">{{ config.session_count }}</span></div>
       <div class="info-row"><span class="info-label">Commands</span><span class="info-value">{{ config.recent_commands|length }}</span></div>
-      {% else %}
+      {% elif tool == 'vscode' %}
       <div class="info-row"><span class="info-label">MCP Servers</span><span class="info-value">{{ config.mcp_servers|length }}</span></div>
       <div class="info-row"><span class="info-label">Agents</span><span class="info-value">{{ config.agents|length }}</span></div>
       <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
       <div class="info-row"><span class="info-label">AI Settings</span><span class="info-value">{{ config.copilot_settings|length }}</span></div>
+      {% elif tool == 'claude_desktop' %}
+      <div class="info-row"><span class="info-label">MCP Servers</span><span class="info-value">{{ config.mcp_servers|length }}</span></div>
+      <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
+      <div class="info-row"><span class="info-label">Cowork Plugins</span><span class="info-value">{{ config.cowork_plugins|length }}</span></div>
+      <div class="info-row"><span class="info-label">Preferences</span><span class="info-value">{{ config.preferences|length }}</span></div>
       {% endif %}
     </div>
 
@@ -468,62 +484,6 @@
         </div>
         {% endif %}
 
-        {# Claude Desktop #}
-        {% if desktop_config and desktop_config.installed %}
-        <div class="section">
-          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Claude Desktop</h3>
-          <div class="section-body">
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">From {{ desktop_config.get('desktop_dir', '~/Library/Application Support/Claude/') }}</p>
-
-            {% if desktop_config.get('mcp_servers') %}
-            <h4 style="font-size:13px;font-weight:600;margin:12px 0 8px;">Desktop MCP Servers ({{ desktop_config.mcp_servers|length }})</h4>
-            <table class="data-table">
-              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
-              <tbody>
-                {% for srv in desktop_config.mcp_servers %}
-                <tr>
-                  <td><strong>{{ srv.name }}</strong></td>
-                  <td><span class="badge badge-{{ srv.get('type', 'stdio') }}">{{ srv.get('type', 'stdio') }}</span></td>
-                  <td><code>{% if srv.get('url') %}{{ srv.url }}{% else %}{{ srv.get('command', '') }}{% if srv.get('args') %} {{ srv.args|join(' ') }}{% endif %}{% endif %}</code></td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% endif %}
-
-            {% if desktop_config.get('preferences') %}
-            <h4 style="font-size:13px;font-weight:600;margin:16px 0 8px;">Preferences</h4>
-            <div class="kv-grid kv-grid-compact">
-              {% for k, v in desktop_config.preferences.items()|sort %}
-              <div class="kv-item">
-                <span class="kv-key">{{ k }}</span>
-                {% if v is sameas true %}
-                <span class="badge badge-on">on</span>
-                {% elif v is sameas false %}
-                <span class="badge badge-off">off</span>
-                {% else %}
-                <span class="kv-value">{{ v }}</span>
-                {% endif %}
-              </div>
-              {% endfor %}
-            </div>
-            {% endif %}
-
-            {% if desktop_config.get('ui_config') %}
-            <h4 style="font-size:13px;font-weight:600;margin:16px 0 8px;">UI Config</h4>
-            <div class="kv-grid kv-grid-compact">
-              {% for k, v in desktop_config.ui_config.items()|sort %}
-              <div class="kv-item">
-                <span class="kv-key">{{ k }}</span>
-                <span class="kv-value">{{ v }}</span>
-              </div>
-              {% endfor %}
-            </div>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
-
       {% endif %}
 
       {# ---- Copilot-specific sections ---- #}
@@ -610,7 +570,187 @@
 
       {% endif %}
 
-      {# Empty state #}
+      {# ---- Claude Desktop-specific sections ---- #}
+      {% if tool == 'claude_desktop' %}
+
+        {# Cowork Plugins #}
+        {% if config.cowork_plugins %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Cowork Plugins ({{ config.cowork_plugins|length }})</h3>
+          <div class="section-body">
+            <div class="card-grid">
+              {% for p in config.cowork_plugins %}
+              <div class="plugin-card cowork-plugin-card" onclick="openCoworkModal({{ loop.index0 }})" style="cursor:pointer;" title="Click for details">
+                <h4>{{ p.name }}{% if p.version %} <span style="font-size:11px;font-weight:400;color:var(--text-secondary);">v{{ p.version }}</span>{% endif %}</h4>
+                <p>{{ p.description[:120] if p.description else 'No description' }}</p>
+                <div>
+                  {% if p.enabled %}<span class="badge badge-on">enabled</span>{% else %}<span class="badge badge-off">disabled</span>{% endif %}
+                  {% if p.author %}<span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary);">{{ p.author }}</span>{% endif %}
+                  {% if p.skills %}<span class="badge badge-off">{{ p.skills|length }} skill{{ 's' if p.skills|length != 1 }}</span>{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# Cowork Plugin detail modal #}
+        <div id="cowork-modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeCoworkModal()">
+          <div id="cowork-modal" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);width:min(720px,92vw);max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+            <div style="display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+              <div style="flex:1;">
+                <div id="modal-title" style="font-size:16px;font-weight:600;"></div>
+                <div id="modal-meta" style="font-size:12px;color:var(--text-secondary);margin-top:3px;"></div>
+              </div>
+              <button onclick="closeCoworkModal()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:4px;display:flex;align-items:center;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div id="modal-body" style="overflow-y:auto;padding:20px;flex:1;"></div>
+          </div>
+        </div>
+
+        <script>
+        var _coworkPlugins = [
+          {% for p in config.cowork_plugins %}
+          {
+            name: {{ p.name | tojson }},
+            version: {{ p.version | tojson }},
+            description: {{ p.description | tojson }},
+            author: {{ p.author | tojson }},
+            enabled: {{ 'true' if p.enabled else 'false' }},
+            installed_at: {{ p.installed_at | tojson }},
+            last_updated: {{ p.last_updated | tojson }},
+            skills: [
+              {% for s in p.skills %}
+              {
+                name: {{ s.name | tojson }},
+                description: {{ s.description | tojson }},
+                body_html: {{ md_to_html(s.body) | tojson }}
+              }{% if not loop.last %},{% endif %}
+              {% endfor %}
+            ]
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ];
+
+        function openCoworkModal(idx) {
+          var p = _coworkPlugins[idx];
+          var bd = document.getElementById('cowork-modal-backdrop');
+          document.getElementById('modal-title').textContent = p.name + (p.version ? ' v' + p.version : '');
+          var metaParts = [];
+          if (p.author) metaParts.push('by ' + p.author);
+          if (p.installed_at) metaParts.push('installed ' + p.installed_at.substring(0, 10));
+          document.getElementById('modal-meta').textContent = metaParts.join(' \u00b7 ');
+
+          var html = '';
+          if (p.description) {
+            html += '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 16px;">' + escHtml(p.description) + '</p>';
+          }
+          html += '<div style="display:flex;gap:8px;margin-bottom:20px;">';
+          html += p.enabled
+            ? '<span class="badge badge-on">enabled</span>'
+            : '<span class="badge badge-off">disabled</span>';
+          if (p.last_updated) html += '<span class="badge" style="background:var(--bg-tertiary);color:var(--text-secondary);">updated ' + escHtml(p.last_updated.substring(0, 10)) + '</span>';
+          html += '</div>';
+
+          if (p.skills.length > 0) {
+            html += '<h4 style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 12px;">' + p.skills.length + ' Skill' + (p.skills.length === 1 ? '' : 's') + '</h4>';
+            p.skills.forEach(function(s) {
+              html += '<div style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden;">';
+              html += '<div style="padding:10px 14px;background:var(--bg-tertiary);border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:8px;">';
+              html += '<strong style="font-size:14px;">' + escHtml(s.name) + '</strong>';
+              if (s.description) html += '<span style="font-size:12px;color:var(--text-secondary);">' + escHtml(s.description) + '</span>';
+              html += '</div>';
+              if (s.body_html) {
+                html += '<div class="skill-body-prose" style="padding:14px 16px;font-size:13px;line-height:1.6;">' + s.body_html + '</div>';
+              }
+              html += '</div>';
+            });
+          } else {
+            html += '<p style="color:var(--text-secondary);font-size:13px;">No skills bundled with this plugin.</p>';
+          }
+
+          document.getElementById('modal-body').innerHTML = html;
+          bd.style.display = 'flex';
+          document.body.style.overflow = 'hidden';
+        }
+
+        function closeCoworkModal() {
+          document.getElementById('cowork-modal-backdrop').style.display = 'none';
+          document.body.style.overflow = '';
+        }
+
+        function escHtml(s) {
+          return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeCoworkModal(); });
+        </script>
+        {% endif %}
+
+        {# Preferences #}
+        {% if parsed_preferences %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Preferences ({{ parsed_preferences|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead>
+              <tbody>
+                {% for row in parsed_preferences %}
+                <tr>
+                  <td><code>{{ row.key }}</code></td>
+                  <td>
+                    {% if row.value is sameas true %}<span class="badge badge-on">on</span>
+                    {% elif row.value is sameas false %}<span class="badge badge-off">off</span>
+                    {% else %}<span class="kv-value">{{ row.value }}</span>{% endif %}
+                  </td>
+                  <td style="color:var(--text-secondary);font-size:12px;">{{ row.desc }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% elif config.preferences %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Preferences ({{ config.preferences|length }})</h3>
+          <div class="section-body">
+            <div class="kv-grid kv-grid-compact">
+              {% for k, v in config.preferences.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ k }}</span>
+                {% if v is sameas true %}<span class="badge badge-on">on</span>
+                {% elif v is sameas false %}<span class="badge badge-off">off</span>
+                {% else %}<span class="kv-value">{{ v }}</span>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# UI Config #}
+        {% if config.ui_config %}
+        <div class="section collapsed">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}UI Config ({{ config.ui_config|length }})</h3>
+          <div class="section-body">
+            <div class="kv-grid kv-grid-compact">
+              {% for k, v in config.ui_config.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ k }}</span>
+                <span class="kv-value">{{ v }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      {% endif %}
+
+
+{# Empty state #}
       {% if not config.installed %}
       <div class="section">
         <p class="empty-note">This tool was not found on the system. Check that the directory exists and contains configuration files.</p>

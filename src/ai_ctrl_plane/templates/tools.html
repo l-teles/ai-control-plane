@@ -38,6 +38,8 @@
 .tool-card.copilot:hover { border-color: var(--orange); }
 .tool-card.vscode { border-left: 4px solid var(--green); }
 .tool-card.vscode:hover { border-color: var(--green); }
+.tool-card.claude_desktop { border-left: 4px solid var(--blue); }
+.tool-card.claude_desktop:hover { border-color: var(--blue); }
 
 .tool-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .tool-card-icon {
@@ -48,11 +50,13 @@
 .tool-card.claude .tool-card-icon { background: var(--purple-subtle); color: var(--purple); }
 .tool-card.copilot .tool-card-icon { background: var(--orange-subtle); color: var(--orange); }
 .tool-card.vscode .tool-card-icon { background: var(--green-subtle); color: var(--green); }
+.tool-card.claude_desktop .tool-card-icon { background: var(--blue-subtle); color: var(--blue); }
 
 .tool-card h2 { font-size: 18px; font-weight: 600; flex: 1; }
 .tool-card.claude h2 { color: var(--purple); }
 .tool-card.copilot h2 { color: var(--orange); }
 .tool-card.vscode h2 { color: var(--green); }
+.tool-card.claude_desktop h2 { color: var(--blue); }
 
 .tool-card .status-badge {
   font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 12px;
@@ -85,6 +89,7 @@
 .badge-claude { background: var(--purple-subtle); color: var(--purple); }
 .badge-copilot { background: var(--orange-subtle); color: var(--orange); }
 .badge-vscode { background: var(--green-subtle); color: var(--green); }
+.badge-claude_desktop { background: var(--blue-subtle); color: var(--blue); }
 </style>
 {% endblock %}
 
@@ -136,6 +141,21 @@
         <div class="stat"><strong>{{ v.mcp_servers|length }}</strong> MCP Servers</div>
         <div class="stat"><strong>{{ v.agents|length }}</strong> Agents</div>
         <div class="stat"><strong>{{ v.copilot_settings|length }}</strong> Settings</div>
+      </div>
+    </a>
+
+    {% set cd = configs.claude_desktop %}
+    <a class="tool-card claude_desktop" href="/tools/claude_desktop">
+      <div class="tool-card-header">
+        <div class="tool-card-icon">{{ icon_claude(22) }}</div>
+        <h2>Claude Desktop</h2>
+        <span class="status-badge {% if cd.installed %}status-installed{% else %}status-not-found{% endif %}">{{ "Installed" if cd.installed else "Not found" }}</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>{{ cd.mcp_servers|length }}</strong> MCP Servers</div>
+        <div class="stat"><strong>{{ cd.skills|length }}</strong> Skills</div>
+        <div class="stat"><strong>{{ cd.cowork_plugins|length }}</strong> Cowork Plugins</div>
+        <div class="stat"><strong>{{ cd.preferences|length }}</strong> Preferences</div>
       </div>
     </a>
   </div>

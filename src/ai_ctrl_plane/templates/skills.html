@@ -161,6 +161,12 @@ a.skill-card.hidden { display: none; }
       <strong>{{ vscode_skill_count }}</strong>
     </div>
     {% endif %}
+    {% if claude_desktop_skill_count %}
+    <div class="filter-pill" data-filter="claude_desktop" onclick="filterSkills('claude_desktop', this)">
+      <span class="badge badge-source-claude_desktop">Desktop</span>
+      <strong>{{ claude_desktop_skill_count }}</strong>
+    </div>
+    {% endif %}
   </div>
 
   <div class="skill-grid" id="skill-grid">
@@ -175,6 +181,7 @@ a.skill-card.hidden { display: none; }
           {% for src in s.sources %}
           {% if src == 'claude' %}<span class="badge badge-source-claude">Claude</span>
           {% elif src == 'copilot' %}<span class="badge badge-source-copilot">Copilot</span>
+          {% elif src == 'claude_desktop' %}<span class="badge badge-source-claude_desktop">Desktop</span>
           {% else %}<span class="badge badge-source-vscode">VS Code</span>{% endif %}
           {% endfor %}
         </div>

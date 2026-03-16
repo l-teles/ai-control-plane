@@ -451,6 +451,118 @@ _DESKTOP_EXCLUDED_KEYS = frozenset(
 )
 
 
+def _read_desktop_skills(desktop_dir: Path) -> list[dict]:
+    """Read skills from Claude Desktop's skills-plugin session directory.
+
+    Skills are stored under:
+      <desktop_dir>/local-agent-mode-sessions/skills-plugin/<outer-uuid>/<inner-uuid>/
+        manifest.json   – index of all skills (name, skillId, creatorType, enabled, …)
+        skills/<skill-name>/SKILL.md
+
+    The manifest ``name`` field matches the directory name.  ``skillId`` uses a
+    different format for user-created skills and is NOT used as the lookup key.
+    """
+    sessions_dir = desktop_dir / "local-agent-mode-sessions" / "skills-plugin"
+    if not sessions_dir.is_dir():
+        return []
+
+    skills_dir: Path | None = None
+    manifest_data: dict = {}
+    for outer in sorted(sessions_dir.iterdir()):
+        if not outer.is_dir():
+            continue
+        for inner in sorted(outer.iterdir()):
+            if not inner.is_dir():
+                continue
+            candidate = inner / "skills"
+            if candidate.is_dir() or (inner / "manifest.json").is_file():
+                skills_dir = candidate
+                manifest_data = safe_read_json(inner / "manifest.json") or {}
+                break
+        if skills_dir is not None:
+            break
+
+    if not skills_dir or not skills_dir.is_dir():
+        return []
+
+    # Build manifest lookup keyed by skill name (= directory name)
+    manifest_index: dict[str, dict] = {}
+    for entry in manifest_data.get("skills", []):
+        skill_name = entry.get("name", "")
+        if skill_name:
+            manifest_index[skill_name] = {
+                "enabled": entry.get("enabled", True),
+                "creator_type": entry.get("creatorType", ""),
+                "updated_at": entry.get("updatedAt", ""),
+                "skill_id": entry.get("skillId", ""),
+            }
+
+    skills = read_skills(skills_dir)
+    for skill in skills:
+        if skill["name"] in manifest_index:
+            skill.update(manifest_index[skill["name"]])
+        else:
+            skill.setdefault("enabled", True)
+    return skills
+
+
+def _read_cowork_plugins(desktop_dir: Path) -> list[dict]:
+    """Read Cowork plugin info from Claude Desktop's agent session directory.
+
+    Plugins are stored under a UUID-named session directory (not ``skills-plugin``):
+      local-agent-mode-sessions/<uuid>/<uuid>/cowork_plugins/
+        installed_plugins.json   – installed plugin list with install paths
+        cowork_settings.json     – enabled/disabled state per plugin key
+        cache/<marketplace>/<plugin>/<version>/
+          .claude-plugin/plugin.json   – name, version, description, author
+          skills/<skill-name>/SKILL.md – plugin skills
+    """
+    sessions_dir = desktop_dir / "local-agent-mode-sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    for session_dir in sorted(sessions_dir.iterdir()):
+        if not session_dir.is_dir() or session_dir.name == "skills-plugin":
+            continue
+        for inner in sorted(session_dir.iterdir()):
+            if not inner.is_dir():
+                continue
+            installed_path = inner / "cowork_plugins" / "installed_plugins.json"
+            if not installed_path.is_file():
+                continue
+
+            installed = safe_read_json(installed_path) or {}
+            settings = safe_read_json(inner / "cowork_plugins" / "cowork_settings.json") or {}
+            enabled_plugins = settings.get("enabledPlugins", {})
+
+            plugins: list[dict] = []
+            for plugin_key, installs in installed.get("plugins", {}).items():
+                if not isinstance(installs, list):
+                    continue
+                for inst in installs:
+                    cache_path = Path(inst.get("installPath", ""))
+                    if not cache_path.is_dir():
+                        continue
+                    plugin_json = safe_read_json(cache_path / ".claude-plugin" / "plugin.json") or {}
+                    plugin_skills = read_skills(cache_path / "skills")
+                    plugins.append(
+                        {
+                            "key": plugin_key,
+                            "name": plugin_json.get("name", plugin_key),
+                            "version": inst.get("version", ""),
+                            "description": plugin_json.get("description", ""),
+                            "author": (plugin_json.get("author") or {}).get("name", ""),
+                            "enabled": bool(enabled_plugins.get(plugin_key, False)),
+                            "installed_at": inst.get("installedAt", ""),
+                            "last_updated": inst.get("lastUpdated", ""),
+                            "skills": plugin_skills,
+                        }
+                    )
+            return plugins
+
+    return []
+
+
 def read_claude_desktop_config(desktop_dir: Path | None = None) -> dict:
     """Read Claude Desktop configuration.
 
@@ -466,6 +578,8 @@ def read_claude_desktop_config(desktop_dir: Path | None = None) -> dict:
         "mcp_servers": [],
         "preferences": {},
         "ui_config": {},
+        "skills": [],
+        "cowork_plugins": [],
     }
 
     if not home.is_dir():
@@ -496,5 +610,11 @@ def read_claude_desktop_config(desktop_dir: Path | None = None) -> dict:
     ui_cfg = safe_read_json(home / "config.json") or {}
     filtered = {k: v for k, v in ui_cfg.items() if k not in _DESKTOP_EXCLUDED_KEYS}
     result["ui_config"] = mask_dict(filtered)
+
+    # Skills from the skills-plugin session directory
+    result["skills"] = _read_desktop_skills(home)
+
+    # Cowork plugins
+    result["cowork_plugins"] = _read_cowork_plugins(home)
 
     return result

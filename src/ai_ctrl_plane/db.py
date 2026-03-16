@@ -346,9 +346,7 @@ class CacheDB:
             cost_row = self._conn.execute(
                 "SELECT COALESCE(SUM(estimated_cost), 0) AS aggregate_cost FROM sessions"
             ).fetchone()
-            session_row = self._conn.execute(
-                "SELECT COUNT(*) AS total_sessions FROM sessions"
-            ).fetchone()
+            session_row = self._conn.execute("SELECT COUNT(*) AS total_sessions FROM sessions").fetchone()
         return {
             "total_projects": row["total_projects"],
             "total_sessions": session_row["total_sessions"],
@@ -362,8 +360,7 @@ class CacheDB:
         escaped = _escape_like(project_path)
         with self._lock:
             rows = self._conn.execute(
-                "SELECT raw_json FROM sessions "
-                "WHERE (cwd = ? OR cwd LIKE ? ESCAPE '\\') ORDER BY created DESC",
+                "SELECT raw_json FROM sessions WHERE (cwd = ? OR cwd LIKE ? ESCAPE '\\') ORDER BY created DESC",
                 (project_path, escaped + "/%"),
             ).fetchall()
         return [json.loads(r["raw_json"]) for r in rows]
@@ -405,6 +402,7 @@ def build_cache(
     copilot_path: Path,
     claude_path: Path,
     vscode_path: Path,
+    desktop_path: Path | None = None,
 ) -> None:
     """Scan all sources and populate the cache database.
 
@@ -439,7 +437,7 @@ def build_cache(
             cache.insert_tool_config(tool, cfg)
 
         # Claude Desktop config
-        desktop_cfg = read_claude_desktop_config()
+        desktop_cfg = read_claude_desktop_config(desktop_dir=desktop_path)
         cache.insert_tool_config("claude_desktop", desktop_cfg)
 
         # -- Claude projects ------------------------------------------------
@@ -476,6 +474,7 @@ def start_background_build(
     copilot_path: Path,
     claude_path: Path,
     vscode_path: Path,
+    desktop_path: Path | None = None,
 ) -> threading.Thread:
     """Start cache build in a daemon thread. Returns the thread."""
     # Set status synchronously to prevent double-start races
@@ -483,6 +482,7 @@ def start_background_build(
     t = threading.Thread(
         target=build_cache,
         args=(cache, copilot_path, claude_path, vscode_path),
+        kwargs={"desktop_path": desktop_path},
         daemon=True,
         name="cache-builder",
     )

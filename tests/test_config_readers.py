@@ -533,3 +533,74 @@ def test_vscode_config_reads_skills(tmp_path):
     result = read_vscode_config(user_dir)
     assert len(result["skills"]) == 1
     assert result["skills"][0]["name"] == "vs-skill"
+
+
+# ---------------------------------------------------------------------------
+# Claude Desktop skills + cowork plugins tests
+# ---------------------------------------------------------------------------
+
+
+def test_read_claude_desktop_config_reads_skills(tmp_path):
+    """read_claude_desktop_config should read skills from skills-plugin sessions dir."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_desktop_config
+
+    desktop_dir = tmp_path / "Claude"
+    desktop_dir.mkdir()
+    inner = desktop_dir / "local-agent-mode-sessions" / "skills-plugin" / "aaaa-1111" / "bbbb-2222"
+    skill_dir = inner / "skills" / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: Test skill\n---\nBody\n")
+    (inner / "manifest.json").write_text(
+        json.dumps({"skills": [{"skillId": "skill_abc", "name": "my-skill", "creatorType": "user", "enabled": True}]})
+    )
+
+    result = read_claude_desktop_config(desktop_dir)
+    assert len(result["skills"]) == 1
+    s = result["skills"][0]
+    assert s["name"] == "my-skill"
+    assert s["enabled"] is True
+    assert s["creator_type"] == "user"
+
+
+def test_read_claude_desktop_config_empty_when_no_sessions(tmp_path):
+    """read_claude_desktop_config returns empty lists when no session dirs exist."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_desktop_config
+
+    desktop_dir = tmp_path / "Claude"
+    desktop_dir.mkdir()
+
+    result = read_claude_desktop_config(desktop_dir)
+    assert result["skills"] == []
+    assert result["cowork_plugins"] == []
+
+
+def test_read_claude_desktop_config_reads_cowork_plugins(tmp_path):
+    """read_claude_desktop_config should read Cowork plugins from sessions dir."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_desktop_config
+
+    desktop_dir = tmp_path / "Claude"
+    desktop_dir.mkdir()
+    inner = desktop_dir / "local-agent-mode-sessions" / "sess-1" / "inner-1"
+    plugin_cache = inner / "cowork_plugins" / "cache" / "my-market" / "my-plugin" / "1.0.0"
+    plugin_cache.mkdir(parents=True)
+    (plugin_cache / ".claude-plugin").mkdir()
+    (plugin_cache / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "my-plugin", "version": "1.0.0", "description": "A plugin", "author": {"name": "Acme"}})
+    )
+    cowork_dir = inner / "cowork_plugins"
+    (cowork_dir / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {"my-plugin@my-market": [{"installPath": str(plugin_cache), "version": "1.0.0"}]},
+            }
+        )
+    )
+    (cowork_dir / "cowork_settings.json").write_text(json.dumps({"enabledPlugins": {"my-plugin@my-market": True}}))
+
+    result = read_claude_desktop_config(desktop_dir)
+    assert len(result["cowork_plugins"]) == 1
+    p = result["cowork_plugins"][0]
+    assert p["name"] == "my-plugin"
+    assert p["enabled"] is True
+    assert p["author"] == "Acme"
