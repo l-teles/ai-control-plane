@@ -283,9 +283,32 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
 def _encode_project_path(path: str) -> str:
     """Encode a filesystem path to the directory-name format Claude uses.
 
-    ``/Users/foo/my project`` → ``-Users-foo-my project``
+    Claude replaces ``/``, ``\\``, spaces, underscores, and dots with hyphens.
+    ``/Users/foo/.my_project`` → ``-Users-foo--my-project``
     """
-    return path.replace("/", "-").replace("\\", "-")
+    return path.replace("/", "-").replace("\\", "-").replace(" ", "-").replace("_", "-").replace(".", "-")
+
+
+def _extract_cwd_from_jsonl(project_dir: Path) -> str:
+    """Extract the working directory from the first JSONL session file.
+
+    Falls back to empty string if no session files or no cwd found.
+    """
+    import json
+
+    for jsonl in project_dir.glob("*.jsonl"):
+        try:
+            with open(jsonl) as f:
+                for line in f:
+                    if '"cwd"' not in line:
+                        continue
+                    obj = json.loads(line)
+                    cwd = obj.get("cwd", "")
+                    if cwd:
+                        return cwd
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return ""
 
 
 def read_claude_projects(claude_home: Path | None = None) -> dict:
@@ -329,6 +352,11 @@ def read_claude_projects(claude_home: Path | None = None) -> dict:
             continue
         encoded_name = d.name
         real_path = encoded_to_path.get(encoded_name, "")
+
+        # Fallback: extract cwd from the first JSONL session file
+        if not real_path:
+            real_path = _extract_cwd_from_jsonl(d)
+
         meta = project_meta.get(real_path, {}) if real_path else {}
         masked = mask_dict(meta) if meta else {}
         assert isinstance(masked, dict)
@@ -353,7 +381,7 @@ def read_claude_projects(claude_home: Path | None = None) -> dict:
         project = {
             "encoded_name": encoded_name,
             "path": real_path,
-            "name": real_path.rsplit("/", 1)[-1] if real_path else encoded_name,
+            "name": Path(real_path).name if real_path else encoded_name,
             "session_count": session_count,
             "memory_file_count": len(memory_files),
             "memory_files": memory_files,
@@ -449,17 +477,18 @@ def read_claude_desktop_config(desktop_dir: Path | None = None) -> dict:
     desktop_cfg = safe_read_json(home / "claude_desktop_config.json") or {}
 
     servers_dict = desktop_cfg.get("mcpServers", {})
-    result["mcp_servers"] = [
-        {
-            "name": name,
-            "type": cfg.get("type", "stdio"),
-            "command": cfg.get("command", ""),
-            "args": cfg.get("args", []),
-            "url": cfg.get("url", ""),
-        }
-        for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
-        if isinstance(cfg, dict)
-    ]
+    if isinstance(servers_dict, dict):
+        result["mcp_servers"] = [
+            {
+                "name": name,
+                "type": cfg.get("type", "stdio"),
+                "command": cfg.get("command", ""),
+                "args": cfg.get("args", []),
+                "url": cfg.get("url", ""),
+            }
+            for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
+            if isinstance(cfg, dict)
+        ]
 
     prefs = desktop_cfg.get("preferences", {})
     if isinstance(prefs, dict):

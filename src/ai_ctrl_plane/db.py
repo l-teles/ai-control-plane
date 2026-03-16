@@ -139,7 +139,8 @@ class CacheDB:
     # -- Meta helpers -------------------------------------------------------
 
     def get_meta(self, key: str) -> str | None:
-        row = self._conn.execute("SELECT value FROM cache_meta WHERE key = ?", (key,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT value FROM cache_meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
     def set_meta(self, key: str, value: str) -> None:
@@ -173,7 +174,7 @@ class CacheDB:
 
     def _clear_all(self) -> None:
         with self._lock:
-            for tbl in ("sessions", "projects", "project_memory", "tool_configs"):
+            for tbl in ("project_memory", "sessions", "projects", "tool_configs"):
                 self._conn.execute(f"DELETE FROM {tbl}")  # noqa: S608
             self._conn.commit()
 
@@ -253,24 +254,27 @@ class CacheDB:
     # -- Read helpers -------------------------------------------------------
 
     def get_sessions(self) -> list[dict]:
-        rows = self._conn.execute("SELECT raw_json FROM sessions ORDER BY created DESC").fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT raw_json FROM sessions ORDER BY created DESC").fetchall()
         return [json.loads(r["raw_json"]) for r in rows]
 
     def get_session_index(self) -> dict[str, dict]:
-        rows = self._conn.execute("SELECT id, raw_json FROM sessions").fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT id, raw_json FROM sessions").fetchall()
         return {r["id"]: json.loads(r["raw_json"]) for r in rows}
 
     def get_projects(self) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT *, "
-            "(SELECT COUNT(*) FROM project_memory pm "
-            "WHERE pm.project_encoded_name = p.encoded_name) AS memory_count, "
-            "(SELECT COALESCE(SUM(s.estimated_cost), 0) FROM sessions s "
-            "WHERE p.path != '' AND s.cwd LIKE p.path || '%') AS estimated_cost, "
-            "(SELECT COUNT(*) FROM sessions s "
-            "WHERE p.path != '' AND s.cwd LIKE p.path || '%') AS real_session_count "
-            "FROM projects p ORDER BY name"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT *, "
+                "(SELECT COUNT(*) FROM project_memory pm "
+                "WHERE pm.project_encoded_name = p.encoded_name) AS memory_count, "
+                "(SELECT COALESCE(SUM(s.estimated_cost), 0) FROM sessions s "
+                "WHERE p.path != '' AND s.cwd LIKE p.path || '%') AS estimated_cost, "
+                "(SELECT COUNT(*) FROM sessions s "
+                "WHERE p.path != '' AND s.cwd LIKE p.path || '%') AS real_session_count "
+                "FROM projects p ORDER BY name"
+            ).fetchall()
         result = []
         for r in rows:
             d = dict(r)
@@ -286,7 +290,8 @@ class CacheDB:
         return result
 
     def get_project(self, encoded_name: str) -> dict | None:
-        row = self._conn.execute("SELECT * FROM projects WHERE encoded_name = ?", (encoded_name,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM projects WHERE encoded_name = ?", (encoded_name,)).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -295,29 +300,33 @@ class CacheDB:
         return d
 
     def get_project_memory(self, encoded_name: str) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT filename, content FROM project_memory WHERE project_encoded_name = ? ORDER BY filename",
-            (encoded_name,),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT filename, content FROM project_memory WHERE project_encoded_name = ? ORDER BY filename",
+                (encoded_name,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_tool_config(self, tool: str) -> dict | None:
-        row = self._conn.execute("SELECT config_json FROM tool_configs WHERE tool = ?", (tool,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT config_json FROM tool_configs WHERE tool = ?", (tool,)).fetchone()
         return json.loads(row["config_json"]) if row else None
 
     def get_all_tool_configs(self) -> dict[str, dict]:
-        rows = self._conn.execute("SELECT tool, config_json FROM tool_configs").fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT tool, config_json FROM tool_configs").fetchall()
         return {r["tool"]: json.loads(r["config_json"]) for r in rows}
 
     def get_project_global_stats(self) -> dict:
-        row = self._conn.execute("SELECT COUNT(*) AS total_projects FROM projects").fetchone()
-        mem_row = self._conn.execute("SELECT COUNT(*) AS total_memory_files FROM project_memory").fetchone()
-        cost_row = self._conn.execute(
-            "SELECT COALESCE(SUM(estimated_cost), 0) AS aggregate_cost FROM sessions"
-        ).fetchone()
-        session_row = self._conn.execute(
-            "SELECT COUNT(*) AS total_sessions FROM sessions WHERE source = 'claude'"
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) AS total_projects FROM projects").fetchone()
+            mem_row = self._conn.execute("SELECT COUNT(*) AS total_memory_files FROM project_memory").fetchone()
+            cost_row = self._conn.execute(
+                "SELECT COALESCE(SUM(estimated_cost), 0) AS aggregate_cost FROM sessions"
+            ).fetchone()
+            session_row = self._conn.execute(
+                "SELECT COUNT(*) AS total_sessions FROM sessions WHERE source = 'claude'"
+            ).fetchone()
         return {
             "total_projects": row["total_projects"],
             "total_sessions": session_row["total_sessions"],
@@ -327,23 +336,25 @@ class CacheDB:
 
     def get_project_sessions(self, project_path: str) -> list[dict]:
         """Get sessions whose cwd starts with the given project path."""
-        rows = self._conn.execute(
-            "SELECT raw_json FROM sessions WHERE cwd LIKE ? ORDER BY created DESC",
-            (project_path + "%",),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT raw_json FROM sessions WHERE cwd LIKE ? ORDER BY created DESC",
+                (project_path + "%",),
+            ).fetchall()
         return [json.loads(r["raw_json"]) for r in rows]
 
     def get_project_cost(self, project_path: str) -> dict:
         """Get aggregated token usage and cost for sessions in a project."""
-        row = self._conn.execute(
-            "SELECT COALESCE(SUM(input_tokens), 0) AS input_tokens, "
-            "COALESCE(SUM(output_tokens), 0) AS output_tokens, "
-            "COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, "
-            "COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens, "
-            "COALESCE(SUM(estimated_cost), 0) AS estimated_cost "
-            "FROM sessions WHERE cwd LIKE ?",
-            (project_path + "%",),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(input_tokens), 0) AS input_tokens, "
+                "COALESCE(SUM(output_tokens), 0) AS output_tokens, "
+                "COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, "
+                "COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens, "
+                "COALESCE(SUM(estimated_cost), 0) AS estimated_cost "
+                "FROM sessions WHERE cwd LIKE ?",
+                (project_path + "%",),
+            ).fetchone()
         return (
             dict(row)
             if row

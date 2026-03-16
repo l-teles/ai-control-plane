@@ -53,7 +53,8 @@ _UUID_RE = re.compile(
 _BACKUP_HASH_RE = re.compile(r"^[0-9a-f]{16}-\d{13}$")
 
 # Project encoded names: only safe characters (no slashes, no ..)
-_PROJECT_NAME_RE = re.compile(r"^[-a-zA-Z0-9_. ]+$")
+# Allow colon for Windows drive letters (e.g. C:), reject ".." for path traversal
+_PROJECT_NAME_RE = re.compile(r"^[-a-zA-Z0-9_.: ]+$")
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -632,6 +633,10 @@ def create_app(
         desktop_config = None
         if tool == "claude":
             desktop_config = db.get_tool_config("claude_desktop")
+            if not desktop_config:
+                from .config_readers.claude_config import read_claude_desktop_config
+
+                desktop_config = read_claude_desktop_config()
         return render_template(
             "tool_detail.html",
             tool=tool,
@@ -719,7 +724,7 @@ def create_app(
 
     @app.route("/projects/<encoded_name>")
     def project_detail_view(encoded_name: str):
-        if not _PROJECT_NAME_RE.match(encoded_name):
+        if not _PROJECT_NAME_RE.match(encoded_name) or ".." in encoded_name:
             abort(400, description="Invalid project name")
         project = db.get_project(encoded_name)
         if not project:
@@ -757,7 +762,7 @@ def create_app(
 
     @app.route("/api/projects/<encoded_name>")
     def api_project(encoded_name: str):
-        if not _PROJECT_NAME_RE.match(encoded_name):
+        if not _PROJECT_NAME_RE.match(encoded_name) or ".." in encoded_name:
             abort(400, description="Invalid project name")
         project = db.get_project(encoded_name)
         if not project:
