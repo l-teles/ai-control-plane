@@ -298,7 +298,7 @@ def _extract_cwd_from_jsonl(project_dir: Path) -> str:
 
     for jsonl in project_dir.glob("*.jsonl"):
         try:
-            with open(jsonl) as f:
+            with open(jsonl, encoding="utf-8", errors="replace") as f:
                 for line in f:
                     if '"cwd"' not in line:
                         continue

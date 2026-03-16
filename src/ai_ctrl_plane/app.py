@@ -227,8 +227,8 @@ def create_app(
     _CACHE_TTL = 30  # seconds
 
     def _build_session_index(*, force: bool = False) -> tuple[list[dict], dict[str, dict]]:
-        # Try DB first
-        if db.status == "ready" and not force:
+        # Try DB first (also use partial data while building)
+        if db.status in ("ready", "building") and not force:
             sessions = db.get_sessions()
             if sessions:
                 idx = {f"{s['source']}:{s['id']}": s for s in sessions}
@@ -412,8 +412,8 @@ def create_app(
     _VALID_TOOLS = {"claude", "copilot", "vscode"}
 
     def _get_all_configs() -> dict[str, dict]:
-        """Read all tool configs from DB when ready, else from filesystem."""
-        if db.status == "ready":
+        """Read all tool configs from DB when available, else from filesystem."""
+        if db.status in ("ready", "building"):
             cached = db.get_all_tool_configs()
             if cached and all(k in cached for k in ("claude", "copilot", "vscode")):
                 return cached
@@ -422,7 +422,7 @@ def create_app(
     def _get_tool_config(tool: str) -> dict:
         if tool not in _VALID_TOOLS:
             abort(404)
-        if db.status == "ready":
+        if db.status in ("ready", "building"):
             cached = db.get_tool_config(tool)
             if cached:
                 return cached

@@ -79,7 +79,7 @@
       </div>
       <div class="info-row">
         <span class="info-label">Database Size</span>
-        <span class="info-value">{{ "%.1f KB"|format(db_size / 1024) if db_size else '—' }}</span>
+        <span class="info-value">{{ "%.1f KB"|format(db_size / 1024) if db_size is not none else '—' }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">DB Path</span>
