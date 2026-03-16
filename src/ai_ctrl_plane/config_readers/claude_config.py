@@ -197,7 +197,9 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         return result
 
     # Global config (~/.claude.json)
-    global_path = (claude_home / ".claude.json") if claude_home else _default_global_config_path()
+    global_path = home / ".claude.json"
+    if not global_path.is_file():
+        global_path = _default_global_config_path()
     global_cfg = safe_read_json(global_path) or {}
     result["main_settings"] = mask_dict(
         {
@@ -269,5 +271,230 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
                 if skills_dir.is_dir():
                     all_skills.extend(read_skills(skills_dir))
     result["skills"] = all_skills
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Claude projects
+# ---------------------------------------------------------------------------
+
+
+def _encode_project_path(path: str) -> str:
+    """Encode a filesystem path to the directory-name format Claude uses.
+
+    Claude replaces ``/``, ``\\``, spaces, underscores, and dots with hyphens.
+    ``/Users/foo/.my_project`` → ``-Users-foo--my-project``
+    """
+    return path.replace("/", "-").replace("\\", "-").replace(" ", "-").replace("_", "-").replace(".", "-")
+
+
+def _extract_cwd_from_jsonl(project_dir: Path) -> str:
+    """Extract the working directory from the first JSONL session file.
+
+    Falls back to empty string if no session files or no cwd found.
+    """
+    import json
+
+    for jsonl in project_dir.glob("*.jsonl"):
+        try:
+            with open(jsonl, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if '"cwd"' not in line:
+                        continue
+                    obj = json.loads(line)
+                    cwd = obj.get("cwd", "")
+                    if cwd:
+                        return cwd
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return ""
+
+
+def read_claude_projects(claude_home: Path | None = None) -> dict:
+    """Read Claude Code per-project data.
+
+    Parameters
+    ----------
+    claude_home:
+        The ``~/.claude`` directory (NOT the ``projects/`` subdirectory).
+    """
+    home = claude_home or _default_claude_home()
+    projects_dir = home / "projects"
+    empty: dict = {"projects": [], "global_stats": _empty_global_stats()}
+
+    if not projects_dir.is_dir():
+        return empty
+
+    # Read .claude.json for per-project metadata
+    # Try inside claude_home first (works for tests), then fall back to the
+    # real default location (~/.claude.json lives at the user home root).
+    global_path = home / ".claude.json"
+    if not global_path.is_file():
+        global_path = _default_global_config_path()
+    global_cfg = safe_read_json(global_path) or {}
+    project_meta: dict = global_cfg.get("projects", {})
+
+    # Build lookup: encoded dir name → real path
+    encoded_to_path: dict[str, str] = {}
+    for real_path in project_meta:
+        encoded = _encode_project_path(real_path)
+        encoded_to_path[encoded] = real_path
+
+    projects: list[dict] = []
+    total_cost = 0.0
+    total_sessions = 0
+    total_memory = 0
+
+    for d in sorted(projects_dir.iterdir()):
+        if not d.is_dir():
+            continue
+        encoded_name = d.name
+        real_path = encoded_to_path.get(encoded_name, "")
+
+        # Fallback: extract cwd from the first JSONL session file
+        if not real_path:
+            real_path = _extract_cwd_from_jsonl(d)
+
+        meta = project_meta.get(real_path, {}) if real_path else {}
+        masked = mask_dict(meta) if meta else {}
+        meta = masked if isinstance(masked, dict) else {}
+
+        # Count JSONL session files
+        jsonl_files = list(d.glob("*.jsonl"))
+        session_count = len(jsonl_files)
+
+        # Read memory files
+        memory_dir = d / "memory"
+        memory_files: list[dict] = []
+        if memory_dir.is_dir():
+            for mf in sorted(memory_dir.iterdir()):
+                if mf.is_file() and mf.suffix == ".md":
+                    content = safe_read_text(mf, max_bytes=100_000)
+                    if content:
+                        memory_files.append({"filename": mf.name, "content": content})
+
+        last_cost = meta.get("lastCost") if isinstance(meta.get("lastCost"), int | float) else None
+
+        project = {
+            "encoded_name": encoded_name,
+            "path": real_path,
+            "name": Path(real_path).name if real_path else encoded_name,
+            "session_count": session_count,
+            "memory_file_count": len(memory_files),
+            "memory_files": memory_files,
+            "last_cost": last_cost,
+            "last_session_id": meta.get("lastSessionId"),
+            "last_input_tokens": meta.get("lastTotalInputTokens"),
+            "last_output_tokens": meta.get("lastTotalOutputTokens"),
+            "last_cache_creation_tokens": meta.get("lastTotalCacheCreationInputTokens"),
+            "last_cache_read_tokens": meta.get("lastTotalCacheReadInputTokens"),
+            "last_model_usage": meta.get("lastModelUsage", {}),
+            "has_trust_accepted": bool(meta.get("hasTrustDialogAccepted")),
+            "onboarding_seen_count": meta.get("projectOnboardingSeenCount", 0),
+            "allowed_tools": meta.get("allowedTools", []),
+            "mcp_servers": meta.get("mcpServers", {}),
+            "example_files": meta.get("exampleFiles", []),
+            "metadata": meta,
+        }
+        projects.append(project)
+        if last_cost is not None:
+            total_cost += last_cost
+        total_sessions += session_count
+        total_memory += len(memory_files)
+
+    return {
+        "projects": projects,
+        "global_stats": {
+            "total_projects": len(projects),
+            "total_sessions": total_sessions,
+            "total_memory_files": total_memory,
+            "aggregate_cost": round(total_cost, 2),
+        },
+    }
+
+
+def _empty_global_stats() -> dict:
+    return {
+        "total_projects": 0,
+        "total_sessions": 0,
+        "total_memory_files": 0,
+        "aggregate_cost": 0.0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Claude Desktop
+# ---------------------------------------------------------------------------
+
+
+def _default_claude_desktop_dir() -> Path:
+    """Return the platform-default Claude Desktop config directory."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude"
+    if sys.platform == "win32":
+        import os
+
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            return Path(appdata) / "Claude"
+    return Path.home() / ".config" / "Claude"
+
+
+# Keys to exclude entirely from Claude Desktop config.json (sensitive)
+_DESKTOP_EXCLUDED_KEYS = frozenset(
+    {
+        "oauthAccount",
+        "oauth:tokenCache",
+        "lastSyncedAccountCacheLifetimeMs",
+    }
+)
+
+
+def read_claude_desktop_config(desktop_dir: Path | None = None) -> dict:
+    """Read Claude Desktop configuration.
+
+    Parameters
+    ----------
+    desktop_dir:
+        Override for the Claude Desktop config directory (useful for testing).
+    """
+    home = desktop_dir or _default_claude_desktop_dir()
+    result: dict = {
+        "installed": home.is_dir(),
+        "desktop_dir": str(home),
+        "mcp_servers": [],
+        "preferences": {},
+        "ui_config": {},
+    }
+
+    if not home.is_dir():
+        return result
+
+    # claude_desktop_config.json — MCP servers + preferences
+    desktop_cfg = safe_read_json(home / "claude_desktop_config.json") or {}
+
+    servers_dict = desktop_cfg.get("mcpServers", {})
+    if isinstance(servers_dict, dict):
+        result["mcp_servers"] = [
+            {
+                "name": name,
+                "type": cfg.get("type", "stdio"),
+                "command": cfg.get("command", ""),
+                "args": cfg.get("args", []),
+                "url": cfg.get("url", ""),
+            }
+            for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
+            if isinstance(cfg, dict)
+        ]
+
+    prefs = desktop_cfg.get("preferences", {})
+    if isinstance(prefs, dict):
+        result["preferences"] = prefs
+
+    # config.json — UI settings (exclude sensitive fields)
+    ui_cfg = safe_read_json(home / "config.json") or {}
+    filtered = {k: v for k, v in ui_cfg.items() if k not in _DESKTOP_EXCLUDED_KEYS}
+    result["ui_config"] = mask_dict(filtered)
 
     return result

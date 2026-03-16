@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% set active_page = "settings" %}
+
+{% block title %}Settings - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 2px; }
+.page-header p { color: var(--text-secondary); font-size: 14px; }
+
+.settings-grid {
+  display: grid; grid-template-columns: 1fr; gap: 16px;
+  max-width: 700px;
+}
+.settings-section {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+}
+.settings-section h3 {
+  font-size: 15px; font-weight: 600; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.settings-section h3 svg { color: var(--text-secondary); }
+
+.info-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--text-secondary); }
+.info-value { font-weight: 500; font-family: var(--font-mono); font-size: 12px; text-align: right; max-width: 60%; overflow-wrap: break-word; }
+
+.btn-rebuild {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 14px; padding: 8px 20px;
+  background: var(--accent-subtle); border: 1px solid var(--accent);
+  border-radius: 20px; color: var(--accent);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: all var(--transition); font-family: inherit;
+}
+.btn-rebuild:hover { background: var(--accent); color: #fff; }
+.btn-rebuild:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-rebuild svg { width: 14px; height: 14px; }
+
+.status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+}
+.status-dot.ready { background: var(--green); }
+.status-dot.building { background: var(--orange); animation: pulse 1s infinite; }
+.status-dot.error { background: var(--red); }
+.status-dot.empty { background: var(--text-secondary); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <h1>Settings</h1>
+    <p>Cache management and data directories</p>
+  </div>
+
+  <div class="settings-grid">
+    <div class="settings-section">
+      <h3>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        Cache Status
+      </h3>
+      <div class="info-row">
+        <span class="info-label">Status</span>
+        <span class="info-value">
+          <span class="status-dot {{ cache_status.status }}"></span>{{ cache_status.status|capitalize }}
+        </span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Last Built</span>
+        <span class="info-value">{{ cache_status.built_at[:19].replace('T', ' ') if cache_status.built_at else '—' }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Database Size</span>
+        <span class="info-value">{{ "%.1f KB"|format(db_size / 1024) if db_size is not none else '—' }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">DB Path</span>
+        <span class="info-value">{{ cache_status.db_path }}</span>
+      </div>
+      <form method="post" action="/settings/rebuild-cache">
+        <button type="submit" class="btn-rebuild" {% if cache_status.status == 'building' %}disabled{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          {% if cache_status.status == 'building' %}Building…{% else %}Rebuild Cache{% endif %}
+        </button>
+      </form>
+    </div>
+
+    <div class="settings-section">
+      <h3>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Data Directories
+      </h3>
+      {% for label, path in data_dirs %}
+      <div class="info-row">
+        <span class="info-label">{{ label }}</span>
+        <span class="info-value">{{ path }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

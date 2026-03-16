@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% set active_page = "projects" %}
+
+{% block title %}{{ project.name or project.encoded_name }} - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+.detail-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; }
+@media (max-width: 768px) { .detail-layout { grid-template-columns: 1fr; } }
+
+.sidebar {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; align-self: start;
+}
+.sidebar h3 { font-size: 15px; margin-bottom: 12px; color: var(--purple); }
+.info-row {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
+.info-value { font-weight: 500; overflow-wrap: break-word; word-break: normal; line-height: 1.4; }
+
+.main-content { min-width: 0; }
+
+.section {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+}
+.section h3 {
+  font-size: 15px; font-weight: 600; margin-bottom: 12px;
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+}
+.section h3 .chevron {
+  width: 18px; height: 18px; flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  transform: rotate(90deg);
+}
+.section.collapsed h3 .chevron { transform: rotate(0deg); }
+.section.collapsed .section-body { display: none; }
+
+.memory-file { margin-bottom: 16px; }
+.memory-file-name {
+  font-size: 13px; font-weight: 600; color: var(--accent);
+  font-family: var(--font-mono); margin-bottom: 6px;
+  padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px;
+}
+.memory-content {
+  font-size: 13px; line-height: 1.6; padding: 12px;
+  background: var(--bg-tertiary); border-radius: 6px;
+  overflow-x: auto;
+}
+.memory-content h1, .memory-content h2, .memory-content h3 { margin-top: 12px; margin-bottom: 6px; }
+.memory-content p { margin-bottom: 8px; }
+.memory-content code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; }
+.memory-content pre { background: var(--bg-secondary); padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+.memory-content pre code { background: none; padding: 0; }
+
+.kv-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.kv-item {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 8px 12px; background: var(--bg-tertiary); border-radius: 6px; font-size: 13px; gap: 12px;
+}
+.kv-key { color: var(--text-secondary); }
+.kv-value { font-weight: 500; text-align: right; }
+
+.session-list-compact { list-style: none; }
+.session-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  text-decoration: none; color: inherit;
+  transition: background var(--transition); font-size: 13px;
+}
+.session-item:last-child { border-bottom: none; }
+.session-item:hover { background: var(--bg-tertiary); text-decoration: none; }
+.session-summary {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-time {
+  font-size: 12px; color: var(--text-secondary);
+  flex-shrink: 0; font-family: var(--font-mono);
+}
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb-bar">
+  <div class="container">
+    <a href="/projects">Projects</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>{{ project.name or project.encoded_name }}</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="detail-layout">
+    <div class="sidebar">
+      <h3>{{ project.name or project.encoded_name }}</h3>
+      <div class="info-row">
+        <span class="info-label">Path</span>
+        <span class="info-value" style="font-family:var(--font-mono);font-size:11px;">{{ project.path or '—' }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Sessions</span>
+        <span class="info-value">{{ project.session_count or 0 }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Memory Files</span>
+        <span class="info-value">{{ memory_files|length }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Est. Cost</span>
+        <span class="info-value">${{ "%.2f"|format(project_cost.estimated_cost) }}</span>
+      </div>
+      {% if project_cost.input_tokens %}
+      <div class="info-row">
+        <span class="info-label">Input Tokens</span>
+        <span class="info-value">{{ "{:,}".format(project_cost.input_tokens) }}</span>
+      </div>
+      {% endif %}
+      {% if project_cost.output_tokens %}
+      <div class="info-row">
+        <span class="info-label">Output Tokens</span>
+        <span class="info-value">{{ "{:,}".format(project_cost.output_tokens) }}</span>
+      </div>
+      {% endif %}
+      <div class="info-row">
+        <span class="info-label">Trust</span>
+        <span class="info-value">
+          {% if project.has_trust_accepted %}
+          <span class="badge badge-on">Accepted</span>
+          {% else %}
+          <span class="badge badge-off">Not accepted</span>
+          {% endif %}
+        </span>
+      </div>
+      {% if project.onboarding_seen_count %}
+      <div class="info-row">
+        <span class="info-label">Onboarding Seen</span>
+        <span class="info-value">{{ project.onboarding_seen_count }}×</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="main-content">
+
+      {# ── Memory Files ── #}
+      {% if memory_files %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Memory Files ({{ memory_files|length }})</h3>
+        <div class="section-body">
+          {% for mf in memory_files %}
+          <div class="memory-file">
+            <div class="memory-file-name">{{ mf.filename }}</div>
+            <div class="memory-content">{{ mf.html|safe }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Metadata ── #}
+      {% set meta = project.metadata or {} %}
+
+      {% if meta.get('allowedTools') %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Allowed Tools ({{ meta.allowedTools|length }})</h3>
+        <div class="section-body">
+          <div class="kv-grid">
+            {% for tool in meta.allowedTools %}
+            <div class="kv-item"><span class="kv-key">{{ tool }}</span></div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if meta.get('mcpServers') %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}MCP Servers ({{ meta.mcpServers|length }})</h3>
+        <div class="section-body">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Details</th></tr></thead>
+            <tbody>
+              {% for name, srv in meta.mcpServers.items() %}
+              <tr>
+                <td><strong>{{ name }}</strong></td>
+                <td><code>{{ json.dumps(srv, indent=2)[:200] }}</code></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if meta.get('modelUsage') %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Model Usage</h3>
+        <div class="section-body">
+          <div class="kv-grid">
+            {% for model, usage in meta.modelUsage.items() %}
+            <div class="kv-item">
+              <span class="kv-key">{{ model }}</span>
+              <span class="kv-value">{{ usage }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if meta.get('exampleFiles') %}
+      <div class="section collapsed">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Example Files ({{ meta.exampleFiles|length }})</h3>
+        <div class="section-body">
+          <div class="kv-grid">
+            {% for f in meta.exampleFiles %}
+            <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ f }}</span></div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# ── Recent Sessions ── #}
+      {% if project_sessions %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Recent Sessions ({{ project_sessions|length }})</h3>
+        <div class="section-body">
+          <div class="session-list-compact">
+            {% for s in project_sessions[:20] %}
+            <a class="session-item" href="/session/{{ s.id }}">
+              <span class="badge badge-source-{{ s.source }}">{{ s.source|capitalize }}</span>
+              <span class="session-summary">{{ s.summary or s.id }}</span>
+              {% if s.created_at %}
+              <span class="session-time">{{ s.created_at[:16].replace('T', ' ') }}</span>
+              {% endif %}
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if not memory_files and not project_sessions and not meta %}
+      <div class="section">
+        <p class="empty-note">No detailed data available for this project yet.</p>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endblock %}

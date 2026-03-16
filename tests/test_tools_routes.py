@@ -10,6 +10,7 @@ def _client(tmp_path):
         log_dir=str(tmp_path / "copilot"),
         claude_dir=str(tmp_path / "claude"),
         vscode_dir=str(tmp_path / "vscode"),
+        cache_dir=str(tmp_path / "cache"),
     )
     app.config["TESTING"] = True
     return app.test_client()
@@ -226,6 +227,7 @@ def test_skill_detail_renders_body(tmp_path):
         log_dir=str(tmp_path / "copilot"),
         claude_dir=str(tmp_path / "claude"),
         vscode_dir=str(tmp_path / "vscode"),
+        cache_dir=str(tmp_path / "cache"),
     )
     app.config["TESTING"] = True
 
@@ -305,3 +307,119 @@ def test_dashboard_has_skills_metric(tmp_path):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"Skills" in resp.data  # metric label
+
+
+def test_dashboard_has_project_metrics(tmp_path):
+    """Dashboard should show Projects and Memory Files metric cards."""
+    client = _client(tmp_path)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"Projects" in resp.data
+    assert b"Memory Files" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Projects routes
+# ---------------------------------------------------------------------------
+
+
+def test_projects_route_200(tmp_path):
+    client = _client(tmp_path)
+    resp = client.get("/projects")
+    assert resp.status_code == 200
+    assert b"Claude Projects" in resp.data
+
+
+def test_project_detail_404(tmp_path):
+    client = _client(tmp_path)
+    resp = client.get("/projects/nonexistent-project")
+    assert resp.status_code == 404
+
+
+def test_project_name_traversal_rejected(tmp_path):
+    """Path traversal in project name should be rejected."""
+    client = _client(tmp_path)
+    resp = client.get("/projects/../../etc/passwd")
+    # Flask normalizes the URL, but the regex validation catches bad names
+    assert resp.status_code in (400, 404)
+
+
+def test_api_projects_json(tmp_path):
+    client = _client(tmp_path)
+    resp = client.get("/api/projects")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "projects" in data
+    assert "stats" in data
+
+
+def test_api_project_detail_404(tmp_path):
+    client = _client(tmp_path)
+    resp = client.get("/api/projects/nonexistent")
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Settings routes
+# ---------------------------------------------------------------------------
+
+
+def test_settings_route_200(tmp_path):
+    client = _client(tmp_path)
+    resp = client.get("/settings")
+    assert resp.status_code == 200
+    assert b"Settings" in resp.data
+    assert b"Cache Status" in resp.data
+
+
+def test_rebuild_cache_post(tmp_path):
+    client = _client(tmp_path)
+    resp = client.post("/settings/rebuild-cache")
+    # Should redirect to /settings
+    assert resp.status_code == 302
+    assert "/settings" in resp.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
+# Cache status API
+# ---------------------------------------------------------------------------
+
+
+def test_cache_status_api(tmp_path):
+    client = _client(tmp_path)
+    resp = client.get("/api/cache-status")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "status" in data
+    assert "db_path" in data
+
+
+# ---------------------------------------------------------------------------
+# Navbar updates
+# ---------------------------------------------------------------------------
+
+
+def test_navbar_has_projects_link(tmp_path):
+    """Navbar should include Projects link."""
+    client = _client(tmp_path)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"Projects" in resp.data
+    assert b"/projects" in resp.data
+
+
+def test_navbar_has_settings_link(tmp_path):
+    """Navbar should include settings gear icon."""
+    client = _client(tmp_path)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"/settings" in resp.data
+
+
+def test_cache_loading_stripe_in_base(tmp_path):
+    """Base template should include the cache loading stripe div."""
+    client = _client(tmp_path)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"cache-loading" in resp.data
+    assert b"cache-stripe" in resp.data

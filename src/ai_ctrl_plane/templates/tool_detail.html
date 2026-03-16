@@ -468,6 +468,62 @@
         </div>
         {% endif %}
 
+        {# Claude Desktop #}
+        {% if desktop_config and desktop_config.installed %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Claude Desktop</h3>
+          <div class="section-body">
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">From {{ desktop_config.get('desktop_dir', '~/Library/Application Support/Claude/') }}</p>
+
+            {% if desktop_config.get('mcp_servers') %}
+            <h4 style="font-size:13px;font-weight:600;margin:12px 0 8px;">Desktop MCP Servers ({{ desktop_config.mcp_servers|length }})</h4>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for srv in desktop_config.mcp_servers %}
+                <tr>
+                  <td><strong>{{ srv.name }}</strong></td>
+                  <td><span class="badge badge-{{ srv.get('type', 'stdio') }}">{{ srv.get('type', 'stdio') }}</span></td>
+                  <td><code>{% if srv.get('url') %}{{ srv.url }}{% else %}{{ srv.get('command', '') }}{% if srv.get('args') %} {{ srv.args|join(' ') }}{% endif %}{% endif %}</code></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+
+            {% if desktop_config.get('preferences') %}
+            <h4 style="font-size:13px;font-weight:600;margin:16px 0 8px;">Preferences</h4>
+            <div class="kv-grid kv-grid-compact">
+              {% for k, v in desktop_config.preferences.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ k }}</span>
+                {% if v is sameas true %}
+                <span class="badge badge-on">on</span>
+                {% elif v is sameas false %}
+                <span class="badge badge-off">off</span>
+                {% else %}
+                <span class="kv-value">{{ v }}</span>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if desktop_config.get('ui_config') %}
+            <h4 style="font-size:13px;font-weight:600;margin:16px 0 8px;">UI Config</h4>
+            <div class="kv-grid kv-grid-compact">
+              {% for k, v in desktop_config.ui_config.items()|sort %}
+              <div class="kv-item">
+                <span class="kv-key">{{ k }}</span>
+                <span class="kv-value">{{ v }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
       {% endif %}
 
       {# ---- Copilot-specific sections ---- #}

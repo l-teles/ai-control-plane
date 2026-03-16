@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% set active_page = "projects" %}
+
+{% block title %}Projects - AI Control Plane{% endblock %}
+
+{% block head_extra %}
+<style>
+.page-header { margin-bottom: 24px; }
+.page-header h1 {
+  font-size: 24px; font-weight: 700; margin-bottom: 2px;
+  letter-spacing: -0.02em;
+}
+.page-header p { color: var(--text-secondary); font-size: 14px; }
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; text-align: center;
+}
+.stat-value { font-size: 28px; font-weight: 700; color: var(--text); }
+.stat-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-secondary); margin-top: 2px;
+}
+.stat-card.purple .stat-value { color: var(--purple); }
+.stat-card.green .stat-value { color: var(--green); }
+.stat-card.orange .stat-value { color: var(--orange); }
+.stat-card.blue .stat-value { color: var(--accent); }
+
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.project-card {
+  display: block;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+  text-decoration: none; color: inherit;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  border-left: 3px solid var(--purple);
+}
+.project-card:hover {
+  border-color: var(--purple);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+.project-card h3 {
+  font-size: 15px; font-weight: 600; color: var(--purple);
+  margin-bottom: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.project-path {
+  font-size: 11px; color: var(--text-secondary);
+  font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 12px;
+}
+.project-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.project-stat {
+  text-align: center; padding: 8px 4px;
+  background: var(--bg-tertiary); border-radius: 6px;
+}
+.project-stat-value { font-size: 16px; font-weight: 700; color: var(--text); }
+.project-stat-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.project-badges { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+
+.cache-note {
+  text-align: center; padding: 40px 20px;
+  color: var(--text-secondary); font-size: 14px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <h1>Claude Projects</h1>
+    <p>Projects Claude Code has worked on</p>
+  </div>
+
+  {% if cache_status == 'building' %}
+  <div class="cache-note">
+    <p>Cache is building&hellip; project data will appear shortly.</p>
+  </div>
+  {% endif %}
+
+  <div class="stats-row">
+    <div class="stat-card purple">
+      <div class="stat-value">{{ stats.total_projects }}</div>
+      <div class="stat-label">Projects</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-value">{{ stats.total_memory_files }}</div>
+      <div class="stat-label">Memory Files</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-value">${{ "%.2f"|format(stats.aggregate_cost) }}</div>
+      <div class="stat-label">Est. Cost</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-value">{{ stats.total_sessions }}</div>
+      <div class="stat-label">Sessions</div>
+    </div>
+  </div>
+
+  {% if projects %}
+  <div class="project-grid">
+    {% for p in projects %}
+    <a class="project-card" href="/projects/{{ p.encoded_name }}">
+      <h3>{{ p.name or p.encoded_name }}</h3>
+      <div class="project-path">{{ p.path or p.encoded_name }}</div>
+      <div class="project-stats">
+        <div class="project-stat">
+          <div class="project-stat-value">{{ p.session_count or 0 }}</div>
+          <div class="project-stat-label">Sessions</div>
+        </div>
+        <div class="project-stat">
+          <div class="project-stat-value">{{ p.memory_file_count or 0 }}</div>
+          <div class="project-stat-label">Memory</div>
+        </div>
+        <div class="project-stat">
+          <div class="project-stat-value">${{ "%.2f"|format(p.estimated_cost or 0) }}</div>
+          <div class="project-stat-label">Est. Cost</div>
+        </div>
+      </div>
+      <div class="project-badges">
+        {% if p.has_trust_accepted %}
+        <span class="badge badge-on">Trusted</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% elif cache_status != 'building' %}
+  <div class="cache-note">
+    <p>No projects found. Claude Code stores project data in <code>~/.claude/projects/</code>.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

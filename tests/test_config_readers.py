@@ -337,6 +337,164 @@ def test_claude_config_reads_skills(tmp_path):
     assert result["skills"][0]["name"] == "my-skill"
 
 
+# ---------------------------------------------------------------------------
+# Claude projects reader
+# ---------------------------------------------------------------------------
+
+
+def test_read_claude_projects_basic(tmp_path):
+    """read_claude_projects should discover projects and memory files."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_projects
+
+    claude_home = tmp_path / ".claude"
+    claude_home.mkdir()
+
+    # Create project dirs
+    proj = claude_home / "projects" / "-Users-test-myproject"
+    proj.mkdir(parents=True)
+    (proj / "abc.jsonl").write_text('{"type":"user"}\n')
+    (proj / "def.jsonl").write_text('{"type":"user"}\n')
+
+    mem = proj / "memory"
+    mem.mkdir()
+    (mem / "notes.md").write_text("# Notes\nSome content")
+
+    # Create .claude.json with project metadata
+    (claude_home / ".claude.json").write_text(
+        json.dumps(
+            {
+                "projects": {
+                    "/Users/test/myproject": {
+                        "lastCost": 2.50,
+                        "hasTrustDialogAccepted": True,
+                        "allowedTools": ["Read"],
+                    }
+                }
+            }
+        )
+    )
+
+    result = read_claude_projects(claude_home)
+    assert len(result["projects"]) == 1
+    p = result["projects"][0]
+    assert p["encoded_name"] == "-Users-test-myproject"
+    assert p["session_count"] == 2
+    assert p["memory_file_count"] == 1
+    assert p["last_cost"] == 2.50
+    assert p["has_trust_accepted"] is True
+    assert result["global_stats"]["total_projects"] == 1
+    assert result["global_stats"]["aggregate_cost"] == 2.50
+
+
+def test_read_claude_projects_empty(tmp_path):
+    """read_claude_projects returns empty for missing projects dir."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_projects
+
+    result = read_claude_projects(tmp_path / "nonexistent")
+    assert result["projects"] == []
+    assert result["global_stats"]["total_projects"] == 0
+
+
+def test_read_claude_projects_masks_secrets(tmp_path):
+    """MCP server tokens in project metadata should be masked."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_projects
+
+    claude_home = tmp_path / ".claude"
+    (claude_home / "projects" / "-proj").mkdir(parents=True)
+    (claude_home / ".claude.json").write_text(
+        json.dumps(
+            {
+                "projects": {
+                    "/proj": {"mcpServers": {"my-srv": {"env": {"TOKEN": "ghp_abcdefghijklmnopqrstuvwxyz1234567890"}}}}
+                }
+            }
+        )
+    )
+
+    result = read_claude_projects(claude_home)
+    p = result["projects"][0]
+    token = p["metadata"]["mcpServers"]["my-srv"]["env"]["TOKEN"]
+    assert "ghp_abcdefghijklmnop" not in token
+    assert "****" in token
+
+
+# ---------------------------------------------------------------------------
+# Claude Desktop config reader
+# ---------------------------------------------------------------------------
+
+
+def test_read_claude_desktop_config_basic(tmp_path):
+    """read_claude_desktop_config should read MCP servers and preferences."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_desktop_config
+
+    desktop_dir = tmp_path / "Claude"
+    desktop_dir.mkdir()
+
+    (desktop_dir / "claude_desktop_config.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+                    }
+                },
+                "preferences": {"coworkScheduledTasksEnabled": True},
+            }
+        )
+    )
+
+    (desktop_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "locale": "en-US",
+                "userThemeMode": "system",
+                "oauthAccount": {"should": "be excluded"},
+            }
+        )
+    )
+
+    result = read_claude_desktop_config(desktop_dir)
+    assert result["installed"] is True
+    assert len(result["mcp_servers"]) == 1
+    assert result["mcp_servers"][0]["name"] == "filesystem"
+    assert result["preferences"]["coworkScheduledTasksEnabled"] is True
+    assert result["ui_config"]["locale"] == "en-US"
+    # Sensitive fields excluded
+    assert "oauthAccount" not in result["ui_config"]
+
+
+def test_read_claude_desktop_config_missing(tmp_path):
+    """read_claude_desktop_config returns installed=False for missing dir."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_desktop_config
+
+    result = read_claude_desktop_config(tmp_path / "nonexistent")
+    assert result["installed"] is False
+    assert result["mcp_servers"] == []
+
+
+def test_read_claude_desktop_masks_oauth(tmp_path):
+    """OAuth token cache should be excluded from config.json."""
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_desktop_config
+
+    desktop_dir = tmp_path / "Claude"
+    desktop_dir.mkdir()
+    (desktop_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "locale": "en-US",
+                "oauth:tokenCache": {"access_token": "secret123456"},
+                "oauthAccount": {"id": "user-123"},
+            }
+        )
+    )
+
+    result = read_claude_desktop_config(desktop_dir)
+    assert "oauth:tokenCache" not in result["ui_config"]
+    assert "oauthAccount" not in result["ui_config"]
+    assert result["ui_config"]["locale"] == "en-US"
+
+
 def test_claude_config_reads_plugin_skills(tmp_path):
     """Claude config should also read skills from plugin directories."""
     claude_home = tmp_path / ".claude"

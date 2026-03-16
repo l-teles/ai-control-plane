@@ -9,7 +9,7 @@ from pathlib import Path
 
 import markdown
 import nh3
-from flask import Flask, Response, abort, jsonify, render_template, request
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
@@ -18,6 +18,7 @@ from .config_readers import read_all_configs
 from .config_readers.claude_config import read_claude_config
 from .config_readers.copilot_config import read_copilot_config
 from .config_readers.vscode_config import read_vscode_config
+from .db import CacheDB, default_cache_dir, start_background_build
 from .parser import (
     _default_copilot_dir,
     duration_between,
@@ -50,6 +51,10 @@ _UUID_RE = re.compile(
 
 # Backup hash filenames: hex-timestamp
 _BACKUP_HASH_RE = re.compile(r"^[0-9a-f]{16}-\d{13}$")
+
+# Project encoded names: only safe characters (no slashes, no ..)
+# Allow colon for Windows drive letters (e.g. C:), reject ".." for path traversal
+_PROJECT_NAME_RE = re.compile(r"^[-a-zA-Z0-9_.: ]+$")
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -151,6 +156,7 @@ def create_app(
     log_dir: str | Path | None = None,
     claude_dir: str | Path | None = None,
     vscode_dir: str | Path | None = None,
+    cache_dir: str | Path | None = None,
 ) -> Flask:
     """Create and configure the Flask application.
 
@@ -165,6 +171,9 @@ def create_app(
     vscode_dir:
         Root directory containing VS Code Chat session logs.
         Falls back to ``VSCODE_LOG_DIR`` env var, then platform default.
+    cache_dir:
+        Directory for the SQLite cache database.
+        Falls back to platform-specific cache dir.
     """
     import os
 
@@ -180,6 +189,10 @@ def create_app(
         vscode_dir = os.environ.get("VSCODE_LOG_DIR", str(vscode_parser._default_vscode_dir()))
     vscode_path = Path(vscode_dir).resolve()
 
+    if cache_dir is None:
+        cache_dir = default_cache_dir()
+    cache_path = Path(cache_dir)
+
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).parent / "templates"),
@@ -191,12 +204,32 @@ def create_app(
     app.config["SECRET_KEY"] = os.urandom(32)
     app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
 
+    # -- SQLite cache --------------------------------------------------------
+    db = CacheDB(cache_path / "cache.db")
+    app.config["cache_db"] = db
+
+    # Close DB at process exit (connection is reused across requests)
+    import atexit
+
+    atexit.register(db.close)
+
+    # Start background cache build if not already ready
+    if db.status != "ready":
+        start_background_build(db, copilot_path, claude_path, vscode_path)
+
     # -- Unified session index (cached) ---------------------------------------
-    # Maps session_id -> {"source": "copilot"|"claude"|"vscode", "path": str, ...}
+    # Reads from DB when available, falls back to filesystem scan
     _cache: dict = {"sessions": None, "index": None, "ts": 0.0}
     _CACHE_TTL = 30  # seconds
 
     def _build_session_index(*, force: bool = False) -> tuple[list[dict], dict[str, dict]]:
+        # Try DB first (also use partial data while building)
+        if db.status in ("ready", "building") and not force:
+            sessions = db.get_sessions()
+            if sessions:
+                idx = {f"{s['source']}:{s['id']}": s for s in sessions}
+                return sessions, idx
+
         now = time.monotonic()
         if not force and _cache["sessions"] is not None and (now - _cache["ts"]) < _CACHE_TTL:
             return _cache["sessions"], _cache["index"]
@@ -206,10 +239,7 @@ def create_app(
             s.setdefault("source", "copilot")
 
         claude_sessions = claude_parser.discover_sessions(claude_path)
-        # claude sessions already have source="claude"
-
         vscode_sessions = vscode_parser.discover_sessions(vscode_path)
-        # vscode sessions already have source="vscode"
 
         all_sessions = copilot_sessions + claude_sessions + vscode_sessions
         all_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
@@ -269,10 +299,11 @@ def create_app(
         copilot_count = sum(1 for s in sessions if s.get("source") == "copilot")
         claude_count = sum(1 for s in sessions if s.get("source") == "claude")
         vscode_count = sum(1 for s in sessions if s.get("source") == "vscode")
-        configs = read_all_configs()
+        configs = _get_all_configs()
         c = configs["claude"]
         cp = configs["copilot"]
         v = configs["vscode"]
+        project_stats = db.get_project_global_stats()
         return render_template(
             "index.html",
             sessions=sessions,
@@ -293,6 +324,10 @@ def create_app(
             total_commands=len(c.get("commands", [])),
             total_feature_flags=len(c.get("feature_flags", {})) + len(c.get("growthbook_flags", {})),
             total_skills=len(c.get("skills", [])) + len(cp.get("skills", [])) + len(v.get("skills", [])),
+            total_projects=project_stats["total_projects"],
+            total_memory_files=project_stats["total_memory_files"],
+            aggregate_cost=project_stats["aggregate_cost"],
+            cache_status=db.status,
         )
 
     @app.route("/sessions")
@@ -372,7 +407,21 @@ def create_app(
 
     _VALID_TOOLS = {"claude", "copilot", "vscode"}
 
+    def _get_all_configs() -> dict[str, dict]:
+        """Read all tool configs from DB when available, else from filesystem."""
+        if db.status in ("ready", "building"):
+            cached = db.get_all_tool_configs()
+            if cached and all(k in cached for k in ("claude", "copilot", "vscode")):
+                return cached
+        return read_all_configs()
+
     def _get_tool_config(tool: str) -> dict:
+        if tool not in _VALID_TOOLS:
+            abort(404)
+        if db.status in ("ready", "building"):
+            cached = db.get_tool_config(tool)
+            if cached:
+                return cached
         if tool == "claude":
             return read_claude_config()
         elif tool == "copilot":
@@ -383,7 +432,7 @@ def create_app(
 
     @app.route("/agents")
     def agents_view():
-        configs = read_all_configs()
+        configs = _get_all_configs()
         agents: list[dict] = []
         for a in configs["claude"].get("agents", []):
             agents.append({**a, "source": "claude"})
@@ -404,7 +453,7 @@ def create_app(
         When the same skill is installed in multiple tools, merge into a
         single entry with a ``sources`` list.
         """
-        configs = read_all_configs()
+        configs = _get_all_configs()
         by_name: dict[str, dict] = {}
         for source in ("claude", "copilot", "vscode"):
             for s in configs[source].get("skills", []):
@@ -444,7 +493,7 @@ def create_app(
 
     @app.route("/tools")
     def tools_overview():
-        configs = read_all_configs()
+        configs = _get_all_configs()
         # Compute shared MCP servers (present in 2+ tools)
         server_sources: dict[str, list[str]] = {}
         for source in ("claude", "copilot", "vscode"):
@@ -586,17 +635,25 @@ def create_app(
         parsed_settings = []
         if tool == "claude" and config.get("settings"):
             parsed_settings = _parse_claude_settings(config["settings"])
+        desktop_config = None
+        if tool == "claude":
+            desktop_config = db.get_tool_config("claude_desktop")
+            if not desktop_config:
+                from .config_readers.claude_config import read_claude_desktop_config
+
+                desktop_config = read_claude_desktop_config()
         return render_template(
             "tool_detail.html",
             tool=tool,
             config=config,
             json=json,
             parsed_settings=parsed_settings,
+            desktop_config=desktop_config,
         )
 
     @app.route("/api/tools")
     def api_tools():
-        return jsonify(read_all_configs())
+        return jsonify(_get_all_configs())
 
     @app.route("/api/tools/<tool>")
     def api_tool(tool: str):
@@ -640,9 +697,7 @@ def create_app(
         safe_hash = secure_filename(backup_hash)
         if not safe_hash or safe_hash != backup_hash:
             abort(400)
-        backup_file = (
-            session_dir / "rewind-snapshots" / "backups" / safe_hash
-        )
+        backup_file = session_dir / "rewind-snapshots" / "backups" / safe_hash
         resolved = backup_file.resolve()
         try:
             resolved.relative_to(copilot_path.resolve())
@@ -652,5 +707,115 @@ def create_app(
             abort(404)
         content = resolved.read_text(errors="replace")
         return content, 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+    # -- Cache status API ----------------------------------------------------
+
+    @app.route("/api/cache-status")
+    def api_cache_status():
+        return jsonify(db.cache_status())
+
+    # -- Projects routes -----------------------------------------------------
+
+    @app.route("/projects")
+    def projects_view():
+        projects = db.get_projects()
+        stats = db.get_project_global_stats()
+        return render_template(
+            "projects.html",
+            projects=projects,
+            stats=stats,
+            cache_status=db.status,
+        )
+
+    @app.route("/projects/<encoded_name>")
+    def project_detail_view(encoded_name: str):
+        if not _PROJECT_NAME_RE.match(encoded_name) or ".." in encoded_name:
+            abort(400, description="Invalid project name")
+        project = db.get_project(encoded_name)
+        if not project:
+            abort(404)
+        memory_files = db.get_project_memory(encoded_name)
+        # Render memory markdown to HTML
+        for mf in memory_files:
+            mf["html"] = md_to_html(mf.get("content", ""))
+        # Get sessions linked to this project by cwd
+        project_sessions = []
+        project_cost = {"input_tokens": 0, "output_tokens": 0, "estimated_cost": 0}
+        if project.get("path"):
+            project_sessions = db.get_project_sessions(project["path"])
+            project_cost = db.get_project_cost(project["path"])
+        desktop_config = db.get_tool_config("claude_desktop")
+        return render_template(
+            "project_detail.html",
+            project=project,
+            memory_files=memory_files,
+            project_sessions=project_sessions,
+            project_cost=project_cost,
+            desktop_config=desktop_config,
+            ts_display=ts_display,
+            json=json,
+        )
+
+    @app.route("/api/projects")
+    def api_projects():
+        return jsonify(
+            {
+                "projects": db.get_projects(),
+                "stats": db.get_project_global_stats(),
+            }
+        )
+
+    @app.route("/api/projects/<encoded_name>")
+    def api_project(encoded_name: str):
+        if not _PROJECT_NAME_RE.match(encoded_name) or ".." in encoded_name:
+            abort(400, description="Invalid project name")
+        project = db.get_project(encoded_name)
+        if not project:
+            abort(404)
+        project["memory_files"] = db.get_project_memory(encoded_name)
+        if project.get("path"):
+            project["sessions"] = db.get_project_sessions(project["path"])
+        return jsonify(project)
+
+    # -- Settings routes -----------------------------------------------------
+
+    @app.route("/settings")
+    def settings_view():
+        from .config_readers.claude_config import (
+            _default_claude_desktop_dir,
+            _default_claude_home,
+            _default_global_config_path,
+        )
+        from .config_readers.copilot_config import _default_copilot_home
+        from .config_readers.vscode_config import _default_vscode_user_dir
+
+        db_size = None
+        db_file = cache_path / "cache.db"
+        if db_file.exists():
+            db_size = db_file.stat().st_size
+
+        data_dirs = [
+            ("Claude Code projects & sessions", str(claude_path)),
+            ("Claude Code config", str(_default_claude_home())),
+            ("Claude global config", str(_default_global_config_path())),
+            ("Claude Desktop", str(_default_claude_desktop_dir())),
+            ("GitHub Copilot sessions", str(copilot_path)),
+            ("GitHub Copilot config", str(_default_copilot_home())),
+            ("VS Code Chat sessions", str(vscode_path)),
+            ("VS Code config", str(_default_vscode_user_dir())),
+            ("Cache directory", str(cache_path)),
+        ]
+        return render_template(
+            "settings.html",
+            cache_status=db.cache_status(),
+            db_size=db_size,
+            data_dirs=data_dirs,
+        )
+
+    @app.route("/settings/rebuild-cache", methods=["POST"])
+    def rebuild_cache():
+        if db.status != "building":
+            start_background_build(db, copilot_path, claude_path, vscode_path)
+        return redirect(url_for("settings_view"))
 
     return app

@@ -42,6 +42,11 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Directory containing VS Code Chat session logs (default: {_default_vscode_dir()})",
     )
     parser.add_argument(
+        "--cache-dir",
+        default=None,
+        help="Directory for the SQLite cache database (default: platform-specific cache dir)",
+    )
+    parser.add_argument(
         "-p",
         "--port",
         type=int,
@@ -113,7 +118,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Open http://{args.host}:{args.port} in your browser")
     print()
 
-    app = create_app(copilot_path, claude_path, vscode_path)
+    app = create_app(copilot_path, claude_path, vscode_path, cache_dir=args.cache_dir)
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 

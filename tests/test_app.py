@@ -46,7 +46,7 @@ def app_with_data(tmp_path: Path):
     backups.mkdir(parents=True)
     (backups / "abcdef0123456789-1234567890123").write_text("backup content")
 
-    app = create_app(tmp_path, tmp_path / "empty_claude", tmp_path / "empty_vscode")
+    app = create_app(tmp_path, tmp_path / "empty_claude", tmp_path / "empty_vscode", cache_dir=tmp_path / "cache")
     app.config["TESTING"] = True
     return app
 
@@ -172,7 +172,7 @@ def app_with_claude(tmp_path: Path):
     ]
     _write_jsonl(project_dir / "bbbbbbbb-cccc-dddd-eeee-ffffffffffff.jsonl", events)
 
-    app = create_app(tmp_path / "empty_copilot", claude_dir, tmp_path / "empty_vscode")
+    app = create_app(tmp_path / "empty_copilot", claude_dir, tmp_path / "empty_vscode", cache_dir=tmp_path / "cache")
     app.config["TESTING"] = True
     return app
 
@@ -261,7 +261,7 @@ def app_mixed(tmp_path: Path):
     ]
     _write_jsonl(project_dir / "cccccccc-dddd-eeee-ffff-111111111111.jsonl", events_claude)
 
-    app = create_app(tmp_path / "copilot", claude_dir, tmp_path / "empty_vscode")
+    app = create_app(tmp_path / "copilot", claude_dir, tmp_path / "empty_vscode", cache_dir=tmp_path / "cache")
     app.config["TESTING"] = True
     return app
 
@@ -324,7 +324,7 @@ def app_with_vscode(tmp_path: Path):
     }
     (chat_dir / "dddddddd-eeee-ffff-1111-222222222222.json").write_text(json.dumps(session))
 
-    app = create_app(tmp_path / "empty_copilot", tmp_path / "empty_claude", vscode_dir)
+    app = create_app(tmp_path / "empty_copilot", tmp_path / "empty_claude", vscode_dir, cache_dir=tmp_path / "cache")
     app.config["TESTING"] = True
     return app
 
@@ -432,7 +432,7 @@ def test_all_three_sources(tmp_path: Path) -> None:
         )
     )
 
-    app = create_app(tmp_path / "copilot", tmp_path / "claude", vscode_dir)
+    app = create_app(tmp_path / "copilot", tmp_path / "claude", vscode_dir, cache_dir=tmp_path / "cache")
     app.config["TESTING"] = True
 
     with app.test_client() as c:

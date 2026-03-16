@@ -194,6 +194,97 @@ def _last_timestamp(jsonl_path: Path) -> str:
     return last_ts
 
 
+# ---------------------------------------------------------------------------
+# Cost estimation
+# ---------------------------------------------------------------------------
+
+# Pricing per million tokens (USD) — updated for Claude 4.x / 3.5 models
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # (input_per_mtok, output_per_mtok)
+    "claude-opus-4-6": (15.0, 75.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (0.80, 4.0),
+    # Older models
+    "claude-sonnet-4-5-20250514": (3.0, 15.0),
+    "claude-3-5-sonnet-20241022": (3.0, 15.0),
+    "claude-3-5-haiku-20241022": (0.80, 4.0),
+    "claude-3-opus-20240229": (15.0, 75.0),
+}
+# Default pricing (Sonnet-class) for unknown models
+_DEFAULT_PRICING = (3.0, 15.0)
+
+
+def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate USD cost from token counts and model name."""
+    # Match by prefix for versioned model IDs
+    pricing = _DEFAULT_PRICING
+    for model_id, p in _MODEL_PRICING.items():
+        if model.startswith(model_id.rsplit("-", 1)[0]) or model == model_id:
+            pricing = p
+            break
+    input_cost = input_tokens * pricing[0] / 1_000_000
+    output_cost = output_tokens * pricing[1] / 1_000_000
+    return round(input_cost + output_cost, 4)
+
+
+def _scan_token_usage(jsonl_path: Path) -> dict:
+    """Lightweight scan of a JSONL for aggregate token usage.
+
+    Only reads 'assistant' events with usage data, skipping full content parsing.
+    Returns dict with input_tokens, output_tokens, cache_read_tokens,
+    cache_creation_tokens, and estimated_cost.
+    """
+    input_by_req: dict[str, int] = {}
+    output_by_req: dict[str, int] = {}
+    cache_read_by_req: dict[str, int] = {}
+    cache_creation_by_req: dict[str, int] = {}
+    model = ""
+
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # Quick filter: skip lines that don't look like assistant events with usage
+                if '"usage"' not in line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if evt.get("type") != "assistant":
+                    continue
+                msg = evt.get("message", {})
+                usage = msg.get("usage", {})
+                if not usage:
+                    continue
+                rid = evt.get("requestId", evt.get("uuid", ""))
+                if not model:
+                    model = msg.get("model", "")
+                ot = usage.get("output_tokens", 0)
+                if ot:
+                    output_by_req[rid] = ot
+                it = usage.get("input_tokens", 0)
+                if it:
+                    input_by_req[rid] = it
+                cr = usage.get("cache_read_input_tokens", 0)
+                if cr:
+                    cache_read_by_req[rid] = cr
+                cc = usage.get("cache_creation_input_tokens", 0)
+                if cc:
+                    cache_creation_by_req[rid] = cc
+    except OSError:
+        pass
+
+    total_input = sum(input_by_req.values())
+    total_output = sum(output_by_req.values())
+    return {
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "cache_read_tokens": sum(cache_read_by_req.values()),
+        "cache_creation_tokens": sum(cache_creation_by_req.values()),
+        "estimated_cost": _estimate_cost(model, total_input, total_output),
+    }
+
+
 def discover_sessions(base: Path) -> list[dict]:
     """Scan Claude project directories for session JSONL files."""
     sessions: list[dict] = []
@@ -228,6 +319,9 @@ def discover_sessions(base: Path) -> list[dict]:
 
             updated_at = _last_timestamp(jsonl_file)
 
+            # Token usage and cost estimation
+            tokens = _scan_token_usage(jsonl_file)
+
             session_entry: dict = {
                 "id": session_id,
                 "path": str(jsonl_file),
@@ -239,6 +333,11 @@ def discover_sessions(base: Path) -> list[dict]:
                 "updated_at": updated_at or meta.get("created_at", ""),
                 "source": "claude",
                 "model": meta.get("model", ""),
+                "input_tokens": tokens["input_tokens"],
+                "output_tokens": tokens["output_tokens"],
+                "cache_read_tokens": tokens["cache_read_tokens"],
+                "cache_creation_tokens": tokens["cache_creation_tokens"],
+                "estimated_cost": tokens["estimated_cost"],
             }
             if slug_display:
                 session_entry["slug"] = slug_display
