@@ -13,7 +13,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-_SCHEMA_VERSION = "2"
+_SCHEMA_VERSION = "3"
 
 _DDL = """\
 CREATE TABLE IF NOT EXISTS cache_meta (
@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS tool_configs (
     config_json TEXT,
     updated_at  TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd);
+CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created);
 """
 
 
@@ -123,7 +126,7 @@ class CacheDB:
 
     def _init_schema(self) -> None:
         with self._lock:
-            # Check if schema version changed — drop and recreate if so
+            # Check if schema version changed — nuke and recreate the DB file
             existing_version = ""
             try:
                 row = self._conn.execute("SELECT value FROM cache_meta WHERE key = 'version'").fetchone()
@@ -132,9 +135,12 @@ class CacheDB:
             except sqlite3.OperationalError:
                 pass  # cache_meta doesn't exist yet
             if existing_version and existing_version != _SCHEMA_VERSION:
-                # Schema changed — drop all tables and recreate
-                for tbl in ("sessions", "projects", "project_memory", "tool_configs", "cache_meta"):
-                    self._conn.execute(f"DROP TABLE IF EXISTS {tbl}")  # noqa: S608
+                self._conn.close()
+                self.db_path.unlink(missing_ok=True)
+                # Also clean up WAL/SHM files
+                for suffix in ("-wal", "-shm"):
+                    self.db_path.with_name(self.db_path.name + suffix).unlink(missing_ok=True)
+                self._conn = _connect(self.db_path)
             self._conn.executescript(_DDL)
             self._conn.execute(
                 "INSERT OR REPLACE INTO cache_meta (key, value) VALUES ('version', ?)",

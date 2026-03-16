@@ -208,11 +208,7 @@ def create_app(
     db = CacheDB(cache_path / "cache.db")
     app.config["cache_db"] = db
 
-    # Close DB connection on app teardown
-    @app.teardown_appcontext
-    def _close_db(exc: BaseException | None) -> None:  # noqa: ARG001
-        pass  # Connection is reused; actual close happens at process exit
-
+    # Close DB at process exit (connection is reused across requests)
     import atexit
 
     atexit.register(db.close)
