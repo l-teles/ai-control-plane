@@ -29,7 +29,7 @@ def _safe_open(base_dir: Path, *parts: str) -> str | None:
         return None
     if not os.path.isfile(real_target):
         return None
-    with open(real_target) as f:  # noqa: PTH123
+    with open(real_target, encoding="utf-8") as f:  # noqa: PTH123
         return f.read()
 
 

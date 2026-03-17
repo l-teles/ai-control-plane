@@ -56,7 +56,7 @@ def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
     if not jsonl_path.is_file():
         return []
     events: list[dict] = []
-    with open(jsonl_path) as f:
+    with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -97,7 +97,7 @@ def _first_metadata(jsonl_path: Path) -> dict:
     """Read just enough of a JSONL to extract session metadata."""
     meta: dict = {}
     first_user_content: str = ""
-    with open(jsonl_path) as f:
+    with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
