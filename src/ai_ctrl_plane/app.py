@@ -14,7 +14,6 @@ from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
 from . import claude_parser, vscode_parser
-from .config_readers import read_all_configs
 from .config_readers.claude_config import _default_claude_desktop_dir, read_claude_config, read_claude_desktop_config
 from .config_readers.copilot_config import read_copilot_config
 from .config_readers.vscode_config import read_vscode_config
@@ -416,13 +415,26 @@ def create_app(
     _VALID_TOOLS = {"claude", "copilot", "vscode", "claude_desktop"}
 
     def _get_all_configs() -> dict[str, dict]:
-        """Read all tool configs from DB when available, else from filesystem."""
+        """Read all tool configs, using cached data where available.
+
+        During a background build the DB may hold only a subset of tools.
+        We use whatever is cached and do a direct filesystem read only for
+        any tool that is still missing, avoiding a full FS scan on every request
+        while the cache is being populated.
+        """
+        result: dict[str, dict] = {}
         if db.status in ("ready", "building"):
             cached = db.get_all_tool_configs()
-            if cached and all(k in cached for k in ("claude", "copilot", "vscode", "claude_desktop")):
-                return cached
-        result = read_all_configs()
-        result["claude_desktop"] = read_claude_desktop_config(desktop_dir=desktop_path)
+            if cached:
+                result = dict(cached)
+        if "claude" not in result:
+            result["claude"] = read_claude_config()
+        if "copilot" not in result:
+            result["copilot"] = read_copilot_config()
+        if "vscode" not in result:
+            result["vscode"] = read_vscode_config()
+        if "claude_desktop" not in result:
+            result["claude_desktop"] = read_claude_desktop_config(desktop_dir=desktop_path)
         return result
 
     def _get_tool_config(tool: str) -> dict:
