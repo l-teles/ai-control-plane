@@ -95,7 +95,7 @@ def _read_session_json(path: Path) -> dict | None:
     """Read a VS Code Chat session from a .json or .jsonl file."""
     try:
         if path.suffix == ".jsonl":
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 state: dict = {}
                 for line in f:
                     line = line.strip()
@@ -141,9 +141,9 @@ def _read_session_json(path: Path) -> dict | None:
                         continue
                 return state if state else None
         else:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -187,14 +187,14 @@ def discover_sessions(base: Path) -> list[dict]:
             ws_json = ws_dir / "workspace.json"
             if ws_json.is_file():
                 try:
-                    with open(ws_json) as f:
+                    with open(ws_json, encoding="utf-8") as f:
                         ws_data = json.load(f)
                     folder = ws_data.get("folder", "")
                     if folder:
                         cwd = _folder_uri_to_path(folder)
                         # Derive repo from last path segment
                         repo = Path(cwd).name if cwd else ""
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                     pass
 
             for session_file in sorted(list(chat_dir.glob("*.json")) + list(chat_dir.glob("*.jsonl"))):
@@ -297,7 +297,7 @@ def parse_events(path: Path) -> list[dict]:
     ws_json = path.parent.parent / "workspace.json"
     if ws_json.is_file():
         try:
-            with open(ws_json) as f:
+            with open(ws_json, encoding="utf-8") as f:
                 ws_data = json.load(f)
             folder = ws_data.get("folder", "")
             if folder:

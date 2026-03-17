@@ -89,7 +89,7 @@ def safe_read_json(path: Path) -> dict | None:
     try:
         if not path.is_file():
             return None
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
@@ -100,7 +100,7 @@ def safe_read_yaml(path: Path) -> dict | None:
     try:
         if not path.is_file():
             return None
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f)
     except (yaml.YAMLError, OSError, UnicodeDecodeError):
         return None
@@ -115,7 +115,7 @@ def parse_yaml_frontmatter(path: Path) -> dict | None:
     try:
         if not path.is_file():
             return None
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             content = f.read(50_000)
         if not content.startswith("---"):
             return None
@@ -146,7 +146,7 @@ def parse_yaml_frontmatter(path: Path) -> dict | None:
                     val = val[1:-1]
                 data[key] = val
         return data or None
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -155,7 +155,7 @@ def _extract_skill_body(path: Path) -> str:
     try:
         if not path.is_file():
             return ""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             content = f.read(100_000)
         if not content.startswith("---"):
             return content
@@ -163,7 +163,7 @@ def _extract_skill_body(path: Path) -> str:
         if end == -1:
             return content
         return content[end + 4 :].strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return ""
 
 
@@ -211,7 +211,7 @@ def safe_read_text(path: Path, max_bytes: int = 50_000) -> str | None:
     try:
         if not path.is_file():
             return None
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return f.read(max_bytes)
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None

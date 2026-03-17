@@ -18,7 +18,7 @@ from ai_ctrl_plane.claude_parser import (
 
 
 def _write_jsonl(path: Path, events: list[dict]) -> None:
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for evt in events:
             f.write(json.dumps(evt) + "\n")
 

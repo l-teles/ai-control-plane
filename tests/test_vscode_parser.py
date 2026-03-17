@@ -745,3 +745,53 @@ def test_prompt_token_details() -> None:
     assert ptd["toolDefinitions"] == 30
     assert ptd["messages"] == 20
     assert ptd["files"] == 10
+
+
+# ---------------------------------------------------------------------------
+# UTF-8 encoding regression (Windows cp1252 crash)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_events_utf8_content(tmp_path: Path) -> None:
+    """parse_events must read UTF-8 session files without UnicodeDecodeError."""
+    ws_dir = tmp_path / "workspaceStorage" / "utf8hash"
+    chat_dir = ws_dir / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    (ws_dir / "workspace.json").write_text(
+        json.dumps({"folder": "file:///tmp/proj"}), encoding="utf-8"
+    )
+
+    session = _make_session(custom_title="Héllo — 日本語 🎉")
+    jsonl_path = chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+    jsonl_path.write_text(
+        json.dumps({"kind": 0, "v": session}) + "\n", encoding="utf-8"
+    )
+
+    events = parse_events(jsonl_path)
+    assert len(events) >= 1
+    assert any("Héllo" in str(e) or "日本語" in str(e) for e in events)
+
+
+def test_parse_events_cp1252_invalid_bytes(tmp_path: Path) -> None:
+    """parse_events must not crash on bytes that are valid UTF-8 but invalid in cp1252.
+
+    Ł (U+0141) encodes to 0xC5 0x81 in UTF-8; 0x81 is an undefined code point in
+    cp1252 and would raise UnicodeDecodeError under the system default encoding on
+    Windows. This is the exact failure mode the encoding fix addresses.
+    """
+    ws_dir = tmp_path / "workspaceStorage" / "cp1252hash"
+    chat_dir = ws_dir / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    (ws_dir / "workspace.json").write_text(
+        json.dumps({"folder": "file:///tmp/proj"}), encoding="utf-8"
+    )
+
+    session = _make_session(custom_title="Łódź project")
+    jsonl_path = chat_dir / "aaaaaaaa-bbbb-cccc-dddd-ffffffffffff.jsonl"
+    jsonl_path.write_text(
+        json.dumps({"kind": 0, "v": session}) + "\n", encoding="utf-8"
+    )
+
+    events = parse_events(jsonl_path)
+    assert len(events) >= 1
+    assert any("Łódź" in str(e) for e in events)

@@ -56,18 +56,21 @@ def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
     if not jsonl_path.is_file():
         return []
     events: list[dict] = []
-    with open(jsonl_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                evt = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if evt.get("type") in skip:
-                continue
-            events.append(evt)
+    try:
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if evt.get("type") in skip:
+                    continue
+                events.append(evt)
+    except (OSError, UnicodeDecodeError):
+        pass
     return events
 
 
@@ -97,50 +100,52 @@ def _first_metadata(jsonl_path: Path) -> dict:
     """Read just enough of a JSONL to extract session metadata."""
     meta: dict = {}
     first_user_content: str = ""
-    with open(jsonl_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                evt = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if evt.get("type") in _DISCOVERY_SKIP_TYPES:
-                continue
-            if evt.get("isMeta"):
-                continue
+    try:
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if evt.get("type") in _DISCOVERY_SKIP_TYPES:
+                    continue
+                if evt.get("isMeta"):
+                    continue
 
-            if not meta.get("sessionId"):
-                meta["sessionId"] = evt.get("sessionId", "")
-                meta["cwd"] = evt.get("cwd", "")
-                meta["gitBranch"] = evt.get("gitBranch", "")
-                meta["version"] = evt.get("version", "")
-                meta["created_at"] = evt.get("timestamp", "")
+                if not meta.get("sessionId"):
+                    meta["sessionId"] = evt.get("sessionId", "")
+                    meta["cwd"] = evt.get("cwd", "")
+                    meta["gitBranch"] = evt.get("gitBranch", "")
+                    meta["version"] = evt.get("version", "")
+                    meta["created_at"] = evt.get("timestamp", "")
 
-            if evt.get("slug") and not meta.get("slug"):
-                meta["slug"] = evt["slug"]
+                if evt.get("slug") and not meta.get("slug"):
+                    meta["slug"] = evt["slug"]
 
-            if evt.get("type") == "assistant":
-                msg = evt.get("message", {})
-                if msg.get("model") and not meta.get("model"):
-                    meta["model"] = msg["model"]
+                if evt.get("type") == "assistant":
+                    msg = evt.get("message", {})
+                    if msg.get("model") and not meta.get("model"):
+                        meta["model"] = msg["model"]
 
-            if evt.get("type") == "user" and not first_user_content:
-                content = evt.get("message", {}).get("content", "")
-                if isinstance(content, list):
-                    # Extract text from content blocks
-                    parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
-                    content = " ".join(parts)
-                if isinstance(content, str) and content:
-                    _, user_text = _split_xml_and_text(content)
-                    if user_text:
-                        first_user_content = user_text[:120]
+                if evt.get("type") == "user" and not first_user_content:
+                    content = evt.get("message", {}).get("content", "")
+                    if isinstance(content, list):
+                        # Extract text from content blocks
+                        parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+                        content = " ".join(parts)
+                    if isinstance(content, str) and content:
+                        _, user_text = _split_xml_and_text(content)
+                        if user_text:
+                            first_user_content = user_text[:120]
 
-            # Once we have everything, stop reading
-            if meta.get("sessionId") and meta.get("model") and (meta.get("slug") or first_user_content):
-                break
-
+                # Once we have everything, stop reading
+                if meta.get("sessionId") and meta.get("model") and (meta.get("slug") or first_user_content):
+                    break
+    except (OSError, UnicodeDecodeError):
+        pass
     meta["first_user_content"] = first_user_content
     return meta
 

@@ -782,3 +782,79 @@ def test_default_claude_desktop_dir_glob_fallback(tmp_path, monkeypatch):
 
     result = _default_claude_desktop_dir()
     assert result == glob_path
+
+
+# ---------------------------------------------------------------------------
+# UTF-8 encoding tests (regression for Windows cp1252 crash)
+# ---------------------------------------------------------------------------
+
+
+def test_read_skills_utf8_content(tmp_path):
+    """read_skills must handle UTF-8 content (accents, CJK, emoji) without UnicodeDecodeError."""
+    from ai_ctrl_plane.config_readers._common import read_skills
+
+    skills_dir = tmp_path / "skills"
+    skill = skills_dir / "utf8-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: utf8-skill\ndescription: Ünïcödé skill — 日本語 🎉\nauthor: René\n---\n"
+        "# Héllo\n\nBody with emojis 🚀 and kanji 漢字.\n",
+        encoding="utf-8",
+    )
+
+    result = read_skills(skills_dir)
+    assert len(result) == 1
+    assert result[0]["name"] == "utf8-skill"
+    assert "日本語" in result[0]["description"]
+    assert "漢字" in result[0]["body"]
+
+
+def test_safe_read_json_utf8(tmp_path):
+    """safe_read_json must read UTF-8 JSON without UnicodeDecodeError."""
+    from ai_ctrl_plane.config_readers._common import safe_read_json
+
+    cfg = tmp_path / "config.json"
+    cfg.write_text('{"name": "René", "note": "日本語 🎉"}', encoding="utf-8")
+
+    result = safe_read_json(cfg)
+    assert result is not None
+    assert result["name"] == "René"
+    assert "日本語" in result["note"]
+
+
+def test_copilot_parse_events_utf8(tmp_path):
+    """Copilot parser must read UTF-8 JSONL session files without UnicodeDecodeError."""
+    from ai_ctrl_plane.parser import parse_events
+
+    session_dir = tmp_path / "sess"
+    session_dir.mkdir()
+    events_jsonl = session_dir / "events.jsonl"
+    events_jsonl.write_text(
+        '{"type": "user.sent", "data": {"message": "Héllo — 日本語 🎉"}, "timestamp": "2026-01-01T00:00:00Z"}\n',
+        encoding="utf-8",
+    )
+    (session_dir / "workspace.yaml").write_text(
+        "id: test\ncwd: /tmp\nrepository: org/repo\nbranch: main\nsummary: s\n"
+        "created_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n",
+        encoding="utf-8",
+    )
+
+    events = parse_events(session_dir)
+    assert any("Héllo" in str(e) or "日本語" in str(e) for e in events)
+
+
+def test_claude_parser_utf8(tmp_path):
+    """Claude parser must read UTF-8 JSONL files without UnicodeDecodeError."""
+    from ai_ctrl_plane.claude_parser import parse_events
+
+    jsonl = tmp_path / "session.jsonl"
+    jsonl.write_text(
+        '{"type": "user", "message": {"role": "user", "content": "Héllo — 日本語 🎉"},'
+        ' "uuid": "u1", "timestamp": "2026-01-01T00:00:00Z",'
+        ' "sessionId": "s1", "cwd": "/tmp", "version": "2.0", "gitBranch": "main"}\n',
+        encoding="utf-8",
+    )
+
+    events = parse_events(jsonl)
+    assert len(events) == 1
+    assert "Héllo" in str(events[0])
