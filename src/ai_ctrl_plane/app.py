@@ -940,7 +940,7 @@ def create_app(
     @app.route("/settings/rebuild-cache", methods=["POST"])
     def rebuild_cache():
         if db.status != "building":
-            start_background_build(db, copilot_path, claude_path, vscode_path)
+            start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
         return redirect(url_for("settings_view"))
 
     return app

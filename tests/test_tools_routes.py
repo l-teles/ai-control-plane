@@ -90,6 +90,11 @@ def test_dashboard_has_tool_configs(tmp_path):
     assert resp.status_code == 200
     assert b"AI Control Plane" in resp.data
     assert b"MCP Servers" in resp.data
+    # All four tool cards must be present
+    assert b"Claude Code" in resp.data
+    assert b"GitHub Copilot" in resp.data
+    assert b"VS Code Chat" in resp.data
+    assert b"Claude Desktop" in resp.data
 
 
 def test_agents_route_200(tmp_path):
@@ -380,6 +385,36 @@ def test_rebuild_cache_post(tmp_path):
     # Should redirect to /settings
     assert resp.status_code == 302
     assert "/settings" in resp.headers["Location"]
+
+
+def test_dashboard_claude_desktop_card_renders_without_install(tmp_path):
+    """Claude Desktop card must render even when desktop is not installed (missing dir)."""
+    # Pass a non-existent desktop_dir to simulate a device without Claude Desktop
+    client = _client(tmp_path, desktop_dir=tmp_path / "no_such_desktop")
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"Claude Desktop" in resp.data
+    assert b"Not found" in resp.data
+
+
+def test_rebuild_cache_enqueues_desktop_path(tmp_path):
+    """Rebuild cache endpoint must pass desktop_path so claude_desktop is included in the rebuild."""
+    import json as _json
+
+    desktop_dir = tmp_path / "Claude"
+    desktop_dir.mkdir()
+    cfg = {"mcpServers": {"test-server": {"command": "npx", "args": []}}}
+    (desktop_dir / "claude_desktop_config.json").write_text(_json.dumps(cfg))
+
+    client = _client(tmp_path, desktop_dir=desktop_dir)
+    # Trigger a rebuild
+    resp = client.post("/settings/rebuild-cache")
+    assert resp.status_code == 302
+    # After rebuild, desktop config with MCP server must be accessible
+    api_resp = client.get("/api/tools/claude_desktop")
+    data = api_resp.get_json()
+    assert data["installed"] is True
+    assert any(s["name"] == "test-server" for s in data["mcp_servers"])
 
 
 # ---------------------------------------------------------------------------

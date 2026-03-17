@@ -405,19 +405,19 @@ a.metric-card:hover { text-decoration: none; }
       </div>
     </a>
 
-    {% set cd = configs.claude_desktop %}
+    {% set cd = configs.get('claude_desktop') or {} %}
     <a class="tool-card claude_desktop" href="/tools/claude_desktop">
       <div class="tool-card-header">
         <div class="tool-card-icon">{{ icon_claude(20) }}</div>
         <h3>Claude Desktop</h3>
-        <span class="status-badge {% if cd.installed %}status-installed{% else %}status-not-found{% endif %}">
-          {{ "Installed" if cd.installed else "Not found" }}
+        <span class="status-badge {% if cd.get('installed') %}status-installed{% else %}status-not-found{% endif %}">
+          {{ "Installed" if cd.get('installed') else "Not found" }}
         </span>
       </div>
       <div class="tool-stats">
-        <div class="tool-stat"><div class="tool-stat-value">{{ cd.mcp_servers|length }}</div><div class="tool-stat-label">MCP</div></div>
-        <div class="tool-stat"><div class="tool-stat-value">{{ cd.skills|length }}</div><div class="tool-stat-label">Skills</div></div>
-        <div class="tool-stat"><div class="tool-stat-value">{{ cd.cowork_plugins|length }}</div><div class="tool-stat-label">Cowork</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cd.get('mcp_servers', [])|length }}</div><div class="tool-stat-label">MCP</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cd.get('skills', [])|length }}</div><div class="tool-stat-label">Skills</div></div>
+        <div class="tool-stat"><div class="tool-stat-value">{{ cd.get('cowork_plugins', [])|length }}</div><div class="tool-stat-label">Cowork</div></div>
       </div>
     </a>
   </div>
