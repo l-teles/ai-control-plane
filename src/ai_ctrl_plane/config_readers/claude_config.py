@@ -16,24 +16,42 @@ from ._common import (
 
 
 def _default_claude_home() -> Path:
-    """Return the platform-default Claude home directory."""
+    """Return the platform-default Claude home directory.
+
+    On Windows, prefers ``%LOCALAPPDATA%\\claude`` (standard installer) and falls
+    back to ``%USERPROFILE%\\.claude`` when the primary path does not exist.
+    """
     if sys.platform == "win32":
         import os
 
         localappdata = os.environ.get("LOCALAPPDATA", "")
-        if localappdata:
-            return Path(localappdata) / "claude"
+        primary = Path(localappdata) / "claude" if localappdata else None
+        if primary and primary.is_dir():
+            return primary
+        fallback = Path.home() / ".claude"
+        if fallback.is_dir():
+            return fallback
+        return primary if primary else fallback
     return Path.home() / ".claude"
 
 
 def _default_global_config_path() -> Path:
-    """Return the platform-default global Claude config path."""
+    """Return the platform-default global Claude config path.
+
+    On Windows, prefers ``%LOCALAPPDATA%\\claude\\.claude.json`` and falls back
+    to ``%USERPROFILE%\\.claude.json`` when the primary file does not exist.
+    """
     if sys.platform == "win32":
         import os
 
         localappdata = os.environ.get("LOCALAPPDATA", "")
-        if localappdata:
-            return Path(localappdata) / "claude" / ".claude.json"
+        primary = Path(localappdata) / "claude" / ".claude.json" if localappdata else None
+        if primary and primary.is_file():
+            return primary
+        fallback = Path.home() / ".claude.json"
+        if fallback.is_file():
+            return fallback
+        return primary if primary else fallback
     return Path.home() / ".claude.json"
 
 
@@ -429,15 +447,45 @@ def _empty_global_stats() -> dict:
 
 
 def _default_claude_desktop_dir() -> Path:
-    """Return the platform-default Claude Desktop config directory."""
+    """Return the platform-default Claude Desktop config directory.
+
+    On Windows, checks paths in priority order:
+    1. ``%APPDATA%\\Claude``  — standard NSIS/EXE installer
+    2. ``%LOCALAPPDATA%\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\Claude``
+       — MSIX / Windows Store install (publisher ID is deterministic, derived from
+       Anthropic's signing certificate)
+    3. Glob over ``%LOCALAPPDATA%\\Packages\\Claude_*\\...`` as a fallback in case
+       the publisher ID changes in a future release
+    """
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Claude"
     if sys.platform == "win32":
         import os
 
         appdata = os.environ.get("APPDATA", "")
-        if appdata:
-            return Path(appdata) / "Claude"
+        standard = Path(appdata) / "Claude" if appdata else None
+        if standard and standard.is_dir():
+            return standard
+
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if localappdata:
+            known_msix = (
+                Path(localappdata)
+                / "Packages"
+                / "Claude_pzs8sxrjxfjjc"
+                / "LocalCache"
+                / "Roaming"
+                / "Claude"
+            )
+            if known_msix.is_dir():
+                return known_msix
+            packages = Path(localappdata) / "Packages"
+            if packages.is_dir():
+                for candidate in sorted(packages.glob("Claude_*/LocalCache/Roaming/Claude")):
+                    if candidate.is_dir():
+                        return candidate
+
+        return standard if standard else Path.home() / "AppData" / "Roaming" / "Claude"
     return Path.home() / ".config" / "Claude"
 
 

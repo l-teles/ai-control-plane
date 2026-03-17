@@ -604,3 +604,139 @@ def test_read_claude_desktop_config_reads_cowork_plugins(tmp_path):
     assert p["name"] == "my-plugin"
     assert p["enabled"] is True
     assert p["author"] == "Acme"
+
+
+# ---------------------------------------------------------------------------
+# Windows path fallback tests
+# ---------------------------------------------------------------------------
+
+
+def test_default_claude_home_prefers_localappdata(tmp_path, monkeypatch):
+    """On Windows, _default_claude_home() prefers %LOCALAPPDATA%\\claude when it exists."""
+    from ai_ctrl_plane.config_readers.claude_config import _default_claude_home
+
+    localappdata_dir = tmp_path / "Local"
+    primary = localappdata_dir / "claude"
+    primary.mkdir(parents=True)
+    userprofile_dir = tmp_path / "Users" / "user"
+    userprofile_dir.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+    monkeypatch.setattr("pathlib.Path.home", lambda: userprofile_dir)
+
+    result = _default_claude_home()
+    assert result == primary
+
+
+def test_default_claude_home_falls_back_to_userprofile(tmp_path, monkeypatch):
+    """On Windows, _default_claude_home() falls back to %USERPROFILE%\\.claude when LOCALAPPDATA dir is absent."""
+    from ai_ctrl_plane.config_readers.claude_config import _default_claude_home
+
+    localappdata_dir = tmp_path / "Local"
+    localappdata_dir.mkdir(parents=True)
+    # primary (LOCALAPPDATA\claude) does NOT exist
+    userprofile_dir = tmp_path / "Users" / "user"
+    fallback = userprofile_dir / ".claude"
+    fallback.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+    monkeypatch.setattr("pathlib.Path.home", lambda: userprofile_dir)
+
+    result = _default_claude_home()
+    assert result == fallback
+
+
+def test_default_copilot_home_prefers_localappdata(tmp_path, monkeypatch):
+    """On Windows, _default_copilot_home() prefers %LOCALAPPDATA%\\github-copilot when it exists."""
+    from ai_ctrl_plane.config_readers.copilot_config import _default_copilot_home
+
+    localappdata_dir = tmp_path / "Local"
+    primary = localappdata_dir / "github-copilot"
+    primary.mkdir(parents=True)
+    userprofile_dir = tmp_path / "Users" / "user"
+    userprofile_dir.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+    monkeypatch.setattr("pathlib.Path.home", lambda: userprofile_dir)
+
+    result = _default_copilot_home()
+    assert result == primary
+
+
+def test_default_copilot_home_falls_back_to_userprofile(tmp_path, monkeypatch):
+    """On Windows, _default_copilot_home() falls back to %USERPROFILE%\\.copilot when LOCALAPPDATA dir is absent."""
+    from ai_ctrl_plane.config_readers.copilot_config import _default_copilot_home
+
+    localappdata_dir = tmp_path / "Local"
+    localappdata_dir.mkdir(parents=True)
+    # primary (LOCALAPPDATA\github-copilot) does NOT exist
+    userprofile_dir = tmp_path / "Users" / "user"
+    fallback = userprofile_dir / ".copilot"
+    fallback.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+    monkeypatch.setattr("pathlib.Path.home", lambda: userprofile_dir)
+
+    result = _default_copilot_home()
+    assert result == fallback
+
+
+def test_default_claude_desktop_dir_prefers_standard_on_windows(tmp_path, monkeypatch):
+    """On Windows, _default_claude_desktop_dir() prefers %APPDATA%\\Claude when it exists."""
+    from ai_ctrl_plane.config_readers.claude_config import _default_claude_desktop_dir
+
+    appdata_dir = tmp_path / "Roaming"
+    standard = appdata_dir / "Claude"
+    standard.mkdir(parents=True)
+    localappdata_dir = tmp_path / "Local"
+    localappdata_dir.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata_dir))
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+
+    result = _default_claude_desktop_dir()
+    assert result == standard
+
+
+def test_default_claude_desktop_dir_falls_back_to_msix(tmp_path, monkeypatch):
+    """On Windows, _default_claude_desktop_dir() falls back to the known MSIX path when standard is absent."""
+    from ai_ctrl_plane.config_readers.claude_config import _default_claude_desktop_dir
+
+    appdata_dir = tmp_path / "Roaming"
+    appdata_dir.mkdir(parents=True)
+    # standard (%APPDATA%\Claude) does NOT exist
+    localappdata_dir = tmp_path / "Local"
+    msix_path = localappdata_dir / "Packages" / "Claude_pzs8sxrjxfjjc" / "LocalCache" / "Roaming" / "Claude"
+    msix_path.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata_dir))
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+
+    result = _default_claude_desktop_dir()
+    assert result == msix_path
+
+
+def test_default_claude_desktop_dir_glob_fallback(tmp_path, monkeypatch):
+    """On Windows, _default_claude_desktop_dir() uses glob fallback for unknown MSIX publisher IDs."""
+    from ai_ctrl_plane.config_readers.claude_config import _default_claude_desktop_dir
+
+    appdata_dir = tmp_path / "Roaming"
+    appdata_dir.mkdir(parents=True)
+    # standard (%APPDATA%\Claude) does NOT exist
+    localappdata_dir = tmp_path / "Local"
+    # Use a different publisher ID (not the known one) to trigger glob fallback
+    glob_path = localappdata_dir / "Packages" / "Claude_unknownpublisher" / "LocalCache" / "Roaming" / "Claude"
+    glob_path.mkdir(parents=True)
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("APPDATA", str(appdata_dir))
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata_dir))
+
+    result = _default_claude_desktop_dir()
+    assert result == glob_path
