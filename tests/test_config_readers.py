@@ -858,3 +858,96 @@ def test_claude_parser_utf8(tmp_path):
     events = parse_events(jsonl)
     assert len(events) == 1
     assert "Héllo" in str(events[0])
+
+
+# ---------------------------------------------------------------------------
+# Global memory files
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_reads_global_memory(tmp_path):
+    """read_claude_config() returns memory files from ~/.claude/memory/."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    memory_dir = home / "memory"
+    memory_dir.mkdir()
+    (memory_dir / "user_role.md").write_text("---\nname: role\n---\nI am a developer.", encoding="utf-8")
+    (memory_dir / "feedback.md").write_text("---\nname: feedback\n---\nBe concise.", encoding="utf-8")
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert len(cfg["memory_files"]) == 2
+    filenames = [m["filename"] for m in cfg["memory_files"]]
+    assert "user_role.md" in filenames
+    assert "feedback.md" in filenames
+    contents = [m["content"] for m in cfg["memory_files"]]
+    assert any("developer" in c for c in contents)
+
+
+def test_claude_config_empty_memory_when_no_dir(tmp_path):
+    """read_claude_config() returns empty memory_files when directory is absent."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["memory_files"] == []
+
+
+# ---------------------------------------------------------------------------
+# Windows managed-settings
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_reads_managed_settings_windows(tmp_path, monkeypatch):
+    """On Windows, reads managed-settings.json from %PROGRAMFILES%\\ClaudeCode\\."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+
+    prog_files = tmp_path / "ProgramFiles"
+    managed_dir = prog_files / "ClaudeCode"
+    managed_dir.mkdir(parents=True)
+    (managed_dir / "managed-settings.json").write_text(
+        '{"disableAutoUpdate": true, "allowedTools": ["bash"]}', encoding="utf-8"
+    )
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("PROGRAMFILES", str(prog_files))
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "ProgramData"))  # does not exist
+
+    import importlib
+
+    from ai_ctrl_plane.config_readers import claude_config
+    importlib.reload(claude_config)
+
+    cfg = claude_config.read_claude_config(claude_home=home)
+    assert cfg["managed_settings"].get("disableAutoUpdate") is True
+    assert cfg["managed_settings_legacy"] == {}
+
+
+def test_claude_config_reads_managed_settings_legacy_windows(tmp_path, monkeypatch):
+    """On Windows, reads legacy managed-settings.json from %PROGRAMDATA%\\ClaudeCode\\."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+
+    programdata = tmp_path / "ProgramData"
+    legacy_dir = programdata / "ClaudeCode"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "managed-settings.json").write_text(
+        '{"legacyPolicy": true}', encoding="utf-8"
+    )
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "ProgramFiles"))  # does not exist
+    monkeypatch.setenv("PROGRAMDATA", str(programdata))
+
+    import importlib
+
+    from ai_ctrl_plane.config_readers import claude_config
+    importlib.reload(claude_config)
+
+    cfg = claude_config.read_claude_config(claude_home=home)
+    assert cfg["managed_settings"] == {}
+    assert cfg["managed_settings_legacy"].get("legacyPolicy") is True

@@ -209,6 +209,9 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "hooks": [],
         "commands": [],
         "skills": [],
+        "memory_files": [],
+        "managed_settings": {},
+        "managed_settings_legacy": {},
         "feature_flags": {},
         "growthbook_flags": {},
     }
@@ -291,6 +294,31 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
                 if skills_dir.is_dir():
                     all_skills.extend(read_skills(skills_dir))
     result["skills"] = all_skills
+
+    # Global memory — ~/.claude/memory/*.md
+    memory_dir = home / "memory"
+    memory_files: list[dict] = []
+    if memory_dir.is_dir():
+        for mf in sorted(memory_dir.iterdir()):
+            if mf.is_file() and mf.suffix == ".md":
+                content = safe_read_text(mf, max_bytes=100_000)
+                if content:
+                    memory_files.append({"filename": mf.name, "content": content})
+    result["memory_files"] = memory_files
+
+    # Managed settings (enterprise / MDM — Windows only)
+    if sys.platform == "win32":
+        import os as _os
+
+        prog_files = _os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        managed_raw = safe_read_json(Path(prog_files) / "ClaudeCode" / "managed-settings.json")
+        if managed_raw and isinstance(managed_raw, dict):
+            result["managed_settings"] = dict(mask_dict(managed_raw))
+
+        programdata = _os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+        legacy_raw = safe_read_json(Path(programdata) / "ClaudeCode" / "managed-settings.json")
+        if legacy_raw and isinstance(legacy_raw, dict):
+            result["managed_settings_legacy"] = dict(mask_dict(legacy_raw))
 
     return result
 

@@ -254,6 +254,26 @@
       </div>
       {% endif %}
 
+      {# Memory Files (Claude Code global ~/.claude/memory/) #}
+      {% if tool == 'claude' and config.memory_files %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Memory Files ({{ config.memory_files|length }})</h3>
+        <div class="section-body">
+          <table class="data-table">
+            <thead><tr><th>File</th><th>Preview</th></tr></thead>
+            <tbody>
+              {% for m in config.memory_files %}
+              <tr>
+                <td><strong>{{ m.filename }}</strong></td>
+                <td style="white-space:pre-wrap; font-size:12px;">{{ m.content[:300] }}{% if m.content|length > 300 %}…{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
       {# ---- Claude-specific sections ---- #}
       {% if tool == 'claude' %}
 
@@ -466,6 +486,34 @@
               </div>
               {% endfor %}
             </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Managed Settings (enterprise / MDM — Windows only) #}
+        {% if config.managed_settings or config.managed_settings_legacy %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Managed Settings</h3>
+          <div class="section-body">
+            {% if config.managed_settings %}
+            <p style="font-size:12px; margin-bottom:6px;"><strong>Program Files\ClaudeCode\managed-settings.json</strong> (current)</p>
+            <div class="kv-grid">
+              {% for k, v in config.managed_settings.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if config.managed_settings_legacy %}
+            <p style="font-size:12px; margin-top:12px; margin-bottom:6px;">
+              <strong>ProgramData\ClaudeCode\managed-settings.json</strong>
+              <span style="color:var(--warning); font-size:11px;"> &#9888; Legacy &mdash; deprecated since v2.1.75, no longer read by Claude Code</span>
+            </p>
+            <div class="kv-grid">
+              {% for k, v in config.managed_settings_legacy.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
           </div>
         </div>
         {% endif %}
