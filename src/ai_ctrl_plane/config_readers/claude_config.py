@@ -355,8 +355,9 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         blocklist = safe_read_json(plugins_dir / "blocklist.json")
         if isinstance(blocklist, list):
             result["plugin_blocklist"] = blocklist
-        elif isinstance(blocklist, dict) and "plugins" in blocklist:
-            result["plugin_blocklist"] = blocklist.get("plugins", [])
+        elif isinstance(blocklist, dict):
+            plugins_value = blocklist.get("plugins")
+            result["plugin_blocklist"] = plugins_value if isinstance(plugins_value, list) else []
 
         known_marketplaces = safe_read_json(plugins_dir / "known_marketplaces.json")
         if known_marketplaces and isinstance(known_marketplaces, dict):

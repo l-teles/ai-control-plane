@@ -869,6 +869,7 @@ def test_claude_config_reads_global_memory(tmp_path):
     """read_claude_config() returns memory files from ~/.claude/memory/."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     memory_dir = home / "memory"
     memory_dir.mkdir()
     (memory_dir / "user_role.md").write_text("---\nname: role\n---\nI am a developer.", encoding="utf-8")
@@ -889,6 +890,7 @@ def test_claude_config_empty_memory_when_no_dir(tmp_path):
     """read_claude_config() returns empty memory_files when directory is absent."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
 
     from ai_ctrl_plane.config_readers.claude_config import read_claude_config
 
@@ -905,6 +907,7 @@ def test_claude_config_reads_managed_settings_windows(tmp_path, monkeypatch):
     """On Windows, reads managed-settings.json from %PROGRAMFILES%\\ClaudeCode\\."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
 
     prog_files = tmp_path / "ProgramFiles"
     managed_dir = prog_files / "ClaudeCode"
@@ -926,6 +929,7 @@ def test_claude_config_reads_managed_settings_legacy_windows(tmp_path, monkeypat
     """On Windows, reads legacy managed-settings.json from %PROGRAMDATA%\\ClaudeCode\\."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
 
     programdata = tmp_path / "ProgramData"
     legacy_dir = programdata / "ClaudeCode"
@@ -952,6 +956,7 @@ def test_claude_config_reads_managed_settings_macos(tmp_path, monkeypatch):
     """Reads managed-settings.json from macOS system dir via _default_managed_dir."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     managed_dir = tmp_path / "managed"
     managed_dir.mkdir()
     (managed_dir / "managed-settings.json").write_text(
@@ -970,6 +975,7 @@ def test_claude_config_reads_managed_settings_linux(tmp_path, monkeypatch):
     """Reads managed-settings.json from Linux system dir via _default_managed_dir."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     managed_dir = tmp_path / "etc-claude-code"
     managed_dir.mkdir()
     (managed_dir / "managed-settings.json").write_text(
@@ -987,6 +993,7 @@ def test_claude_config_reads_managed_mcp(tmp_path, monkeypatch):
     """Reads managed-mcp.json and returns structured managed_mcp_servers list."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     managed_dir = tmp_path / "managed"
     managed_dir.mkdir()
     (managed_dir / "managed-mcp.json").write_text(
@@ -1010,6 +1017,7 @@ def test_claude_config_managed_mcp_empty_when_no_file(tmp_path, monkeypatch):
     """managed_mcp_servers is empty when managed-mcp.json is absent."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     managed_dir = tmp_path / "managed"
     managed_dir.mkdir()  # dir exists but no managed-mcp.json
 
@@ -1024,6 +1032,7 @@ def test_claude_config_reads_managed_mcp_legacy_windows(tmp_path, monkeypatch):
     """On Windows, reads legacy managed-mcp.json from %PROGRAMDATA%\\ClaudeCode\\."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
 
     programdata = tmp_path / "ProgramData"
     legacy_dir = programdata / "ClaudeCode"
@@ -1105,6 +1114,7 @@ def test_claude_config_blocklist_dict_format(tmp_path):
     """plugin_blocklist is populated when blocklist.json uses the dict format."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     plugins_dir = home / "plugins"
     plugins_dir.mkdir()
     (plugins_dir / "blocklist.json").write_text(
@@ -1124,6 +1134,7 @@ def test_claude_config_reads_mcp_auth_cache(tmp_path):
     """read_claude_config() reads mcp-needs-auth-cache.json."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     (home / "mcp-needs-auth-cache.json").write_text(
         '{"claude.ai Slack": {"timestamp": 1234567890}}', encoding="utf-8"
     )
@@ -1138,6 +1149,7 @@ def test_claude_config_reads_remote_settings(tmp_path):
     """read_claude_config() reads remote-settings.json and masks env values."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     (home / "remote-settings.json").write_text(
         '{"cleanupPeriodDays": 7, "env": {"SECRET_TOKEN": "abc123"}, "permissions": {"deny": ["Bash(sudo:*)"]}}',
         encoding="utf-8",
@@ -1163,6 +1175,7 @@ def test_claude_config_reads_stats_cache(tmp_path):
     """read_claude_config() reads stats-cache.json."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     (home / "stats-cache.json").write_text(
         '{"version": 2, "totalSessions": 5, "totalMessages": 20, "modelUsage": {}}',
         encoding="utf-8",
@@ -1179,6 +1192,7 @@ def test_claude_config_reads_known_marketplaces(tmp_path):
     """read_claude_config() reads plugins/known_marketplaces.json."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     plugins_dir = home / "plugins"
     plugins_dir.mkdir()
     (plugins_dir / "known_marketplaces.json").write_text(
@@ -1196,6 +1210,7 @@ def test_claude_config_reads_install_counts(tmp_path):
     """read_claude_config() reads plugins/install-counts-cache.json."""
     home = tmp_path / ".claude"
     home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
     plugins_dir = home / "plugins"
     plugins_dir.mkdir()
     (plugins_dir / "install-counts-cache.json").write_text(

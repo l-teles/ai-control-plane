@@ -87,8 +87,11 @@ def _read_vscode_dir(user_dir: Path) -> dict:
     }
 
     # MCP servers (mcp.json)
-    mcp_cfg = safe_read_json(user_dir / "mcp.json") or {}
+    mcp_raw = safe_read_json(user_dir / "mcp.json")
+    mcp_cfg = mcp_raw if isinstance(mcp_raw, dict) else {}
     servers_dict = mcp_cfg.get("servers", mcp_cfg.get("mcpServers", {}))
+    if not isinstance(servers_dict, dict):
+        servers_dict = {}
     data["mcp_servers"] = [
         {
             "name": name,
