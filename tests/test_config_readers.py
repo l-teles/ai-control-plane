@@ -858,3 +858,370 @@ def test_claude_parser_utf8(tmp_path):
     events = parse_events(jsonl)
     assert len(events) == 1
     assert "Héllo" in str(events[0])
+
+
+# ---------------------------------------------------------------------------
+# Global memory files
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_reads_global_memory(tmp_path):
+    """read_claude_config() returns memory files from ~/.claude/memory/."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    memory_dir = home / "memory"
+    memory_dir.mkdir()
+    (memory_dir / "user_role.md").write_text("---\nname: role\n---\nI am a developer.", encoding="utf-8")
+    (memory_dir / "feedback.md").write_text("---\nname: feedback\n---\nBe concise.", encoding="utf-8")
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert len(cfg["memory_files"]) == 2
+    filenames = [m["filename"] for m in cfg["memory_files"]]
+    assert "user_role.md" in filenames
+    assert "feedback.md" in filenames
+    contents = [m["content"] for m in cfg["memory_files"]]
+    assert any("developer" in c for c in contents)
+
+
+def test_claude_config_empty_memory_when_no_dir(tmp_path):
+    """read_claude_config() returns empty memory_files when directory is absent."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["memory_files"] == []
+
+
+# ---------------------------------------------------------------------------
+# Windows managed-settings
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_reads_managed_settings_windows(tmp_path, monkeypatch):
+    """On Windows, reads managed-settings.json from %PROGRAMFILES%\\ClaudeCode\\."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+
+    prog_files = tmp_path / "ProgramFiles"
+    managed_dir = prog_files / "ClaudeCode"
+    managed_dir.mkdir(parents=True)
+    (managed_dir / "managed-settings.json").write_text(
+        '{"disableAutoUpdate": true, "allowedTools": ["bash"]}', encoding="utf-8"
+    )
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("PROGRAMFILES", str(prog_files))
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "ProgramData"))  # does not exist
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["managed_settings"].get("disableAutoUpdate") is True
+    assert cfg["managed_settings_legacy"] == {}
+
+
+def test_claude_config_reads_managed_settings_legacy_windows(tmp_path, monkeypatch):
+    """On Windows, reads legacy managed-settings.json from %PROGRAMDATA%\\ClaudeCode\\."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+
+    programdata = tmp_path / "ProgramData"
+    legacy_dir = programdata / "ClaudeCode"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "managed-settings.json").write_text(
+        '{"legacyPolicy": true}', encoding="utf-8"
+    )
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "ProgramFiles"))  # does not exist
+    monkeypatch.setenv("PROGRAMDATA", str(programdata))
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["managed_settings"] == {}
+    assert cfg["managed_settings_legacy"].get("legacyPolicy") is True
+
+
+# ---------------------------------------------------------------------------
+# Cross-platform managed-settings (macOS / Linux via _default_managed_dir patch)
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_reads_managed_settings_macos(tmp_path, monkeypatch):
+    """Reads managed-settings.json from macOS system dir via _default_managed_dir."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    managed_dir = tmp_path / "managed"
+    managed_dir.mkdir()
+    (managed_dir / "managed-settings.json").write_text(
+        '{"disableTelemetry": true}', encoding="utf-8"
+    )
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_settings"].get("disableTelemetry") is True
+    assert cfg["managed_settings_legacy"] == {}
+
+
+def test_claude_config_reads_managed_settings_linux(tmp_path, monkeypatch):
+    """Reads managed-settings.json from Linux system dir via _default_managed_dir."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    managed_dir = tmp_path / "etc-claude-code"
+    managed_dir.mkdir()
+    (managed_dir / "managed-settings.json").write_text(
+        '{"maxThinkingTokens": 8000}', encoding="utf-8"
+    )
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_settings"].get("maxThinkingTokens") == 8000
+
+
+def test_claude_config_reads_managed_mcp(tmp_path, monkeypatch):
+    """Reads managed-mcp.json and returns structured managed_mcp_servers list."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    managed_dir = tmp_path / "managed"
+    managed_dir.mkdir()
+    (managed_dir / "managed-mcp.json").write_text(
+        '{"mcpServers": {"corp-tools": {"command": "node", "args": ["index.js"], "type": "stdio"}}}',
+        encoding="utf-8",
+    )
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert len(cfg["managed_mcp_servers"]) == 1
+    srv = cfg["managed_mcp_servers"][0]
+    assert srv["name"] == "corp-tools"
+    assert srv["type"] == "stdio"
+    assert srv["command"] == "node"
+    assert srv["args"] == ["index.js"]
+
+
+def test_claude_config_managed_mcp_empty_when_no_file(tmp_path, monkeypatch):
+    """managed_mcp_servers is empty when managed-mcp.json is absent."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    managed_dir = tmp_path / "managed"
+    managed_dir.mkdir()  # dir exists but no managed-mcp.json
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_mcp_servers"] == []
+
+
+def test_claude_config_reads_managed_mcp_legacy_windows(tmp_path, monkeypatch):
+    """On Windows, reads legacy managed-mcp.json from %PROGRAMDATA%\\ClaudeCode\\."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+
+    programdata = tmp_path / "ProgramData"
+    legacy_dir = programdata / "ClaudeCode"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "managed-mcp.json").write_text(
+        '{"mcpServers": {"legacy-tool": {"command": "python", "args": ["-m", "tool"], "type": "stdio"}}}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "ProgramFiles"))  # does not exist
+    monkeypatch.setenv("PROGRAMDATA", str(programdata))
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: tmp_path / "ProgramFiles" / "ClaudeCode")
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_mcp_servers"] == []
+    assert len(cfg["managed_mcp_servers_legacy"]) == 1
+    srv = cfg["managed_mcp_servers_legacy"][0]
+    assert srv["name"] == "legacy-tool"
+    assert srv["command"] == "python"
+    assert srv["args"] == ["-m", "tool"]
+
+
+# ---------------------------------------------------------------------------
+# VS Code Insiders
+# ---------------------------------------------------------------------------
+
+
+def test_vscode_config_reads_insiders(tmp_path, monkeypatch):
+    """read_vscode_config() reads Insiders MCP servers when insiders dir exists."""
+    stable_dir = tmp_path / "Code" / "User"
+    stable_dir.mkdir(parents=True)
+
+    insiders_dir = tmp_path / "Code - Insiders" / "User"
+    insiders_dir.mkdir(parents=True)
+    (insiders_dir / "mcp.json").write_text(
+        '{"servers": {"insiders-server": {"command": "npx", "args": ["-y", "server"], "type": "stdio"}}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers import vscode_config
+    monkeypatch.setattr(vscode_config, "_default_vscode_insiders_user_dir", lambda: insiders_dir)
+
+    cfg = vscode_config.read_vscode_config(vscode_user_dir=stable_dir)
+    # When vscode_user_dir is explicitly passed, Insiders scanning is skipped
+    assert cfg["insiders_mcp_servers"] == []
+
+    # Without override — Insiders is auto-discovered
+    monkeypatch.setattr(vscode_config, "_default_vscode_user_dir", lambda: stable_dir)
+    cfg2 = vscode_config.read_vscode_config()
+    assert cfg2["insiders_installed"] is True
+    assert len(cfg2["insiders_mcp_servers"]) == 1
+    assert cfg2["insiders_mcp_servers"][0]["name"] == "insiders-server"
+
+
+def test_vscode_config_insiders_not_installed(tmp_path, monkeypatch):
+    """insiders_installed is False when the Insiders directory does not exist."""
+    stable_dir = tmp_path / "Code" / "User"
+    stable_dir.mkdir(parents=True)
+    insiders_dir = tmp_path / "Code - Insiders" / "User"  # does not exist
+
+    from ai_ctrl_plane.config_readers import vscode_config
+    monkeypatch.setattr(vscode_config, "_default_vscode_user_dir", lambda: stable_dir)
+    monkeypatch.setattr(vscode_config, "_default_vscode_insiders_user_dir", lambda: insiders_dir)
+
+    cfg = vscode_config.read_vscode_config()
+    assert cfg["insiders_installed"] is False
+    assert cfg["insiders_mcp_servers"] == []
+
+
+# ---------------------------------------------------------------------------
+# Additional Claude Code config files
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_blocklist_dict_format(tmp_path):
+    """plugin_blocklist is populated when blocklist.json uses the dict format."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    plugins_dir = home / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "blocklist.json").write_text(
+        '{"fetchedAt": "2026-01-01T00:00:00Z",'
+        ' "plugins": [{"plugin": "bad@mkt", "reason": "security", "added_at": "2026-01-01"}]}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert len(cfg["plugin_blocklist"]) == 1
+    assert cfg["plugin_blocklist"][0]["plugin"] == "bad@mkt"
+
+
+def test_claude_config_reads_mcp_auth_cache(tmp_path):
+    """read_claude_config() reads mcp-needs-auth-cache.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    (home / "mcp-needs-auth-cache.json").write_text(
+        '{"claude.ai Slack": {"timestamp": 1234567890}}', encoding="utf-8"
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert "claude.ai Slack" in cfg["mcp_auth_cache"]
+
+
+def test_claude_config_reads_remote_settings(tmp_path):
+    """read_claude_config() reads remote-settings.json and masks env values."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    (home / "remote-settings.json").write_text(
+        '{"cleanupPeriodDays": 7, "env": {"SECRET_TOKEN": "abc123"}, "permissions": {"deny": ["Bash(sudo:*)"]}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["remote_settings"].get("cleanupPeriodDays") == 7
+    # env contains a key that mask_dict should mask (it has "token" in the name)
+    env = cfg["remote_settings"].get("env", {})
+    assert isinstance(env, dict)
+    assert "SECRET_TOKEN" in env
+    assert env["SECRET_TOKEN"] != "abc123"
+    assert isinstance(env["SECRET_TOKEN"], str)
+    assert env["SECRET_TOKEN"].endswith("****")
+    # permissions deny list should be present
+    perms = cfg["remote_settings"].get("permissions", {})
+    assert "Bash(sudo:*)" in perms.get("deny", [])
+
+
+def test_claude_config_reads_stats_cache(tmp_path):
+    """read_claude_config() reads stats-cache.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    (home / "stats-cache.json").write_text(
+        '{"version": 2, "totalSessions": 5, "totalMessages": 20, "modelUsage": {}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["stats"].get("totalSessions") == 5
+    assert cfg["stats"].get("totalMessages") == 20
+
+
+def test_claude_config_reads_known_marketplaces(tmp_path):
+    """read_claude_config() reads plugins/known_marketplaces.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    plugins_dir = home / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "known_marketplaces.json").write_text(
+        '{"my-mkt": {"source": {"source": "github", "repo": "acme/mkt"}, "lastUpdated": "2026-01-01T00:00:00Z"}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert "my-mkt" in cfg["known_marketplaces"]
+
+
+def test_claude_config_reads_install_counts(tmp_path):
+    """read_claude_config() reads plugins/install-counts-cache.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}", encoding="utf-8")
+    plugins_dir = home / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "install-counts-cache.json").write_text(
+        '{"version": 1, "fetchedAt": "2026-01-01T00:00:00Z",'
+        ' "counts": [{"plugin": "foo@mkt", "unique_installs": 999}]}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    counts = cfg["install_counts_cache"].get("counts", [])
+    assert len(counts) == 1
+    assert counts[0]["plugin"] == "foo@mkt"

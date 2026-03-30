@@ -418,14 +418,14 @@ def build_cache(
         # -- Sessions -------------------------------------------------------
         from .claude_parser import discover_sessions as claude_discover
         from .parser import discover_sessions as copilot_discover
-        from .vscode_parser import discover_sessions as vscode_discover
+        from .vscode_parser import discover_all_vscode_sessions
 
         copilot_sessions = copilot_discover(copilot_path)
         for s in copilot_sessions:
             s.setdefault("source", "copilot")
 
         claude_sessions = claude_discover(claude_path)
-        vscode_sessions = vscode_discover(vscode_path)
+        vscode_sessions = discover_all_vscode_sessions(vscode_path)
 
         all_sessions = copilot_sessions + claude_sessions + vscode_sessions
         all_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)

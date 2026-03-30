@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Global memory files** — reads `~/.claude/memory/*.md` and surfaces content
+  on the Claude Code detail page.
+- **Remote settings** — reads `~/.claude/remote-settings.json` (remotely-pushed
+  permissions: deny/ask rules, env overrides); sensitive values masked.
+- **Usage stats** — reads `~/.claude/stats-cache.json`; shows session and
+  message counts plus per-model token and cost breakdown.
+- **MCP auth cache** — reads `~/.claude/mcp-needs-auth-cache.json`; shows which
+  MCP servers require authentication.
+- **Plugin marketplace data** — reads `plugins/known_marketplaces.json` and
+  `plugins/install-counts-cache.json`; shows registered marketplaces and
+  community install counts per plugin.
+- **Enterprise managed config — all platforms** — new `_default_managed_dir()`
+  helper reads `managed-settings.json` and `managed-mcp.json` from the
+  system-wide directory on every platform: macOS
+  (`/Library/Application Support/ClaudeCode/`), Linux/WSL (`/etc/claude-code/`),
+  and Windows (`%PROGRAMFILES%\ClaudeCode\`). Legacy Windows path
+  (`%PROGRAMDATA%\ClaudeCode\`, deprecated since v2.1.75) still read and shown
+  with a deprecation notice. Managed MCP servers rendered in a dedicated table.
+- **VS Code Insiders** — sessions auto-discovered from `Code - Insiders/User/`
+  alongside Stable; config (MCP servers, AI settings, skills, language models)
+  exposed under `insiders_*` keys; dedicated Insiders section on the tool detail
+  page.
+
+### Fixed
+- `plugins/blocklist.json` silently ignored — real file format is
+  `{fetchedAt, plugins:[…]}`, not a bare list. Handles both formats; table now
+  shows plugin name, reason, and date.
+
+## [0.5.2] - 2026-03-17
+
+### Fixed
+- Explicit UTF-8 encoding on all file reads to prevent `UnicodeDecodeError` crash
+  on Windows systems using cp1252 as the default encoding.
+
+## [0.5.1] - 2026-03-17
+
+### Fixed
+- Windows path fallbacks for Claude Code (`%LOCALAPPDATA%\claude`), GitHub
+  Copilot (`%LOCALAPPDATA%\github-copilot`), and Claude Desktop
+  (`%APPDATA%\Claude` → MSIX glob fallback) — each prefers the standard
+  installer path and falls back to the legacy location when it exists.
+
+## [0.5.0] - 2026-03-17
+
+### Added
+- **Claude Desktop as first-class tool** — promoted from a subsection of the
+  Claude Code page to its own route, dashboard card, and detail page.
+- **Claude Desktop skills** — reads from `local-agent-mode-sessions/skills-plugin/`
+  enriched with `enabled`, `creator_type`, `updated_at`, and `skill_id` from the
+  manifest index.
+- **Cowork plugins** — reads installed plugins and their versioned metadata,
+  enabled state, and bundled skills from `local-agent-mode-sessions/<uuid>/cowork_plugins/`.
+- **Cowork plugin modal** — each plugin card opens a modal with full details and
+  rendered SKILL.md content for each bundled skill.
+
+### Fixed
+- "Rebuild Cache" endpoint was not passing `desktop_path`, silently excluding
+  Claude Desktop data from manual cache rebuilds.
+
+## [0.4.0] - 2026-03-16
+
+### Added
+- **SQLite cache layer** — all data (sessions, tool configs, projects, memory
+  files) is stored in a local SQLite database built in a background thread on
+  startup, replacing per-request filesystem scans.
+- **Claude Projects page** (`/projects`) — lists all Claude Code projects with
+  session count, memory files, cost, and token usage; detail page shows rendered
+  memory files and linked sessions.
+- **Claude Desktop settings** — reads MCP servers, preferences, and UI config
+  from Claude Desktop config files (cross-platform) and displays them on the
+  Claude tool detail page.
+- **Settings page** (`/settings`) — shows cache status, database size, rebuild
+  button, and all data directories the app reads from.
+- **Dashboard updates** — Projects and Memory Files metric cards; session counts
+  on all three tool cards.
+- **Loading indicator** — animated stripe bar while the cache is building, with
+  auto-polling that hides it when ready.
+
+## [0.3.1] - 2026-03-15
+
+### Changed
+- Package renamed from `ai-control-plane` to `ai-ctrl-plane` on PyPI (repository
+  name unchanged).
+
 ## [0.3.0] - 2026-03-15
 
 ### Added

@@ -246,7 +246,7 @@ def create_app(
             s.setdefault("source", "copilot")
 
         claude_sessions = claude_parser.discover_sessions(claude_path)
-        vscode_sessions = vscode_parser.discover_sessions(vscode_path)
+        vscode_sessions = vscode_parser.discover_all_vscode_sessions(vscode_path)
 
         all_sessions = copilot_sessions + claude_sessions + vscode_sessions
         all_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
@@ -694,9 +694,19 @@ def create_app(
                 "~/.claude/claude_code_config.json (MCP servers)",
                 "~/.claude/settings.json",
                 "~/.claude/policy-limits.json",
+                "~/.claude/remote-settings.json (remote-pushed permissions)",
+                "~/.claude/mcp-needs-auth-cache.json",
+                "~/.claude/stats-cache.json",
+                "~/.claude/memory/ (global memory files)",
                 "~/.claude/plugins/ (plugins, agents, hooks, commands, skills)",
+                "~/.claude/plugins/known_marketplaces.json",
+                "~/.claude/plugins/install-counts-cache.json",
                 "~/.claude/skills/ (user skills)",
                 "~/.claude/projects/ (session logs)",
+                "/Library/Application Support/ClaudeCode/managed-settings.json (enterprise policy, macOS)",
+                "/Library/Application Support/ClaudeCode/managed-mcp.json (enterprise MCP servers, macOS)",
+                "/etc/claude-code/managed-settings.json (enterprise policy, Linux/WSL)",
+                "/etc/claude-code/managed-mcp.json (enterprise MCP servers, Linux/WSL)",
             ],
             "Windows": [
                 "%LOCALAPPDATA%\\claude\\ (home directory, standard installer)",
@@ -709,12 +719,26 @@ def create_app(
                 "%USERPROFILE%\\.claude\\settings.json (alternate)",
                 "%LOCALAPPDATA%\\claude\\policy-limits.json",
                 "%USERPROFILE%\\.claude\\policy-limits.json (alternate)",
+                "%LOCALAPPDATA%\\claude\\remote-settings.json",
+                "%USERPROFILE%\\.claude\\remote-settings.json (alternate)",
+                "%LOCALAPPDATA%\\claude\\mcp-needs-auth-cache.json",
+                "%USERPROFILE%\\.claude\\mcp-needs-auth-cache.json (alternate)",
+                "%LOCALAPPDATA%\\claude\\stats-cache.json",
+                "%USERPROFILE%\\.claude\\stats-cache.json (alternate)",
+                "%LOCALAPPDATA%\\claude\\memory\\ (global memory files)",
+                "%USERPROFILE%\\.claude\\memory\\ (global memory files, alternate)",
                 "%LOCALAPPDATA%\\claude\\plugins\\",
+                "%LOCALAPPDATA%\\claude\\plugins\\known_marketplaces.json",
+                "%LOCALAPPDATA%\\claude\\plugins\\install-counts-cache.json",
                 "%USERPROFILE%\\.claude\\plugins\\ (alternate)",
                 "%LOCALAPPDATA%\\claude\\skills\\",
                 "%USERPROFILE%\\.claude\\skills\\ (alternate)",
                 "%LOCALAPPDATA%\\claude\\projects\\",
                 "%USERPROFILE%\\.claude\\projects\\ (alternate)",
+                "%PROGRAMFILES%\\ClaudeCode\\managed-settings.json (enterprise policy)",
+                "%PROGRAMFILES%\\ClaudeCode\\managed-mcp.json (enterprise MCP servers)",
+                "%PROGRAMDATA%\\ClaudeCode\\managed-settings.json (enterprise policy, legacy — deprecated v2.1.75)",
+                "%PROGRAMDATA%\\ClaudeCode\\managed-mcp.json (enterprise MCP servers, legacy)",
             ],
         },
         "claude_desktop": {
@@ -765,14 +789,26 @@ def create_app(
                 "~/Library/Application Support/Code/User/chatLanguageModels.json",
                 "~/Library/Application Support/Code/User/workspaceStorage/<hash>/chatSessions/ (sessions)",
                 "~/Library/Application Support/Code/User/globalStorage/github.copilot-chat/skills/",
+                "~/Library/Application Support/Code - Insiders/User/mcp.json (Insiders MCP servers)",
+                "~/Library/Application Support/Code - Insiders/User/settings.json (Insiders)",
+                "~/Library/Application Support/Code - Insiders/User/chatLanguageModels.json (Insiders)",
+                "~/Library/Application Support/Code - Insiders/User/workspaceStorage/<hash>/chatSessions/ (Insiders)",
+                "~/Library/Application Support/Code - Insiders/User/globalStorage/github.copilot-chat/skills/",
             ],
             "Windows": [
                 "%APPDATA%\\Code\\User\\mcp.json",
                 "%APPDATA%\\Code\\User\\settings.json",
                 "%APPDATA%\\Code\\User\\workspaceStorage\\<hash>\\chatSessions\\",
                 "%APPDATA%\\Code\\User\\globalStorage\\github.copilot-chat\\skills\\",
+                "%APPDATA%\\Code - Insiders\\User\\mcp.json (Insiders)",
+                "%APPDATA%\\Code - Insiders\\User\\settings.json (Insiders)",
+                "%APPDATA%\\Code - Insiders\\User\\workspaceStorage\\<hash>\\chatSessions\\ (Insiders)",
+                "%APPDATA%\\Code - Insiders\\User\\globalStorage\\github.copilot-chat\\skills\\ (Insiders)",
             ],
-            "Linux": ["~/.config/Code/User/ (same structure as macOS)"],
+            "Linux": [
+                "~/.config/Code/User/ (same structure as macOS)",
+                "~/.config/Code - Insiders/User/ (Insiders, same structure)",
+            ],
         },
     }
 

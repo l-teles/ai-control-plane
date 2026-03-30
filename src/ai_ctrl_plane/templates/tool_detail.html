@@ -202,6 +202,7 @@
       <div class="info-row"><span class="info-label">Agents</span><span class="info-value">{{ config.agents|length }}</span></div>
       <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
       <div class="info-row"><span class="info-label">AI Settings</span><span class="info-value">{{ config.copilot_settings|length }}</span></div>
+      <div class="info-row"><span class="info-label">Insiders</span><span class="info-value">{% if config.insiders_installed %}installed{% else %}not found{% endif %}</span></div>
       {% elif tool == 'claude_desktop' %}
       <div class="info-row"><span class="info-label">MCP Servers</span><span class="info-value">{{ config.mcp_servers|length }}</span></div>
       <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
@@ -246,6 +247,46 @@
                 <td><strong>{{ s.name }}</strong></td>
                 <td>{{ s.description[:150] }}</td>
                 <td>{% if s.homepage %}<a href="{{ s.homepage }}" target="_blank" rel="noopener" style="font-size:12px; white-space:nowrap;">Homepage &#x2197;</a>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Memory Files (Claude Code global ~/.claude/memory/) #}
+      {% if tool == 'claude' and config.memory_files %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Memory Files ({{ config.memory_files|length }})</h3>
+        <div class="section-body">
+          <table class="data-table">
+            <thead><tr><th>File</th><th>Preview</th></tr></thead>
+            <tbody>
+              {% for m in config.memory_files %}
+              <tr>
+                <td><strong>{{ m.filename }}</strong></td>
+                <td style="white-space:pre-wrap; font-size:12px;">{{ m.content[:300] }}{% if m.content|length > 300 %}…{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {# MCP Auth Cache (Claude Code only) #}
+      {% if tool == 'claude' and config.mcp_auth_cache %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}MCP Auth Cache ({{ config.mcp_auth_cache|length }})</h3>
+        <div class="section-body">
+          <table class="data-table">
+            <thead><tr><th>Server</th><th>Timestamp</th></tr></thead>
+            <tbody>
+              {% for name, info in config.mcp_auth_cache.items()|sort %}
+              <tr>
+                <td><strong>{{ name }}</strong></td>
+                <td style="font-size:12px;">{{ info.timestamp if info is mapping else info }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -470,16 +511,220 @@
         </div>
         {% endif %}
 
+        {# Remote Settings #}
+        {% if config.remote_settings %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Remote Settings</h3>
+          <div class="section-body">
+            {% set perms = config.remote_settings.get('permissions', {}) %}
+            {% if perms %}
+            {% if perms.get('deny') %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Deny rules</p>
+            <div class="kv-grid" style="margin-bottom:8px;">
+              {% for rule in perms.deny %}
+              <div class="kv-item"><span class="kv-key" style="color:var(--danger, #f85149);">{{ rule }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if perms.get('ask') %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Ask rules</p>
+            <div class="kv-grid" style="margin-bottom:8px;">
+              {% for rule in perms.ask %}
+              <div class="kv-item"><span class="kv-key" style="color:var(--warning, #d29922);">{{ rule }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if perms.get('disableBypassPermissionsMode') %}
+            <p style="font-size:12px; margin-bottom:8px;">Bypass mode: <strong>{{ perms.disableBypassPermissionsMode }}</strong></p>
+            {% endif %}
+            {% endif %}
+            {% set env_overrides = config.remote_settings.get('env', {}) %}
+            {% if env_overrides %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Env overrides</p>
+            <div class="kv-grid" style="margin-bottom:8px;">
+              {% for k, v in env_overrides.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% set _skip = ('permissions', 'env') %}
+            {% set _ns = namespace(has_extra=false) %}
+            {% for k in config.remote_settings %}{% if k not in _skip %}{% set _ns.has_extra = true %}{% endif %}{% endfor %}
+            {% if _ns.has_extra %}
+            <div class="kv-grid">
+              {% for k, v in config.remote_settings.items()|sort %}
+              {% if k not in _skip %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# Stats #}
+        {% if config.stats %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Usage Stats</h3>
+          <div class="section-body">
+            <div class="kv-grid" style="margin-bottom:12px;">
+              {% if config.stats.totalSessions is defined %}<div class="kv-item"><span class="kv-key">Total sessions</span><span class="kv-value">{{ config.stats.totalSessions }}</span></div>{% endif %}
+              {% if config.stats.totalMessages is defined %}<div class="kv-item"><span class="kv-key">Total messages</span><span class="kv-value">{{ config.stats.totalMessages }}</span></div>{% endif %}
+              {% if config.stats.firstSessionDate is defined %}<div class="kv-item"><span class="kv-key">First session</span><span class="kv-value">{{ config.stats.firstSessionDate[:10] }}</span></div>{% endif %}
+              {% if config.stats.lastComputedDate is defined %}<div class="kv-item"><span class="kv-key">Last computed</span><span class="kv-value">{{ config.stats.lastComputedDate }}</span></div>{% endif %}
+            </div>
+            {% if config.stats.modelUsage %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Model usage</p>
+            <table class="data-table">
+              <thead><tr><th>Model</th><th>Input tokens</th><th>Output tokens</th><th>Cache read</th><th>Cache write</th><th>Cost USD</th></tr></thead>
+              <tbody>
+                {% for model, usage in config.stats.modelUsage.items()|sort %}
+                <tr>
+                  <td style="font-size:12px;">{{ model }}</td>
+                  <td>{{ usage.get('inputTokens', 0) | int }}</td>
+                  <td>{{ usage.get('outputTokens', 0) | int }}</td>
+                  <td>{{ usage.get('cacheReadInputTokens', 0) | int }}</td>
+                  <td>{{ usage.get('cacheCreationInputTokens', 0) | int }}</td>
+                  <td>{{ "%.4f"|format(usage.get('costUSD', 0)) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# Managed Settings (enterprise / MDM) #}
+        {% if config.managed_settings or config.managed_settings_legacy or config.managed_mcp_servers or config.managed_mcp_servers_legacy %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Managed Settings</h3>
+          <div class="section-body">
+            {% if config.managed_settings %}
+            <p style="font-size:12px; margin-bottom:6px;">
+              <strong>managed-settings.json</strong>
+              <span style="font-size:11px; color:var(--fg-muted);">(macOS: /Library/Application Support/ClaudeCode/ &bull; Linux: /etc/claude-code/ &bull; Windows: %PROGRAMFILES%\ClaudeCode\)</span>
+            </p>
+            <div class="kv-grid">
+              {% for k, v in config.managed_settings.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if config.managed_mcp_servers %}
+            <p style="font-size:12px; margin-top:12px; margin-bottom:6px;"><strong>managed-mcp.json</strong> &mdash; enforced MCP servers</p>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for s in config.managed_mcp_servers %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong></td>
+                  <td><span class="badge badge-{{ s.type }}">{{ s.type }}</span></td>
+                  <td style="font-size:12px; word-break:break-all;">{% if s.url %}{{ s.url }}{% else %}{{ s.command }} {{ s.args|join(' ') }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if config.managed_settings_legacy %}
+            <p style="font-size:12px; margin-top:12px; margin-bottom:6px;">
+              <strong>ProgramData\ClaudeCode\managed-settings.json</strong>
+              <span style="color:var(--warning); font-size:11px;"> &#9888; Legacy &mdash; deprecated since v2.1.75, no longer read by Claude Code</span>
+            </p>
+            <div class="kv-grid">
+              {% for k, v in config.managed_settings_legacy.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if config.managed_mcp_servers_legacy %}
+            <p style="font-size:12px; margin-top:12px; margin-bottom:6px;">
+              <strong>ProgramData\ClaudeCode\managed-mcp.json</strong> &mdash; enforced MCP servers
+              <span style="color:var(--warning); font-size:11px;"> &#9888; Legacy &mdash; deprecated since v2.1.75, no longer read by Claude Code</span>
+            </p>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for s in config.managed_mcp_servers_legacy %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong></td>
+                  <td><span class="badge badge-{{ s.type }}">{{ s.type }}</span></td>
+                  <td style="font-size:12px; word-break:break-all;">{% if s.url %}{{ s.url }}{% else %}{{ s.command }} {{ s.args|join(' ') }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
         {# Plugin Blocklist #}
         {% if config.plugin_blocklist %}
         <div class="section">
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Plugin Blocklist ({{ config.plugin_blocklist|length }})</h3>
           <div class="section-body">
-            <div class="kv-grid">
-              {% for item in config.plugin_blocklist %}
-              <div class="kv-item"><span class="kv-key">{{ item }}</span></div>
-              {% endfor %}
-            </div>
+            <table class="data-table">
+              <thead><tr><th>Plugin</th><th>Reason</th><th>Added</th></tr></thead>
+              <tbody>
+                {% for item in config.plugin_blocklist %}
+                <tr>
+                  {% if item is mapping %}
+                  <td><strong>{{ item.get('plugin', '') }}</strong></td>
+                  <td style="font-size:12px;">{{ item.get('reason', '') }}{% if item.get('text') %} — {{ item.text[:80] }}{% endif %}</td>
+                  <td style="font-size:12px;">{{ item.get('added_at', '')[:10] }}</td>
+                  {% else %}
+                  <td><strong>{{ item }}</strong></td><td></td><td></td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Known Marketplaces #}
+        {% if config.known_marketplaces %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Known Marketplaces ({{ config.known_marketplaces|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Source</th><th>Last Updated</th></tr></thead>
+              <tbody>
+                {% for name, info in config.known_marketplaces.items()|sort %}
+                <tr>
+                  <td><strong>{{ name }}</strong></td>
+                  <td style="font-size:12px;">{% if info.get('source', {}).get('repo') %}{{ info.source.repo }}{% endif %}</td>
+                  <td style="font-size:12px;">{{ info.get('lastUpdated', '')[:10] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Install Counts Cache #}
+        {% if config.install_counts_cache and config.install_counts_cache.get('counts') %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Plugin Install Counts ({{ config.install_counts_cache.counts|length }})</h3>
+          <div class="section-body">
+            {% if config.install_counts_cache.get('fetchedAt') %}
+            <p style="font-size:11px; color:var(--fg-muted); margin-bottom:6px;">Fetched {{ config.install_counts_cache.fetchedAt[:10] }}</p>
+            {% endif %}
+            <table class="data-table">
+              <thead><tr><th>Plugin</th><th>Installs</th></tr></thead>
+              <tbody>
+                {% for entry in config.install_counts_cache.counts %}
+                <tr>
+                  <td style="font-size:12px;">{{ entry.get('plugin', '') }}</td>
+                  <td>{{ "{:,}".format(entry.get('unique_installs', 0)) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
         </div>
         {% endif %}
@@ -564,6 +809,53 @@
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Language Models ({{ config.language_models|length }})</h3>
           <div class="section-body">
             <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.language_models, indent=2) }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+
+        {# VS Code Insiders #}
+        {% if config.insiders_installed %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}VS Code Insiders</h3>
+          <div class="section-body">
+            <p style="font-size:12px; color:var(--fg-muted); margin-bottom:8px;">{{ config.insiders_user_dir }}</p>
+            {% if config.insiders_mcp_servers %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">MCP Servers ({{ config.insiders_mcp_servers|length }})</p>
+            <table class="data-table" style="margin-bottom:12px;">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for s in config.insiders_mcp_servers %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong></td>
+                  <td><span class="badge badge-{{ s.type }}">{{ s.type }}</span></td>
+                  <td style="font-size:12px; word-break:break-all;">{% if s.url %}{{ s.url }}{% else %}{{ s.command }} {{ s.args|join(' ') }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if config.insiders_copilot_settings %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">AI Settings ({{ config.insiders_copilot_settings|length }})</p>
+            <div class="kv-grid">
+              {% for k, v in config.insiders_copilot_settings.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if config.insiders_skills %}
+            <p style="font-size:12px; font-weight:600; margin-top:8px; margin-bottom:4px;">Skills ({{ config.insiders_skills|length }})</p>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Description</th></tr></thead>
+              <tbody>
+                {% for s in config.insiders_skills %}
+                <tr><td><strong>{{ s.name }}</strong></td><td>{{ s.description[:120] }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if not config.insiders_mcp_servers and not config.insiders_copilot_settings and not config.insiders_skills %}
+            <p style="font-size:12px; color:var(--fg-muted);">No MCP servers, AI settings, or skills configured.</p>
+            {% endif %}
           </div>
         </div>
         {% endif %}

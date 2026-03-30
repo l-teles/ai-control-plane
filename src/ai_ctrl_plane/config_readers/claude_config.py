@@ -15,6 +15,23 @@ from ._common import (
 )
 
 
+def _default_managed_dir() -> Path:
+    """Return the system-wide Claude Code managed config directory for this OS.
+
+    - macOS:       /Library/Application Support/ClaudeCode/
+    - Windows:     %PROGRAMFILES%\\ClaudeCode\\
+    - Linux / WSL: /etc/claude-code/
+    """
+    if sys.platform == "darwin":
+        return Path("/Library/Application Support/ClaudeCode")
+    if sys.platform == "win32":
+        import os as _os
+
+        prog_files = _os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        return Path(prog_files) / "ClaudeCode"
+    return Path("/etc/claude-code")
+
+
 def _default_claude_home() -> Path:
     """Return the platform-default Claude home directory.
 
@@ -209,9 +226,69 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "hooks": [],
         "commands": [],
         "skills": [],
+        "memory_files": [],
+        "mcp_auth_cache": {},
+        "remote_settings": {},
+        "stats": {},
+        "known_marketplaces": {},
+        "install_counts_cache": {},
+        "managed_settings": {},
+        "managed_settings_legacy": {},
+        "managed_mcp_servers": [],
+        "managed_mcp_servers_legacy": [],
         "feature_flags": {},
         "growthbook_flags": {},
     }
+
+    # Managed settings and MCP servers (enterprise / MDM — all platforms)
+    # Read independently of whether ~/.claude/ exists so enterprise policy is
+    # always surfaced even on machines where Claude Code has never been run.
+    managed_dir = _default_managed_dir()
+    managed_raw = safe_read_json(managed_dir / "managed-settings.json")
+    if managed_raw and isinstance(managed_raw, dict):
+        result["managed_settings"] = dict(mask_dict(managed_raw))
+
+    mcp_raw = safe_read_json(managed_dir / "managed-mcp.json")
+    if mcp_raw and isinstance(mcp_raw, dict):
+        servers_dict = mcp_raw.get("mcpServers", {})
+        if isinstance(servers_dict, dict):
+            result["managed_mcp_servers"] = [
+                {
+                    "name": name,
+                    "type": cfg.get("type", "stdio"),
+                    "command": cfg.get("command", ""),
+                    "args": cfg.get("args", []),
+                    "url": cfg.get("url", ""),
+                }
+                for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
+                if isinstance(cfg, dict)
+            ]
+
+    # Legacy Windows path (deprecated since v2.1.75)
+    if sys.platform == "win32":
+        import os as _os
+
+        programdata = _os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+        legacy_dir = Path(programdata) / "ClaudeCode"
+        legacy_raw = safe_read_json(legacy_dir / "managed-settings.json")
+        if legacy_raw and isinstance(legacy_raw, dict):
+            result["managed_settings_legacy"] = dict(mask_dict(legacy_raw))
+
+        legacy_mcp_raw = safe_read_json(legacy_dir / "managed-mcp.json")
+        if legacy_mcp_raw and isinstance(legacy_mcp_raw, dict):
+            servers = legacy_mcp_raw.get("mcpServers", {})
+            if isinstance(servers, dict):
+                result["managed_mcp_servers_legacy"] = [
+                    {
+                        "name": name,
+                        "type": cfg.get("type", "stdio"),
+                        "command": cfg.get("command", ""),
+                        "args": cfg.get("args", []),
+                        "url": cfg.get("url", ""),
+                    }
+                    for name, cfg in mask_dict(servers).items()  # type: ignore[union-attr]
+                    if isinstance(cfg, dict)
+                ]
 
     if not home.is_dir():
         return result
@@ -276,8 +353,19 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         result["commands"] = _read_commands(plugins_dir)
 
         blocklist = safe_read_json(plugins_dir / "blocklist.json")
-        if blocklist and isinstance(blocklist, list):
+        if isinstance(blocklist, list):
             result["plugin_blocklist"] = blocklist
+        elif isinstance(blocklist, dict):
+            plugins_value = blocklist.get("plugins")
+            result["plugin_blocklist"] = plugins_value if isinstance(plugins_value, list) else []
+
+        known_marketplaces = safe_read_json(plugins_dir / "known_marketplaces.json")
+        if known_marketplaces and isinstance(known_marketplaces, dict):
+            result["known_marketplaces"] = known_marketplaces
+
+        install_counts = safe_read_json(plugins_dir / "install-counts-cache.json")
+        if install_counts and isinstance(install_counts, dict):
+            result["install_counts_cache"] = install_counts
 
     # Skills — from ~/.claude/skills/ AND from plugin skills directories
     all_skills = read_skills(home / "skills")
@@ -291,6 +379,32 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
                 if skills_dir.is_dir():
                     all_skills.extend(read_skills(skills_dir))
     result["skills"] = all_skills
+
+    # MCP auth cache (~/.claude/mcp-needs-auth-cache.json)
+    auth_cache = safe_read_json(home / "mcp-needs-auth-cache.json")
+    if auth_cache and isinstance(auth_cache, dict):
+        result["mcp_auth_cache"] = auth_cache
+
+    # Remote settings (~/.claude/remote-settings.json) — may contain sensitive env vars
+    remote = safe_read_json(home / "remote-settings.json")
+    if remote and isinstance(remote, dict):
+        result["remote_settings"] = dict(mask_dict(remote))
+
+    # Stats cache (~/.claude/stats-cache.json)
+    stats = safe_read_json(home / "stats-cache.json")
+    if stats and isinstance(stats, dict):
+        result["stats"] = stats
+
+    # Global memory — ~/.claude/memory/*.md
+    memory_dir = home / "memory"
+    memory_files: list[dict] = []
+    if memory_dir.is_dir():
+        for mf in sorted(memory_dir.iterdir()):
+            if mf.is_file() and mf.suffix == ".md":
+                content = safe_read_text(mf, max_bytes=100_000)
+                if content:
+                    memory_files.append({"filename": mf.name, "content": content})
+    result["memory_files"] = memory_files
 
     return result
 

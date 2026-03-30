@@ -4,6 +4,8 @@ Sessions live under ~/Library/Application Support/Code/User/ (macOS)
 or ~/.config/Code/User/ (Linux) in two locations:
   - workspaceStorage/{hash}/chatSessions/{uuid}.json
   - globalStorage/emptyWindowChatSessions/{uuid}.jsonl
+
+VS Code Insiders uses the same structure under "Code - Insiders" instead of "Code".
 """
 
 from __future__ import annotations
@@ -148,7 +150,7 @@ def _read_session_json(path: Path) -> dict | None:
 
 
 def _default_vscode_dir() -> Path:
-    """Return the platform-default VS Code user data directory."""
+    """Return the platform-default VS Code (Stable) user data directory."""
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Code" / "User"
     elif sys.platform == "win32":
@@ -158,6 +160,23 @@ def _default_vscode_dir() -> Path:
         return Path(appdata) / "Code" / "User" if appdata else Path.home() / "Code" / "User"
     else:
         return Path.home() / ".config" / "Code" / "User"
+
+
+def default_vscode_insiders_dir() -> Path:
+    """Return the platform-default VS Code Insiders user data directory."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Code - Insiders" / "User"
+    elif sys.platform == "win32":
+        import os
+
+        appdata = os.environ.get("APPDATA", "")
+        return (
+            Path(appdata) / "Code - Insiders" / "User"
+            if appdata
+            else Path.home() / "Code - Insiders" / "User"
+        )
+    else:
+        return Path.home() / ".config" / "Code - Insiders" / "User"
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +230,22 @@ def discover_sessions(base: Path) -> list[dict]:
                 sessions.append(entry)
 
     sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
+    return sessions
+
+
+def discover_all_vscode_sessions(vscode_path: Path) -> list[dict]:
+    """Discover sessions from VS Code Stable and Insiders together.
+
+    Combines :func:`discover_sessions` for the Stable user directory with an
+    automatic scan of the Insiders directory (when it exists and differs from
+    ``vscode_path``).  Both callers — the SQLite cache builder and the
+    filesystem-scan fallback — should use this helper so their behaviour stays
+    in sync.
+    """
+    sessions = discover_sessions(vscode_path)
+    insiders_path = default_vscode_insiders_dir()
+    if insiders_path != vscode_path and insiders_path.is_dir():
+        sessions += discover_sessions(insiders_path)
     return sessions
 
 

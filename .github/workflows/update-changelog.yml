@@ -1,0 +1,42 @@
+name: Update Changelog
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Extract version without v prefix
+        id: version
+        run: echo "version=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+
+      - uses: stefanzweifel/changelog-updater-action@a938690fad7edf25368f37e43a1ed1b34303eb36 # v1.12.0
+        with:
+          release-notes: ${{ github.event.release.body }}
+          latest-version: ${{ steps.version.outputs.version }}
+
+      - name: Commit changelog update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          sha=$(gh api repos/${{ github.repository }}/contents/CHANGELOG.md --jq '.sha')
+          gh api --method PUT repos/${{ github.repository }}/contents/CHANGELOG.md \
+            --field message="docs: update CHANGELOG for ${TAG_NAME}" \
+            --field content="$(base64 -w0 CHANGELOG.md)" \
+            --field sha="${sha}" \
+            --field branch=main
