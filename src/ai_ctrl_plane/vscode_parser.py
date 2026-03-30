@@ -233,6 +233,22 @@ def discover_sessions(base: Path) -> list[dict]:
     return sessions
 
 
+def discover_all_vscode_sessions(vscode_path: Path) -> list[dict]:
+    """Discover sessions from VS Code Stable and Insiders together.
+
+    Combines :func:`discover_sessions` for the Stable user directory with an
+    automatic scan of the Insiders directory (when it exists and differs from
+    ``vscode_path``).  Both callers — the SQLite cache builder and the
+    filesystem-scan fallback — should use this helper so their behaviour stays
+    in sync.
+    """
+    sessions = discover_sessions(vscode_path)
+    insiders_path = default_vscode_insiders_dir()
+    if insiders_path != vscode_path and insiders_path.is_dir():
+        sessions += discover_sessions(insiders_path)
+    return sessions
+
+
 def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
     """Build a session index entry from a chat session file."""
     data = _read_session_json(path)

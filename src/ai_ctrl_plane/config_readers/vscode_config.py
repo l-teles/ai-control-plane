@@ -105,7 +105,8 @@ def _read_vscode_dir(user_dir: Path) -> dict:
     ]
 
     # Settings (filtered to AI-related keys)
-    settings = safe_read_json(user_dir / "settings.json") or {}
+    settings_raw = safe_read_json(user_dir / "settings.json")
+    settings = settings_raw if isinstance(settings_raw, dict) else {}
     ai_settings = {k: v for k, v in settings.items() if _AI_SETTINGS_RE.search(k)}
     data["copilot_settings"] = mask_dict(ai_settings)
 

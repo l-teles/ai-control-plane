@@ -246,10 +246,7 @@ def create_app(
             s.setdefault("source", "copilot")
 
         claude_sessions = claude_parser.discover_sessions(claude_path)
-        vscode_sessions = vscode_parser.discover_sessions(vscode_path)
-        insiders_path = vscode_parser.default_vscode_insiders_dir()
-        if insiders_path != vscode_path and insiders_path.is_dir():
-            vscode_sessions += vscode_parser.discover_sessions(insiders_path)
+        vscode_sessions = vscode_parser.discover_all_vscode_sessions(vscode_path)
 
         all_sessions = copilot_sessions + claude_sessions + vscode_sessions
         all_sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
