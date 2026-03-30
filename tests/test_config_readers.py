@@ -1075,3 +1075,115 @@ def test_vscode_config_insiders_not_installed(tmp_path, monkeypatch):
     cfg = vscode_config.read_vscode_config()
     assert cfg["insiders_installed"] is False
     assert cfg["insiders_mcp_servers"] == []
+
+
+# ---------------------------------------------------------------------------
+# Additional Claude Code config files
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_blocklist_dict_format(tmp_path):
+    """plugin_blocklist is populated when blocklist.json uses the dict format."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    plugins_dir = home / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "blocklist.json").write_text(
+        '{"fetchedAt": "2026-01-01T00:00:00Z",'
+        ' "plugins": [{"plugin": "bad@mkt", "reason": "security", "added_at": "2026-01-01"}]}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert len(cfg["plugin_blocklist"]) == 1
+    assert cfg["plugin_blocklist"][0]["plugin"] == "bad@mkt"
+
+
+def test_claude_config_reads_mcp_auth_cache(tmp_path):
+    """read_claude_config() reads mcp-needs-auth-cache.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / "mcp-needs-auth-cache.json").write_text(
+        '{"claude.ai Slack": {"timestamp": 1234567890}}', encoding="utf-8"
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert "claude.ai Slack" in cfg["mcp_auth_cache"]
+
+
+def test_claude_config_reads_remote_settings(tmp_path):
+    """read_claude_config() reads remote-settings.json and masks env values."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / "remote-settings.json").write_text(
+        '{"cleanupPeriodDays": 7, "env": {"SECRET_TOKEN": "abc123"}, "permissions": {"deny": ["Bash(sudo:*)"]}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["remote_settings"].get("cleanupPeriodDays") == 7
+    # env contains a key that mask_dict should mask (it has "token" in the name)
+    env = cfg["remote_settings"].get("env", {})
+    assert isinstance(env, dict)
+    # permissions deny list should be present
+    perms = cfg["remote_settings"].get("permissions", {})
+    assert "Bash(sudo:*)" in perms.get("deny", [])
+
+
+def test_claude_config_reads_stats_cache(tmp_path):
+    """read_claude_config() reads stats-cache.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / "stats-cache.json").write_text(
+        '{"version": 2, "totalSessions": 5, "totalMessages": 20, "modelUsage": {}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert cfg["stats"].get("totalSessions") == 5
+    assert cfg["stats"].get("totalMessages") == 20
+
+
+def test_claude_config_reads_known_marketplaces(tmp_path):
+    """read_claude_config() reads plugins/known_marketplaces.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    plugins_dir = home / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "known_marketplaces.json").write_text(
+        '{"my-mkt": {"source": {"source": "github", "repo": "acme/mkt"}, "lastUpdated": "2026-01-01T00:00:00Z"}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    assert "my-mkt" in cfg["known_marketplaces"]
+
+
+def test_claude_config_reads_install_counts(tmp_path):
+    """read_claude_config() reads plugins/install-counts-cache.json."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    plugins_dir = home / "plugins"
+    plugins_dir.mkdir()
+    (plugins_dir / "install-counts-cache.json").write_text(
+        '{"version": 1, "fetchedAt": "2026-01-01T00:00:00Z",'
+        ' "counts": [{"plugin": "foo@mkt", "unique_installs": 999}]}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers.claude_config import read_claude_config
+
+    cfg = read_claude_config(claude_home=home)
+    counts = cfg["install_counts_cache"].get("counts", [])
+    assert len(counts) == 1
+    assert counts[0]["plugin"] == "foo@mkt"

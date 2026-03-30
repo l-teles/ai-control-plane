@@ -275,6 +275,26 @@
       </div>
       {% endif %}
 
+      {# MCP Auth Cache (Claude Code only) #}
+      {% if tool == 'claude' and config.mcp_auth_cache %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}MCP Auth Cache ({{ config.mcp_auth_cache|length }})</h3>
+        <div class="section-body">
+          <table class="data-table">
+            <thead><tr><th>Server</th><th>Timestamp</th></tr></thead>
+            <tbody>
+              {% for name, info in config.mcp_auth_cache.items()|sort %}
+              <tr>
+                <td><strong>{{ name }}</strong></td>
+                <td style="font-size:12px;">{{ info.timestamp if info is mapping else info }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
       {# ---- Claude-specific sections ---- #}
       {% if tool == 'claude' %}
 
@@ -491,7 +511,79 @@
         </div>
         {% endif %}
 
-        {# Managed Settings (enterprise / MDM — Windows only) #}
+        {# Remote Settings #}
+        {% if config.remote_settings %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Remote Settings</h3>
+          <div class="section-body">
+            {% set perms = config.remote_settings.get('permissions', {}) %}
+            {% if perms %}
+            {% if perms.get('deny') %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Deny rules</p>
+            <div class="kv-grid" style="margin-bottom:8px;">
+              {% for rule in perms.deny %}
+              <div class="kv-item"><span class="kv-key" style="color:var(--danger, #f85149);">{{ rule }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if perms.get('ask') %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Ask rules</p>
+            <div class="kv-grid" style="margin-bottom:8px;">
+              {% for rule in perms.ask %}
+              <div class="kv-item"><span class="kv-key" style="color:var(--warning, #d29922);">{{ rule }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if perms.get('disableBypassPermissionsMode') %}
+            <p style="font-size:12px; margin-bottom:8px;">Bypass mode: <strong>{{ perms.disableBypassPermissionsMode }}</strong></p>
+            {% endif %}
+            {% endif %}
+            {% set scalars = config.remote_settings.items()|selectattr('0', 'ne', 'permissions')|selectattr('0', 'ne', 'env')|list %}
+            {% if scalars %}
+            <div class="kv-grid">
+              {% for k, v in scalars|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# Stats #}
+        {% if config.stats %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Usage Stats</h3>
+          <div class="section-body">
+            <div class="kv-grid" style="margin-bottom:12px;">
+              {% if config.stats.totalSessions is defined %}<div class="kv-item"><span class="kv-key">Total sessions</span><span class="kv-value">{{ config.stats.totalSessions }}</span></div>{% endif %}
+              {% if config.stats.totalMessages is defined %}<div class="kv-item"><span class="kv-key">Total messages</span><span class="kv-value">{{ config.stats.totalMessages }}</span></div>{% endif %}
+              {% if config.stats.firstSessionDate is defined %}<div class="kv-item"><span class="kv-key">First session</span><span class="kv-value">{{ config.stats.firstSessionDate[:10] }}</span></div>{% endif %}
+              {% if config.stats.lastComputedDate is defined %}<div class="kv-item"><span class="kv-key">Last computed</span><span class="kv-value">{{ config.stats.lastComputedDate }}</span></div>{% endif %}
+            </div>
+            {% if config.stats.modelUsage %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Model usage</p>
+            <table class="data-table">
+              <thead><tr><th>Model</th><th>Input tokens</th><th>Output tokens</th><th>Cache read</th><th>Cache write</th><th>Cost USD</th></tr></thead>
+              <tbody>
+                {% for model, usage in config.stats.modelUsage.items()|sort %}
+                <tr>
+                  <td style="font-size:12px;">{{ model }}</td>
+                  <td>{{ usage.get('inputTokens', 0) | int }}</td>
+                  <td>{{ usage.get('outputTokens', 0) | int }}</td>
+                  <td>{{ usage.get('cacheReadInputTokens', 0) | int }}</td>
+                  <td>{{ usage.get('cacheCreationInputTokens', 0) | int }}</td>
+                  <td>{{ "%.4f"|format(usage.get('costUSD', 0)) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# Managed Settings (enterprise / MDM) #}
         {% if config.managed_settings or config.managed_settings_legacy or config.managed_mcp_servers %}
         <div class="section">
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Managed Settings</h3>
@@ -542,11 +634,66 @@
         <div class="section">
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Plugin Blocklist ({{ config.plugin_blocklist|length }})</h3>
           <div class="section-body">
-            <div class="kv-grid">
-              {% for item in config.plugin_blocklist %}
-              <div class="kv-item"><span class="kv-key">{{ item }}</span></div>
-              {% endfor %}
-            </div>
+            <table class="data-table">
+              <thead><tr><th>Plugin</th><th>Reason</th><th>Added</th></tr></thead>
+              <tbody>
+                {% for item in config.plugin_blocklist %}
+                <tr>
+                  {% if item is mapping %}
+                  <td><strong>{{ item.get('plugin', '') }}</strong></td>
+                  <td style="font-size:12px;">{{ item.get('reason', '') }}{% if item.get('text') %} — {{ item.text[:80] }}{% endif %}</td>
+                  <td style="font-size:12px;">{{ item.get('added_at', '')[:10] }}</td>
+                  {% else %}
+                  <td><strong>{{ item }}</strong></td><td></td><td></td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Known Marketplaces #}
+        {% if config.known_marketplaces %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Known Marketplaces ({{ config.known_marketplaces|length }})</h3>
+          <div class="section-body">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Source</th><th>Last Updated</th></tr></thead>
+              <tbody>
+                {% for name, info in config.known_marketplaces.items()|sort %}
+                <tr>
+                  <td><strong>{{ name }}</strong></td>
+                  <td style="font-size:12px;">{% if info.get('source', {}).get('repo') %}{{ info.source.repo }}{% endif %}</td>
+                  <td style="font-size:12px;">{{ info.get('lastUpdated', '')[:10] }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Install Counts Cache #}
+        {% if config.install_counts_cache and config.install_counts_cache.get('counts') %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Plugin Install Counts ({{ config.install_counts_cache.counts|length }})</h3>
+          <div class="section-body">
+            {% if config.install_counts_cache.get('fetchedAt') %}
+            <p style="font-size:11px; color:var(--fg-muted); margin-bottom:6px;">Fetched {{ config.install_counts_cache.fetchedAt[:10] }}</p>
+            {% endif %}
+            <table class="data-table">
+              <thead><tr><th>Plugin</th><th>Installs</th></tr></thead>
+              <tbody>
+                {% for entry in config.install_counts_cache.counts %}
+                <tr>
+                  <td style="font-size:12px;">{{ entry.get('plugin', '') }}</td>
+                  <td>{{ "{:,}".format(entry.get('unique_installs', 0)) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
         </div>
         {% endif %}

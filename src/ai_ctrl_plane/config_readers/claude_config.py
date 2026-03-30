@@ -227,6 +227,11 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "commands": [],
         "skills": [],
         "memory_files": [],
+        "mcp_auth_cache": {},
+        "remote_settings": {},
+        "stats": {},
+        "known_marketplaces": {},
+        "install_counts_cache": {},
         "managed_settings": {},
         "managed_settings_legacy": {},
         "managed_mcp_servers": [],
@@ -297,8 +302,18 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         result["commands"] = _read_commands(plugins_dir)
 
         blocklist = safe_read_json(plugins_dir / "blocklist.json")
-        if blocklist and isinstance(blocklist, list):
+        if isinstance(blocklist, list):
             result["plugin_blocklist"] = blocklist
+        elif isinstance(blocklist, dict) and "plugins" in blocklist:
+            result["plugin_blocklist"] = blocklist.get("plugins", [])
+
+        known_marketplaces = safe_read_json(plugins_dir / "known_marketplaces.json")
+        if known_marketplaces and isinstance(known_marketplaces, dict):
+            result["known_marketplaces"] = known_marketplaces
+
+        install_counts = safe_read_json(plugins_dir / "install-counts-cache.json")
+        if install_counts and isinstance(install_counts, dict):
+            result["install_counts_cache"] = install_counts
 
     # Skills — from ~/.claude/skills/ AND from plugin skills directories
     all_skills = read_skills(home / "skills")
@@ -312,6 +327,21 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
                 if skills_dir.is_dir():
                     all_skills.extend(read_skills(skills_dir))
     result["skills"] = all_skills
+
+    # MCP auth cache (~/.claude/mcp-needs-auth-cache.json)
+    auth_cache = safe_read_json(home / "mcp-needs-auth-cache.json")
+    if auth_cache and isinstance(auth_cache, dict):
+        result["mcp_auth_cache"] = auth_cache
+
+    # Remote settings (~/.claude/remote-settings.json) — may contain sensitive env vars
+    remote = safe_read_json(home / "remote-settings.json")
+    if remote and isinstance(remote, dict):
+        result["remote_settings"] = dict(mask_dict(remote))
+
+    # Stats cache (~/.claude/stats-cache.json)
+    stats = safe_read_json(home / "stats-cache.json")
+    if stats and isinstance(stats, dict):
+        result["stats"] = stats
 
     # Global memory — ~/.claude/memory/*.md
     memory_dir = home / "memory"
