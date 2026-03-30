@@ -538,11 +538,15 @@
             <p style="font-size:12px; margin-bottom:8px;">Bypass mode: <strong>{{ perms.disableBypassPermissionsMode }}</strong></p>
             {% endif %}
             {% endif %}
-            {% set scalars = config.remote_settings.items()|selectattr('0', 'ne', 'permissions')|selectattr('0', 'ne', 'env')|list %}
-            {% if scalars %}
+            {% set _skip = ('permissions', 'env') %}
+            {% set _ns = namespace(has_extra=false) %}
+            {% for k in config.remote_settings %}{% if k not in _skip %}{% set _ns.has_extra = true %}{% endif %}{% endfor %}
+            {% if _ns.has_extra %}
             <div class="kv-grid">
-              {% for k, v in scalars|sort %}
+              {% for k, v in config.remote_settings.items()|sort %}
+              {% if k not in _skip %}
               <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endif %}
               {% endfor %}
             </div>
             {% endif %}
@@ -584,7 +588,7 @@
         {% endif %}
 
         {# Managed Settings (enterprise / MDM) #}
-        {% if config.managed_settings or config.managed_settings_legacy or config.managed_mcp_servers %}
+        {% if config.managed_settings or config.managed_settings_legacy or config.managed_mcp_servers or config.managed_mcp_servers_legacy %}
         <div class="section">
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Managed Settings</h3>
           <div class="section-body">
@@ -624,6 +628,24 @@
               <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
               {% endfor %}
             </div>
+            {% endif %}
+            {% if config.managed_mcp_servers_legacy %}
+            <p style="font-size:12px; margin-top:12px; margin-bottom:6px;">
+              <strong>ProgramData\ClaudeCode\managed-mcp.json</strong> &mdash; enforced MCP servers
+              <span style="color:var(--warning); font-size:11px;"> &#9888; Legacy &mdash; deprecated since v2.1.75, no longer read by Claude Code</span>
+            </p>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for s in config.managed_mcp_servers_legacy %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong></td>
+                  <td><span class="badge badge-{{ s.type }}">{{ s.type }}</span></td>
+                  <td style="font-size:12px; word-break:break-all;">{% if s.url %}{{ s.url }}{% else %}{{ s.command }} {{ s.args|join(' ') }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
             {% endif %}
           </div>
         </div>

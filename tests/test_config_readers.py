@@ -1020,6 +1020,35 @@ def test_claude_config_managed_mcp_empty_when_no_file(tmp_path, monkeypatch):
     assert cfg["managed_mcp_servers"] == []
 
 
+def test_claude_config_reads_managed_mcp_legacy_windows(tmp_path, monkeypatch):
+    """On Windows, reads legacy managed-mcp.json from %PROGRAMDATA%\\ClaudeCode\\."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+
+    programdata = tmp_path / "ProgramData"
+    legacy_dir = programdata / "ClaudeCode"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "managed-mcp.json").write_text(
+        '{"mcpServers": {"legacy-tool": {"command": "python", "args": ["-m", "tool"], "type": "stdio"}}}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "ProgramFiles"))  # does not exist
+    monkeypatch.setenv("PROGRAMDATA", str(programdata))
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: tmp_path / "ProgramFiles" / "ClaudeCode")
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_mcp_servers"] == []
+    assert len(cfg["managed_mcp_servers_legacy"]) == 1
+    srv = cfg["managed_mcp_servers_legacy"][0]
+    assert srv["name"] == "legacy-tool"
+    assert srv["command"] == "python"
+    assert srv["args"] == ["-m", "tool"]
+
+
 # ---------------------------------------------------------------------------
 # VS Code Insiders
 # ---------------------------------------------------------------------------

@@ -235,6 +235,7 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "managed_settings": {},
         "managed_settings_legacy": {},
         "managed_mcp_servers": [],
+        "managed_mcp_servers_legacy": [],
         "feature_flags": {},
         "growthbook_flags": {},
     }
@@ -268,9 +269,26 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         import os as _os
 
         programdata = _os.environ.get("PROGRAMDATA", r"C:\ProgramData")
-        legacy_raw = safe_read_json(Path(programdata) / "ClaudeCode" / "managed-settings.json")
+        legacy_dir = Path(programdata) / "ClaudeCode"
+        legacy_raw = safe_read_json(legacy_dir / "managed-settings.json")
         if legacy_raw and isinstance(legacy_raw, dict):
             result["managed_settings_legacy"] = dict(mask_dict(legacy_raw))
+
+        legacy_mcp_raw = safe_read_json(legacy_dir / "managed-mcp.json")
+        if legacy_mcp_raw and isinstance(legacy_mcp_raw, dict):
+            servers = legacy_mcp_raw.get("mcpServers", {})
+            if isinstance(servers, dict):
+                result["managed_mcp_servers_legacy"] = [
+                    {
+                        "name": name,
+                        "type": cfg.get("type", "stdio"),
+                        "command": cfg.get("command", ""),
+                        "args": cfg.get("args", []),
+                        "url": cfg.get("url", ""),
+                    }
+                    for name, cfg in mask_dict(servers).items()  # type: ignore[union-attr]
+                    if isinstance(cfg, dict)
+                ]
 
     if not home.is_dir():
         return result
