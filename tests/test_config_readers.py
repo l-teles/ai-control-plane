@@ -917,12 +917,7 @@ def test_claude_config_reads_managed_settings_windows(tmp_path, monkeypatch):
     monkeypatch.setenv("PROGRAMFILES", str(prog_files))
     monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "ProgramData"))  # does not exist
 
-    import importlib
-
-    from ai_ctrl_plane.config_readers import claude_config
-    importlib.reload(claude_config)
-
-    cfg = claude_config.read_claude_config(claude_home=home)
+    cfg = read_claude_config(claude_home=home)
     assert cfg["managed_settings"].get("disableAutoUpdate") is True
     assert cfg["managed_settings_legacy"] == {}
 
@@ -943,12 +938,7 @@ def test_claude_config_reads_managed_settings_legacy_windows(tmp_path, monkeypat
     monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "ProgramFiles"))  # does not exist
     monkeypatch.setenv("PROGRAMDATA", str(programdata))
 
-    import importlib
-
-    from ai_ctrl_plane.config_readers import claude_config
-    importlib.reload(claude_config)
-
-    cfg = claude_config.read_claude_config(claude_home=home)
+    cfg = read_claude_config(claude_home=home)
     assert cfg["managed_settings"] == {}
     assert cfg["managed_settings_legacy"].get("legacyPolicy") is True
 

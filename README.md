@@ -100,9 +100,12 @@ those raw files into a readable, interactive dashboard so you can review session
 ### Tool Configuration Inspector
 - **Claude Code** — MCP servers, plugins (official + external), agents, skills
   (standalone + plugin-bundled), slash commands, hooks, feature flags (including
-  GrowthBook server-side flags with toggle), settings, policy limits.
+  GrowthBook server-side flags), settings, policy limits, global memory files,
+  remote settings, usage stats, enterprise managed settings (macOS, Linux/WSL,
+  Windows via MDM/ADMX), MCP auth cache, plugin marketplaces & install counts.
 - **GitHub Copilot** — MCP servers, configuration, recent commands, skills.
-- **VS Code Chat** — MCP servers, agents, skills, AI settings, language models.
+- **VS Code Chat** — MCP servers, agents, skills, AI settings, language models;
+  **VS Code Insiders** sessions and config auto-discovered alongside Stable.
 - **Vertical tool navigation** — switch between tools from the sidebar.
 
 ### Agents

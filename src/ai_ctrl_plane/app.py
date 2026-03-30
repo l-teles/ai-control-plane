@@ -794,6 +794,7 @@ def create_app(
                 "~/Library/Application Support/Code/User/globalStorage/github.copilot-chat/skills/",
                 "~/Library/Application Support/Code - Insiders/User/mcp.json (Insiders MCP servers)",
                 "~/Library/Application Support/Code - Insiders/User/settings.json (Insiders)",
+                "~/Library/Application Support/Code - Insiders/User/chatLanguageModels.json (Insiders)",
                 "~/Library/Application Support/Code - Insiders/User/workspaceStorage/<hash>/chatSessions/ (Insiders)",
                 "~/Library/Application Support/Code - Insiders/User/globalStorage/github.copilot-chat/skills/",
             ],
@@ -805,6 +806,7 @@ def create_app(
                 "%APPDATA%\\Code - Insiders\\User\\mcp.json (Insiders)",
                 "%APPDATA%\\Code - Insiders\\User\\settings.json (Insiders)",
                 "%APPDATA%\\Code - Insiders\\User\\workspaceStorage\\<hash>\\chatSessions\\ (Insiders)",
+                "%APPDATA%\\Code - Insiders\\User\\globalStorage\\github.copilot-chat\\skills\\ (Insiders)",
             ],
             "Linux": [
                 "~/.config/Code/User/ (same structure as macOS)",
