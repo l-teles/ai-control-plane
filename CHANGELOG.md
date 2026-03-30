@@ -5,9 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.6.1 - 2026-03-30
+
+### What's Changed
+
+### CI / Maintenance
+
+- Fix update changelog action (#18) @l-teles
+
+**Full Changelog**: https://github.com/l-teles/ai-control-plane/compare/v0.6.0...v0.6.1
+
 ## [Unreleased]
 
 ### Added
+
 - **Global memory files** — reads `~/.claude/memory/*.md` and surfaces content
   on the Claude Code detail page.
 - **Remote settings** — reads `~/.claude/remote-settings.json` (remotely-pushed
@@ -32,6 +43,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   page.
 
 ### Fixed
+
 - `plugins/blocklist.json` silently ignored — real file format is
   `{fetchedAt, plugins:[…]}`, not a bare list. Handles both formats; table now
   shows plugin name, reason, and date.
@@ -39,12 +51,14 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.5.2] - 2026-03-17
 
 ### Fixed
+
 - Explicit UTF-8 encoding on all file reads to prevent `UnicodeDecodeError` crash
   on Windows systems using cp1252 as the default encoding.
 
 ## [0.5.1] - 2026-03-17
 
 ### Fixed
+
 - Windows path fallbacks for Claude Code (`%LOCALAPPDATA%\claude`), GitHub
   Copilot (`%LOCALAPPDATA%\github-copilot`), and Claude Desktop
   (`%APPDATA%\Claude` → MSIX glob fallback) — each prefers the standard
@@ -53,6 +67,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.5.0] - 2026-03-17
 
 ### Added
+
 - **Claude Desktop as first-class tool** — promoted from a subsection of the
   Claude Code page to its own route, dashboard card, and detail page.
 - **Claude Desktop skills** — reads from `local-agent-mode-sessions/skills-plugin/`
@@ -64,12 +79,14 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   rendered SKILL.md content for each bundled skill.
 
 ### Fixed
+
 - "Rebuild Cache" endpoint was not passing `desktop_path`, silently excluding
   Claude Desktop data from manual cache rebuilds.
 
 ## [0.4.0] - 2026-03-16
 
 ### Added
+
 - **SQLite cache layer** — all data (sessions, tool configs, projects, memory
   files) is stored in a local SQLite database built in a background thread on
   startup, replacing per-request filesystem scans.
@@ -89,12 +106,14 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.3.1] - 2026-03-15
 
 ### Changed
+
 - Package renamed from `ai-control-plane` to `ai-ctrl-plane` on PyPI (repository
   name unchanged).
 
 ## [0.3.0] - 2026-03-15
 
 ### Added
+
 - **"AI Control Plane" rebrand** — new name, dashboard homepage with aggregated
   metrics (MCP servers, plugins, agents, commands, hooks, feature flags, sessions),
   tool cards, session breakdown bars, and recent sessions.
@@ -131,6 +150,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   across tool details, session info, and key-value grids.
 
 ### Changed
+
 - Dashboard homepage now shows tool configs and cross-tool metrics instead of
   just a session list.
 - All templates refactored to extend `base.html`, removing ~200 lines of
@@ -142,6 +162,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   throughout session timelines and tool detail pages.
 
 ### Fixed
+
 - Sub-agent count always showing 0 — `compute_stats()` now counts Agent and
   dispatch_agent tool calls.
 - Sub-agent timeline events now properly emit `subagent_start`/`subagent_complete`
@@ -156,6 +177,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.2.0] - 2026-03-13
 
 ### Added
+
 - **Claude timeline extras** — hook/progress events, file history snapshots,
   last-prompt markers, permission mode and sidechain indicators on messages.
 - **VS Code timeline extras** — agent mode badges (Edit/Chat/Agent),
