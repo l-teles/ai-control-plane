@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -29,14 +30,23 @@ jobs:
           release-notes: ${{ github.event.release.body }}
           latest-version: ${{ steps.version.outputs.version }}
 
-      - name: Commit changelog update
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
-        run: |
-          sha=$(gh api repos/${{ github.repository }}/contents/CHANGELOG.md --jq '.sha')
-          gh api --method PUT repos/${{ github.repository }}/contents/CHANGELOG.md \
-            --field message="docs: update CHANGELOG for ${TAG_NAME}" \
-            --field content="$(base64 -w0 CHANGELOG.md)" \
-            --field sha="${sha}" \
-            --field branch=main
+      - name: Create PR with changelog update
+        id: changelog-pr
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs: update CHANGELOG for ${{ github.event.release.tag_name }}"
+          branch: docs/changelog-${{ github.event.release.tag_name }}
+          base: main
+          title: "docs: update CHANGELOG for ${{ github.event.release.tag_name }}"
+          body: Automated changelog update for release ${{ github.event.release.tag_name }}.
+          add-paths: CHANGELOG.md
+          delete-branch: true
+
+      - name: Enable auto-merge
+        if: steps.changelog-pr.outputs.pull-request-number
+        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          pull-request-number: ${{ steps.changelog-pr.outputs.pull-request-number }}
+          merge-method: squash
