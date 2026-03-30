@@ -247,7 +247,7 @@ def create_app(
 
         claude_sessions = claude_parser.discover_sessions(claude_path)
         vscode_sessions = vscode_parser.discover_sessions(vscode_path)
-        insiders_path = vscode_parser._default_vscode_insiders_dir()
+        insiders_path = vscode_parser.default_vscode_insiders_dir()
         if insiders_path != vscode_path and insiders_path.is_dir():
             vscode_sessions += vscode_parser.discover_sessions(insiders_path)
 

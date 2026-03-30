@@ -239,6 +239,39 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "growthbook_flags": {},
     }
 
+    # Managed settings and MCP servers (enterprise / MDM — all platforms)
+    # Read independently of whether ~/.claude/ exists so enterprise policy is
+    # always surfaced even on machines where Claude Code has never been run.
+    managed_dir = _default_managed_dir()
+    managed_raw = safe_read_json(managed_dir / "managed-settings.json")
+    if managed_raw and isinstance(managed_raw, dict):
+        result["managed_settings"] = dict(mask_dict(managed_raw))
+
+    mcp_raw = safe_read_json(managed_dir / "managed-mcp.json")
+    if mcp_raw and isinstance(mcp_raw, dict):
+        servers_dict = mcp_raw.get("mcpServers", {})
+        if isinstance(servers_dict, dict):
+            result["managed_mcp_servers"] = [
+                {
+                    "name": name,
+                    "type": cfg.get("type", "stdio"),
+                    "command": cfg.get("command", ""),
+                    "args": cfg.get("args", []),
+                    "url": cfg.get("url", ""),
+                }
+                for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
+                if isinstance(cfg, dict)
+            ]
+
+    # Legacy Windows path (deprecated since v2.1.75)
+    if sys.platform == "win32":
+        import os as _os
+
+        programdata = _os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+        legacy_raw = safe_read_json(Path(programdata) / "ClaudeCode" / "managed-settings.json")
+        if legacy_raw and isinstance(legacy_raw, dict):
+            result["managed_settings_legacy"] = dict(mask_dict(legacy_raw))
+
     if not home.is_dir():
         return result
 
@@ -353,36 +386,6 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
                 if content:
                     memory_files.append({"filename": mf.name, "content": content})
     result["memory_files"] = memory_files
-
-    # Managed settings and MCP servers (enterprise / MDM — all platforms)
-    managed_dir = _default_managed_dir()
-    managed_raw = safe_read_json(managed_dir / "managed-settings.json")
-    if managed_raw and isinstance(managed_raw, dict):
-        result["managed_settings"] = dict(mask_dict(managed_raw))
-
-    mcp_raw = safe_read_json(managed_dir / "managed-mcp.json")
-    if mcp_raw and isinstance(mcp_raw, dict):
-        servers_dict = mcp_raw.get("mcpServers", {})
-        result["managed_mcp_servers"] = [
-            {
-                "name": name,
-                "type": cfg.get("type", "stdio"),
-                "command": cfg.get("command", ""),
-                "args": cfg.get("args", []),
-                "url": cfg.get("url", ""),
-            }
-            for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
-            if isinstance(cfg, dict)
-        ]
-
-    # Legacy Windows path (deprecated since v2.1.75)
-    if sys.platform == "win32":
-        import os as _os
-
-        programdata = _os.environ.get("PROGRAMDATA", r"C:\ProgramData")
-        legacy_raw = safe_read_json(Path(programdata) / "ClaudeCode" / "managed-settings.json")
-        if legacy_raw and isinstance(legacy_raw, dict):
-            result["managed_settings_legacy"] = dict(mask_dict(legacy_raw))
 
     return result
 

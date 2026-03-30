@@ -1121,6 +1121,10 @@ def test_claude_config_reads_remote_settings(tmp_path):
     # env contains a key that mask_dict should mask (it has "token" in the name)
     env = cfg["remote_settings"].get("env", {})
     assert isinstance(env, dict)
+    assert "SECRET_TOKEN" in env
+    assert env["SECRET_TOKEN"] != "abc123"
+    assert isinstance(env["SECRET_TOKEN"], str)
+    assert env["SECRET_TOKEN"].endswith("****")
     # permissions deny list should be present
     perms = cfg["remote_settings"].get("permissions", {})
     assert "Bash(sudo:*)" in perms.get("deny", [])

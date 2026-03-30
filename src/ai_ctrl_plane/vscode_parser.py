@@ -162,7 +162,7 @@ def _default_vscode_dir() -> Path:
         return Path.home() / ".config" / "Code" / "User"
 
 
-def _default_vscode_insiders_dir() -> Path:
+def default_vscode_insiders_dir() -> Path:
     """Return the platform-default VS Code Insiders user data directory."""
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Code - Insiders" / "User"
