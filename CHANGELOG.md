@@ -15,7 +15,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 **Full Changelog**: https://github.com/l-teles/ai-control-plane/compare/v0.6.0...v0.6.1
 
-## [Unreleased]
+## 0.6.0 - 2026-03-30
 
 ### Added
 
