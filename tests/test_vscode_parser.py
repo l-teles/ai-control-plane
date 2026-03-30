@@ -10,6 +10,7 @@ import pytest
 from ai_ctrl_plane.vscode_parser import (
     build_conversation,
     compute_stats,
+    discover_all_vscode_sessions,
     discover_sessions,
     extract_workspace,
     parse_events,
@@ -201,6 +202,67 @@ def test_discover_global_sessions(vscode_global_session: Path) -> None:
 def test_discover_empty_dir(tmp_path: Path) -> None:
     sessions = discover_sessions(tmp_path)
     assert sessions == []
+
+
+def test_discover_all_vscode_sessions_combines_stable_and_insiders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """discover_all_vscode_sessions returns sessions from both Stable and Insiders."""
+    stable = tmp_path / "stable"
+    insiders = tmp_path / "insiders"
+
+    # Stable: one workspace session
+    chat_stable = stable / "workspaceStorage" / "stablehash" / "chatSessions"
+    chat_stable.mkdir(parents=True)
+    (chat_stable.parent / "workspace.json").write_text(json.dumps({"folder": "file:///stable/proj"}))
+    session_stable = _make_session(
+        session_id="11111111-0000-0000-0000-000000000000",
+        custom_title="Stable session",
+    )
+    (chat_stable / "11111111-0000-0000-0000-000000000000.json").write_text(json.dumps(session_stable))
+
+    # Insiders: one workspace session
+    chat_insiders = insiders / "workspaceStorage" / "insidershash" / "chatSessions"
+    chat_insiders.mkdir(parents=True)
+    (chat_insiders.parent / "workspace.json").write_text(json.dumps({"folder": "file:///insiders/proj"}))
+    session_insiders = _make_session(
+        session_id="22222222-0000-0000-0000-000000000000",
+        custom_title="Insiders session",
+    )
+    (chat_insiders / "22222222-0000-0000-0000-000000000000.json").write_text(json.dumps(session_insiders))
+
+    import ai_ctrl_plane.vscode_parser as vscode_parser_mod
+
+    monkeypatch.setattr(vscode_parser_mod, "default_vscode_insiders_dir", lambda: insiders)
+
+    sessions = discover_all_vscode_sessions(stable)
+    ids = {s["id"] for s in sessions}
+    assert "11111111-0000-0000-0000-000000000000" in ids
+    assert "22222222-0000-0000-0000-000000000000" in ids
+    assert len(sessions) == 2
+
+
+def test_discover_all_vscode_sessions_insiders_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the Insiders directory does not exist only Stable sessions are returned."""
+    stable = tmp_path / "stable"
+    chat_stable = stable / "workspaceStorage" / "stablehash" / "chatSessions"
+    chat_stable.mkdir(parents=True)
+    (chat_stable.parent / "workspace.json").write_text(json.dumps({"folder": "file:///stable/proj"}))
+    session_stable = _make_session(
+        session_id="33333333-0000-0000-0000-000000000000",
+        custom_title="Only stable",
+    )
+    (chat_stable / "33333333-0000-0000-0000-000000000000.json").write_text(json.dumps(session_stable))
+
+    import ai_ctrl_plane.vscode_parser as vscode_parser_mod
+
+    monkeypatch.setattr(vscode_parser_mod, "default_vscode_insiders_dir", lambda: tmp_path / "nonexistent")
+
+    sessions = discover_all_vscode_sessions(stable)
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == "33333333-0000-0000-0000-000000000000"
 
 
 def test_jsonl_patch_reconstruction(tmp_path: Path) -> None:

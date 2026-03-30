@@ -538,6 +538,15 @@
             <p style="font-size:12px; margin-bottom:8px;">Bypass mode: <strong>{{ perms.disableBypassPermissionsMode }}</strong></p>
             {% endif %}
             {% endif %}
+            {% set env_overrides = config.remote_settings.get('env', {}) %}
+            {% if env_overrides %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">Env overrides</p>
+            <div class="kv-grid" style="margin-bottom:8px;">
+              {% for k, v in env_overrides.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
             {% set _skip = ('permissions', 'env') %}
             {% set _ns = namespace(has_extra=false) %}
             {% for k in config.remote_settings %}{% if k not in _skip %}{% set _ns.has_extra = true %}{% endif %}{% endfor %}
