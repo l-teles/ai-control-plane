@@ -951,3 +951,127 @@ def test_claude_config_reads_managed_settings_legacy_windows(tmp_path, monkeypat
     cfg = claude_config.read_claude_config(claude_home=home)
     assert cfg["managed_settings"] == {}
     assert cfg["managed_settings_legacy"].get("legacyPolicy") is True
+
+
+# ---------------------------------------------------------------------------
+# Cross-platform managed-settings (macOS / Linux via _default_managed_dir patch)
+# ---------------------------------------------------------------------------
+
+
+def test_claude_config_reads_managed_settings_macos(tmp_path, monkeypatch):
+    """Reads managed-settings.json from macOS system dir via _default_managed_dir."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    managed_dir = tmp_path / "managed"
+    managed_dir.mkdir()
+    (managed_dir / "managed-settings.json").write_text(
+        '{"disableTelemetry": true}', encoding="utf-8"
+    )
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_settings"].get("disableTelemetry") is True
+    assert cfg["managed_settings_legacy"] == {}
+
+
+def test_claude_config_reads_managed_settings_linux(tmp_path, monkeypatch):
+    """Reads managed-settings.json from Linux system dir via _default_managed_dir."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    managed_dir = tmp_path / "etc-claude-code"
+    managed_dir.mkdir()
+    (managed_dir / "managed-settings.json").write_text(
+        '{"maxThinkingTokens": 8000}', encoding="utf-8"
+    )
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_settings"].get("maxThinkingTokens") == 8000
+
+
+def test_claude_config_reads_managed_mcp(tmp_path, monkeypatch):
+    """Reads managed-mcp.json and returns structured managed_mcp_servers list."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    managed_dir = tmp_path / "managed"
+    managed_dir.mkdir()
+    (managed_dir / "managed-mcp.json").write_text(
+        '{"mcpServers": {"corp-tools": {"command": "node", "args": ["index.js"], "type": "stdio"}}}',
+        encoding="utf-8",
+    )
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert len(cfg["managed_mcp_servers"]) == 1
+    srv = cfg["managed_mcp_servers"][0]
+    assert srv["name"] == "corp-tools"
+    assert srv["type"] == "stdio"
+    assert srv["command"] == "node"
+    assert srv["args"] == ["index.js"]
+
+
+def test_claude_config_managed_mcp_empty_when_no_file(tmp_path, monkeypatch):
+    """managed_mcp_servers is empty when managed-mcp.json is absent."""
+    home = tmp_path / ".claude"
+    home.mkdir()
+    managed_dir = tmp_path / "managed"
+    managed_dir.mkdir()  # dir exists but no managed-mcp.json
+
+    import ai_ctrl_plane.config_readers.claude_config as cc
+    monkeypatch.setattr(cc, "_default_managed_dir", lambda: managed_dir)
+
+    cfg = cc.read_claude_config(claude_home=home)
+    assert cfg["managed_mcp_servers"] == []
+
+
+# ---------------------------------------------------------------------------
+# VS Code Insiders
+# ---------------------------------------------------------------------------
+
+
+def test_vscode_config_reads_insiders(tmp_path, monkeypatch):
+    """read_vscode_config() reads Insiders MCP servers when insiders dir exists."""
+    stable_dir = tmp_path / "Code" / "User"
+    stable_dir.mkdir(parents=True)
+
+    insiders_dir = tmp_path / "Code - Insiders" / "User"
+    insiders_dir.mkdir(parents=True)
+    (insiders_dir / "mcp.json").write_text(
+        '{"servers": {"insiders-server": {"command": "npx", "args": ["-y", "server"], "type": "stdio"}}}',
+        encoding="utf-8",
+    )
+
+    from ai_ctrl_plane.config_readers import vscode_config
+    monkeypatch.setattr(vscode_config, "_default_vscode_insiders_user_dir", lambda: insiders_dir)
+
+    cfg = vscode_config.read_vscode_config(vscode_user_dir=stable_dir)
+    # When vscode_user_dir is explicitly passed, Insiders scanning is skipped
+    assert cfg["insiders_mcp_servers"] == []
+
+    # Without override — Insiders is auto-discovered
+    monkeypatch.setattr(vscode_config, "_default_vscode_user_dir", lambda: stable_dir)
+    cfg2 = vscode_config.read_vscode_config()
+    assert cfg2["insiders_installed"] is True
+    assert len(cfg2["insiders_mcp_servers"]) == 1
+    assert cfg2["insiders_mcp_servers"][0]["name"] == "insiders-server"
+
+
+def test_vscode_config_insiders_not_installed(tmp_path, monkeypatch):
+    """insiders_installed is False when the Insiders directory does not exist."""
+    stable_dir = tmp_path / "Code" / "User"
+    stable_dir.mkdir(parents=True)
+    insiders_dir = tmp_path / "Code - Insiders" / "User"  # does not exist
+
+    from ai_ctrl_plane.config_readers import vscode_config
+    monkeypatch.setattr(vscode_config, "_default_vscode_user_dir", lambda: stable_dir)
+    monkeypatch.setattr(vscode_config, "_default_vscode_insiders_user_dir", lambda: insiders_dir)
+
+    cfg = vscode_config.read_vscode_config()
+    assert cfg["insiders_installed"] is False
+    assert cfg["insiders_mcp_servers"] == []

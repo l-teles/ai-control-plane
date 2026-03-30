@@ -4,6 +4,8 @@ Sessions live under ~/Library/Application Support/Code/User/ (macOS)
 or ~/.config/Code/User/ (Linux) in two locations:
   - workspaceStorage/{hash}/chatSessions/{uuid}.json
   - globalStorage/emptyWindowChatSessions/{uuid}.jsonl
+
+VS Code Insiders uses the same structure under "Code - Insiders" instead of "Code".
 """
 
 from __future__ import annotations
@@ -148,7 +150,7 @@ def _read_session_json(path: Path) -> dict | None:
 
 
 def _default_vscode_dir() -> Path:
-    """Return the platform-default VS Code user data directory."""
+    """Return the platform-default VS Code (Stable) user data directory."""
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Code" / "User"
     elif sys.platform == "win32":
@@ -158,6 +160,23 @@ def _default_vscode_dir() -> Path:
         return Path(appdata) / "Code" / "User" if appdata else Path.home() / "Code" / "User"
     else:
         return Path.home() / ".config" / "Code" / "User"
+
+
+def _default_vscode_insiders_dir() -> Path:
+    """Return the platform-default VS Code Insiders user data directory."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Code - Insiders" / "User"
+    elif sys.platform == "win32":
+        import os
+
+        appdata = os.environ.get("APPDATA", "")
+        return (
+            Path(appdata) / "Code - Insiders" / "User"
+            if appdata
+            else Path.home() / "Code - Insiders" / "User"
+        )
+    else:
+        return Path.home() / ".config" / "Code - Insiders" / "User"
 
 
 # ---------------------------------------------------------------------------

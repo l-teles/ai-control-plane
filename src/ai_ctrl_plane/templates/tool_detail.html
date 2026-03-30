@@ -202,6 +202,7 @@
       <div class="info-row"><span class="info-label">Agents</span><span class="info-value">{{ config.agents|length }}</span></div>
       <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
       <div class="info-row"><span class="info-label">AI Settings</span><span class="info-value">{{ config.copilot_settings|length }}</span></div>
+      <div class="info-row"><span class="info-label">Insiders</span><span class="info-value">{% if config.insiders_installed %}installed{% else %}not found{% endif %}</span></div>
       {% elif tool == 'claude_desktop' %}
       <div class="info-row"><span class="info-label">MCP Servers</span><span class="info-value">{{ config.mcp_servers|length }}</span></div>
       <div class="info-row"><span class="info-label">Skills</span><span class="info-value">{{ config.skills|length }}</span></div>
@@ -491,17 +492,35 @@
         {% endif %}
 
         {# Managed Settings (enterprise / MDM — Windows only) #}
-        {% if config.managed_settings or config.managed_settings_legacy %}
+        {% if config.managed_settings or config.managed_settings_legacy or config.managed_mcp_servers %}
         <div class="section">
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Managed Settings</h3>
           <div class="section-body">
             {% if config.managed_settings %}
-            <p style="font-size:12px; margin-bottom:6px;"><strong>Program Files\ClaudeCode\managed-settings.json</strong> (current)</p>
+            <p style="font-size:12px; margin-bottom:6px;">
+              <strong>managed-settings.json</strong>
+              <span style="font-size:11px; color:var(--fg-muted);">(macOS: /Library/Application Support/ClaudeCode/ &bull; Linux: /etc/claude-code/ &bull; Windows: %PROGRAMFILES%\ClaudeCode\)</span>
+            </p>
             <div class="kv-grid">
               {% for k, v in config.managed_settings.items()|sort %}
               <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
               {% endfor %}
             </div>
+            {% endif %}
+            {% if config.managed_mcp_servers %}
+            <p style="font-size:12px; margin-top:12px; margin-bottom:6px;"><strong>managed-mcp.json</strong> &mdash; enforced MCP servers</p>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for s in config.managed_mcp_servers %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong></td>
+                  <td><span class="badge badge-{{ s.type }}">{{ s.type }}</span></td>
+                  <td style="font-size:12px; word-break:break-all;">{% if s.url %}{{ s.url }}{% else %}{{ s.command }} {{ s.args|join(' ') }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
             {% endif %}
             {% if config.managed_settings_legacy %}
             <p style="font-size:12px; margin-top:12px; margin-bottom:6px;">
@@ -612,6 +631,53 @@
           <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Language Models ({{ config.language_models|length }})</h3>
           <div class="section-body">
             <pre style="font-size:12px;overflow-x:auto;"><code>{{ json.dumps(config.language_models, indent=2) }}</code></pre>
+          </div>
+        </div>
+        {% endif %}
+
+        {# VS Code Insiders #}
+        {% if config.insiders_installed %}
+        <div class="section">
+          <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}VS Code Insiders</h3>
+          <div class="section-body">
+            <p style="font-size:12px; color:var(--fg-muted); margin-bottom:8px;">{{ config.insiders_user_dir }}</p>
+            {% if config.insiders_mcp_servers %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">MCP Servers ({{ config.insiders_mcp_servers|length }})</p>
+            <table class="data-table" style="margin-bottom:12px;">
+              <thead><tr><th>Name</th><th>Type</th><th>Command / URL</th></tr></thead>
+              <tbody>
+                {% for s in config.insiders_mcp_servers %}
+                <tr>
+                  <td><strong>{{ s.name }}</strong></td>
+                  <td><span class="badge badge-{{ s.type }}">{{ s.type }}</span></td>
+                  <td style="font-size:12px; word-break:break-all;">{% if s.url %}{{ s.url }}{% else %}{{ s.command }} {{ s.args|join(' ') }}{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if config.insiders_copilot_settings %}
+            <p style="font-size:12px; font-weight:600; margin-bottom:4px;">AI Settings ({{ config.insiders_copilot_settings|length }})</p>
+            <div class="kv-grid">
+              {% for k, v in config.insiders_copilot_settings.items()|sort %}
+              <div class="kv-item"><span class="kv-key">{{ k }}</span><span class="kv-value">{{ v }}</span></div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if config.insiders_skills %}
+            <p style="font-size:12px; font-weight:600; margin-top:8px; margin-bottom:4px;">Skills ({{ config.insiders_skills|length }})</p>
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Description</th></tr></thead>
+              <tbody>
+                {% for s in config.insiders_skills %}
+                <tr><td><strong>{{ s.name }}</strong></td><td>{{ s.description[:120] }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% endif %}
+            {% if not config.insiders_mcp_servers and not config.insiders_copilot_settings and not config.insiders_skills %}
+            <p style="font-size:12px; color:var(--fg-muted);">No MCP servers, AI settings, or skills configured.</p>
+            {% endif %}
           </div>
         </div>
         {% endif %}

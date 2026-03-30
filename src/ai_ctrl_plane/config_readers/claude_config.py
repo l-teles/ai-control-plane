@@ -15,6 +15,23 @@ from ._common import (
 )
 
 
+def _default_managed_dir() -> Path:
+    """Return the system-wide Claude Code managed config directory for this OS.
+
+    - macOS:       /Library/Application Support/ClaudeCode/
+    - Windows:     %PROGRAMFILES%\\ClaudeCode\\
+    - Linux / WSL: /etc/claude-code/
+    """
+    if sys.platform == "darwin":
+        return Path("/Library/Application Support/ClaudeCode")
+    if sys.platform == "win32":
+        import os as _os
+
+        prog_files = _os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        return Path(prog_files) / "ClaudeCode"
+    return Path("/etc/claude-code")
+
+
 def _default_claude_home() -> Path:
     """Return the platform-default Claude home directory.
 
@@ -212,6 +229,7 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
         "memory_files": [],
         "managed_settings": {},
         "managed_settings_legacy": {},
+        "managed_mcp_servers": [],
         "feature_flags": {},
         "growthbook_flags": {},
     }
@@ -306,14 +324,30 @@ def read_claude_config(claude_home: Path | None = None) -> dict:
                     memory_files.append({"filename": mf.name, "content": content})
     result["memory_files"] = memory_files
 
-    # Managed settings (enterprise / MDM — Windows only)
+    # Managed settings and MCP servers (enterprise / MDM — all platforms)
+    managed_dir = _default_managed_dir()
+    managed_raw = safe_read_json(managed_dir / "managed-settings.json")
+    if managed_raw and isinstance(managed_raw, dict):
+        result["managed_settings"] = dict(mask_dict(managed_raw))
+
+    mcp_raw = safe_read_json(managed_dir / "managed-mcp.json")
+    if mcp_raw and isinstance(mcp_raw, dict):
+        servers_dict = mcp_raw.get("mcpServers", {})
+        result["managed_mcp_servers"] = [
+            {
+                "name": name,
+                "type": cfg.get("type", "stdio"),
+                "command": cfg.get("command", ""),
+                "args": cfg.get("args", []),
+                "url": cfg.get("url", ""),
+            }
+            for name, cfg in mask_dict(servers_dict).items()  # type: ignore[union-attr]
+            if isinstance(cfg, dict)
+        ]
+
+    # Legacy Windows path (deprecated since v2.1.75)
     if sys.platform == "win32":
         import os as _os
-
-        prog_files = _os.environ.get("PROGRAMFILES", r"C:\Program Files")
-        managed_raw = safe_read_json(Path(prog_files) / "ClaudeCode" / "managed-settings.json")
-        if managed_raw and isinstance(managed_raw, dict):
-            result["managed_settings"] = dict(mask_dict(managed_raw))
 
         programdata = _os.environ.get("PROGRAMDATA", r"C:\ProgramData")
         legacy_raw = safe_read_json(Path(programdata) / "ClaudeCode" / "managed-settings.json")
