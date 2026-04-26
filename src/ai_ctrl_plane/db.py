@@ -1,8 +1,9 @@
 """SQLite cache layer for AI Control Plane.
 
-Builds a local database on first startup to avoid re-scanning the filesystem
-on every request.  The cache is rebuilt in a background thread and routes
-serve whatever data is already available (partial or full).
+Schema is managed by the numbered migration files in
+:mod:`ai_ctrl_plane.migrations`.  On startup the cache is refreshed in a
+background thread; routes serve whatever data is already available
+(partial or full).
 """
 
 from __future__ import annotations
@@ -13,62 +14,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-_SCHEMA_VERSION = "3"
-
-_DDL = """\
-CREATE TABLE IF NOT EXISTS cache_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-    id       TEXT PRIMARY KEY,
-    source   TEXT NOT NULL,
-    uuid     TEXT NOT NULL,
-    summary  TEXT,
-    created  TEXT,
-    cwd      TEXT,
-    model    TEXT,
-    input_tokens   INTEGER DEFAULT 0,
-    output_tokens  INTEGER DEFAULT 0,
-    cache_read_tokens    INTEGER DEFAULT 0,
-    cache_creation_tokens INTEGER DEFAULT 0,
-    estimated_cost REAL DEFAULT 0,
-    raw_json TEXT
-);
-
-CREATE TABLE IF NOT EXISTS projects (
-    encoded_name          TEXT PRIMARY KEY,
-    path                  TEXT,
-    name                  TEXT,
-    session_count         INTEGER DEFAULT 0,
-    memory_file_count     INTEGER DEFAULT 0,
-    last_cost             REAL,
-    last_session_id       TEXT,
-    last_input_tokens     INTEGER,
-    last_output_tokens    INTEGER,
-    has_trust_accepted    INTEGER DEFAULT 0,
-    onboarding_seen_count INTEGER DEFAULT 0,
-    metadata_json         TEXT
-);
-
-CREATE TABLE IF NOT EXISTS project_memory (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_encoded_name  TEXT NOT NULL REFERENCES projects(encoded_name),
-    filename              TEXT NOT NULL,
-    content               TEXT
-);
-
-CREATE TABLE IF NOT EXISTS tool_configs (
-    tool       TEXT PRIMARY KEY,
-    config_json TEXT,
-    updated_at  TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd);
-CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created);
-"""
-
+from .migrations.runner import run_migrations
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -126,27 +72,7 @@ class CacheDB:
 
     def _init_schema(self) -> None:
         with self._lock:
-            # Check if schema version changed — nuke and recreate the DB file
-            existing_version = ""
-            try:
-                row = self._conn.execute("SELECT value FROM cache_meta WHERE key = 'version'").fetchone()
-                if row:
-                    existing_version = row[0]
-            except sqlite3.OperationalError:
-                pass  # cache_meta doesn't exist yet
-            if existing_version and existing_version != _SCHEMA_VERSION:
-                self._conn.close()
-                self.db_path.unlink(missing_ok=True)
-                # Also clean up WAL/SHM files
-                for suffix in ("-wal", "-shm"):
-                    self.db_path.with_name(self.db_path.name + suffix).unlink(missing_ok=True)
-                self._conn = _connect(self.db_path)
-            self._conn.executescript(_DDL)
-            self._conn.execute(
-                "INSERT OR REPLACE INTO cache_meta (key, value) VALUES ('version', ?)",
-                (_SCHEMA_VERSION,),
-            )
-            self._conn.commit()
+            run_migrations(self._conn)
 
     def close(self) -> None:
         with self._lock:
@@ -182,9 +108,18 @@ class CacheDB:
         return {
             "status": self.status,
             "built_at": self.built_at,
-            "version": self.get_meta("version") or "",
+            "version": self.schema_version,
             "db_path": str(self.db_path),
         }
+
+    @property
+    def schema_version(self) -> str:
+        """Highest applied migration version (e.g. ``"002"``)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
+            ).fetchone()
+        return row["version"] if row else ""
 
     # -- Bulk write (used during cache build) --------------------------------
 
@@ -462,7 +397,6 @@ def build_cache(
 
         cache.set_meta("status", "ready")
         cache.set_meta("built_at", _now_iso())
-        cache.set_meta("version", _SCHEMA_VERSION)
 
     except Exception:
         cache.set_meta("status", "error")
