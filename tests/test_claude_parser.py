@@ -727,6 +727,63 @@ def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) 
     assert extract_searchable_text(tmp_path / "nope.jsonl") == ""
 
 
+def test_extract_searchable_text_survives_corrupt_jsonl_lines(tmp_path: Path) -> None:
+    """A line that JSON-parses to a non-dict (``null``, ``[]``, scalar)
+    must not crash extraction — the function should skip the bad line
+    and continue indexing the rest of the session. Regression for PR
+    #27 review #44, plus a broader sweep across every claude_parser
+    function that scans JSONL line-by-line."""
+    from ai_ctrl_plane.claude_parser import (
+        _first_metadata,
+        _last_timestamp,
+        _scan_summaries,
+        _scan_token_usage,
+        extract_searchable_text,
+        parse_events,
+    )
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    # Mix valid events with several corrupt-but-valid-JSON lines.
+    valid_user = _make_user_event("findable_token", uuid="u1", session_id=sid)
+    valid_assistant = _make_assistant_event(
+        [{"type": "text", "text": "answer_token"}], uuid="a1", request_id="r1"
+    )
+    summary_event = {"type": "summary", "summary": "summary_token", "leafUuid": "a1"}
+    lines = [
+        json.dumps(valid_user),
+        "null",  # JSON-decodes to None
+        "[]",  # JSON-decodes to a list
+        '"just a string"',  # JSON-decodes to a str
+        "42",  # JSON-decodes to an int
+        json.dumps(valid_assistant),
+        "true",  # JSON-decodes to a bool
+        json.dumps(summary_event),
+    ]
+    jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # None of these should raise; the corrupt lines are silently skipped
+    # and the valid events surface as expected.
+    text = extract_searchable_text(jsonl)
+    assert "findable_token" in text
+    assert "answer_token" in text
+    assert "summary_token" in text
+
+    events = parse_events(jsonl)
+    types = [e.get("type") for e in events]
+    assert "user" in types
+    assert "assistant" in types
+
+    meta = _first_metadata(jsonl)
+    assert meta.get("sessionId") == sid
+
+    assert _last_timestamp(jsonl)  # not empty
+    tokens = _scan_token_usage(jsonl)
+    assert tokens["output_tokens"] >= 0  # didn't crash
+    summaries = _scan_summaries(jsonl)
+    assert any("summary_token" in s for _, s in summaries)
+
+
 def test_extract_searchable_text_skips_non_string_block_values(tmp_path: Path) -> None:
     """A malformed transcript with ``{"text": null}``, ``{"thinking": 42}``,
     or non-string ``tool_result.content`` would crash ``len()`` / ``join``

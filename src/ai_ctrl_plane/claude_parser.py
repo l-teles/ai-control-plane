@@ -131,7 +131,12 @@ _DISCOVERY_SKIP_TYPES = frozenset({"file-history-snapshot", "queue-operation", "
 
 
 def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
-    """Load events from a JSONL file, dropping types in *skip*."""
+    """Load events from a JSONL file, dropping types in *skip*.
+
+    Non-dict JSON values at the line level (corrupted ``null`` /
+    ``[]`` / scalar lines) are filtered out so every consumer downstream
+    can safely assume each event is a dict.
+    """
     if not jsonl_path.is_file():
         return []
     events: list[dict] = []
@@ -144,6 +149,8 @@ def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
                 try:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(evt, dict):
                     continue
                 if evt.get("type") in skip:
                     continue
@@ -215,6 +222,8 @@ def extract_searchable_text(jsonl_path: Path) -> str:
                 try:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(evt, dict):
                     continue
                 t = evt.get("type", "")
                 if t not in ("user", "assistant", "summary"):
@@ -329,6 +338,8 @@ def _first_metadata(jsonl_path: Path) -> dict:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
                 if evt.get("type") in _DISCOVERY_SKIP_TYPES:
                     continue
                 if evt.get("isMeta"):
@@ -402,11 +413,13 @@ def _last_timestamp(jsonl_path: Path) -> str:
             continue
         try:
             evt = json.loads(line)
-            ts = evt.get("timestamp", "")
-            if ts:
-                return ts
         except json.JSONDecodeError:
             continue
+        if not isinstance(evt, dict):
+            continue
+        ts = evt.get("timestamp", "")
+        if ts:
+            return ts
 
     # Fallback: full forward scan (handles lines longer than 4 KB)
     try:
@@ -417,11 +430,13 @@ def _last_timestamp(jsonl_path: Path) -> str:
                     continue
                 try:
                     evt = json.loads(line)
-                    ts = evt.get("timestamp", "")
-                    if ts:
-                        last_ts = ts
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
+                ts = evt.get("timestamp", "")
+                if ts:
+                    last_ts = ts
     except OSError:
         pass
     return last_ts
@@ -483,15 +498,23 @@ def _scan_token_usage(jsonl_path: Path) -> dict:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
                 if evt.get("type") != "assistant":
                     continue
-                msg = evt.get("message", {})
+                msg = evt.get("message")
+                if not isinstance(msg, dict):
+                    continue
                 usage = msg.get("usage", {})
+                if not isinstance(usage, dict):
+                    continue
                 if not usage:
                     continue
-                rid = evt.get("requestId", evt.get("uuid", ""))
+                rid_val = evt.get("requestId") or evt.get("uuid") or ""
+                rid = rid_val if isinstance(rid_val, str) else ""
                 if not model:
-                    model = msg.get("model", "")
+                    model_val = msg.get("model", "")
+                    model = model_val if isinstance(model_val, str) else ""
                 ot = usage.get("output_tokens", 0)
                 if ot:
                     output_by_req[rid] = ot
@@ -544,10 +567,14 @@ def _scan_summaries(jsonl_path: Path) -> list[tuple[str, str]]:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
                 if evt.get("type") != "summary":
                     continue
-                summary = (evt.get("summary") or "").strip()
-                leaf = evt.get("leafUuid") or ""
+                summary_val = evt.get("summary")
+                summary = summary_val.strip() if isinstance(summary_val, str) else ""
+                leaf_val = evt.get("leafUuid")
+                leaf = leaf_val if isinstance(leaf_val, str) else ""
                 if summary:
                     out.append((leaf, summary))
     except OSError:

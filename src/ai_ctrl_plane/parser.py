@@ -45,18 +45,26 @@ def parse_workspace(session_dir: Path) -> dict:
 
 
 def parse_events(session_dir: Path) -> list[dict]:
-    """Read the events.jsonl file and return a list of parsed event dicts."""
+    """Read the events.jsonl file and return a list of parsed event dicts.
+
+    Non-dict JSON values at the line level (a stray ``null`` / ``[]`` /
+    scalar from a corrupted line) are filtered out so every consumer
+    downstream can assume each event is a dict.
+    """
     content = _safe_open(session_dir, "events.jsonl")
     if content is None:
         return []
     events: list[dict] = []
     for line in content.splitlines():
         line = line.strip()
-        if line:
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
+        if not line:
+            continue
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(evt, dict):
+            events.append(evt)
     return events
 
 
@@ -86,8 +94,12 @@ def extract_searchable_text(session_dir: Path) -> str:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
                 t = evt.get("type", "")
                 d = evt.get("data") or {}
+                if not isinstance(d, dict):
+                    d = {}
                 if t == "user.message":
                     txt = d.get("content", "") or ""
                     if isinstance(txt, str) and txt:
