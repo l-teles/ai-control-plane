@@ -219,44 +219,46 @@ def extract_searchable_text(jsonl_path: Path) -> str:
                 t = evt.get("type", "")
                 if t not in ("user", "assistant", "summary"):
                     continue
+
+                # Helper: append only when value is a usable string.
+                # A malformed transcript with ``{"text": null}`` /
+                # ``{"text": 42}`` would otherwise crash ``len(txt)``
+                # below and break FTS indexing for the entire session.
+                def _append(value: object) -> None:
+                    nonlocal total
+                    if isinstance(value, str) and value:
+                        parts.append(value)
+                        total += len(value)
+
                 if t == "summary":
-                    s = evt.get("summary", "") or ""
-                    if s:
-                        parts.append(s)
-                        total += len(s)
+                    _append(evt.get("summary"))
                     continue
-                msg = evt.get("message") or {}
+                msg = evt.get("message")
+                if not isinstance(msg, dict):
+                    continue
                 content = msg.get("content", "")
                 if isinstance(content, str):
-                    parts.append(content)
-                    total += len(content)
+                    _append(content)
                 elif isinstance(content, list):
                     for b in content:
                         if not isinstance(b, dict):
                             continue
                         bt = b.get("type")
                         if bt == "text":
-                            txt = b.get("text", "") or ""
-                            parts.append(txt)
-                            total += len(txt)
+                            _append(b.get("text"))
                         elif bt == "thinking":
-                            txt = b.get("thinking", "") or ""
-                            parts.append(txt)
-                            total += len(txt)
+                            _append(b.get("thinking"))
                         elif bt == "tool_result":
                             # Tool output text — useful for searches like
                             # "where did `npm install` fail?".  We skip
                             # nested image / structured blocks.
                             tc = b.get("content", "")
                             if isinstance(tc, str):
-                                parts.append(tc)
-                                total += len(tc)
+                                _append(tc)
                             elif isinstance(tc, list):
                                 for inner in tc:
                                     if isinstance(inner, dict) and inner.get("type") == "text":
-                                        txt = inner.get("text", "") or ""
-                                        parts.append(txt)
-                                        total += len(txt)
+                                        _append(inner.get("text"))
     except OSError:
         return ""
     text = "\n".join(parts)[:_FTS_CONTENT_LIMIT]
@@ -352,10 +354,15 @@ def _first_metadata(jsonl_path: Path) -> dict:
                         meta["model"] = msg["model"]
 
                 if evt.get("type") == "user" and not first_user_content:
-                    content = evt.get("message", {}).get("content", "")
+                    _msg = evt.get("message")
+                    content = _msg.get("content", "") if isinstance(_msg, dict) else ""
                     if isinstance(content, list):
                         # Extract text from content blocks
-                        parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+                        parts = [
+                            b["text"]
+                            for b in content
+                            if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)
+                        ]
                         content = " ".join(parts)
                     if isinstance(content, str) and content:
                         _, user_text = _split_xml_and_text(content)
@@ -699,7 +706,8 @@ def extract_workspace(events: list[dict]) -> dict:
         # Updated_at will be set from last event
         ws["updated_at"] = evt.get("timestamp", ws.get("updated_at", ""))
         if evt.get("type") == "user" and not first_user_content:
-            content = evt.get("message", {}).get("content", "")
+            _msg = evt.get("message")
+            content = _msg.get("content", "") if isinstance(_msg, dict) else ""
             if isinstance(content, list):
                 parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
                 content = " ".join(parts)
@@ -1056,7 +1064,8 @@ def build_conversation(
                     )
 
         elif etype == "system":
-            content = evt.get("message", {}).get("content", "")
+            _msg = evt.get("message")
+            content = _msg.get("content", "") if isinstance(_msg, dict) else ""
             if isinstance(content, list):
                 content = " ".join(
                     b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
@@ -1153,7 +1162,8 @@ def compute_stats(events: list[dict]) -> dict:
         etype = evt.get("type", "")
 
         if etype == "user" and not evt.get("isMeta"):
-            content = evt.get("message", {}).get("content", "")
+            _msg = evt.get("message")
+            content = _msg.get("content", "") if isinstance(_msg, dict) else ""
             if isinstance(content, str) and content and not content.startswith("<"):
                 stats["user_messages"] += 1
                 stats["turns"] += 1

@@ -36,12 +36,13 @@ def _ms_to_iso(ms: int | float) -> str:
 def _extract_model(request: dict) -> str:
     """Extract a human-readable model name from a VS Code Chat request."""
     model_id = request.get("modelId", "")
-    if model_id:
+    if isinstance(model_id, str) and model_id:
         # Strip provider prefix: "copilot/claude-sonnet-4" -> "claude-sonnet-4"
         return model_id.split("/", 1)[-1] if "/" in model_id else model_id
 
-    details = request.get("result", {}).get("details", "")
-    if details:
+    result = request.get("result")
+    details = result.get("details", "") if isinstance(result, dict) else ""
+    if isinstance(details, str) and details:
         # "Claude Sonnet 4 . 1x" -> take first part
         return details.split("\u2022")[0].strip().split(" . ")[0].strip()
     return ""
@@ -49,8 +50,9 @@ def _extract_model(request: dict) -> str:
 
 def _extract_cost_multiplier(request: dict) -> str:
     """Extract cost multiplier from result.details (e.g. 'Claude Haiku 4.5 . 0.33x')."""
-    details = request.get("result", {}).get("details", "")
-    if not details:
+    result = request.get("result")
+    details = result.get("details", "") if isinstance(result, dict) else ""
+    if not isinstance(details, str) or not details:
         return ""
     # Look for pattern like "0.33x" or "1x"
     parts = details.split("\u2022")
@@ -71,7 +73,7 @@ _AGENT_MODE_MAP = {
 
 def _agent_mode_label(agent_id: str) -> str:
     """Map a VS Code agent ID to a human-readable mode label."""
-    if not agent_id:
+    if not isinstance(agent_id, str) or not agent_id:
         return ""
     suffix = agent_id.rsplit(".", 1)[-1].lower()
     return _AGENT_MODE_MAP.get(suffix, suffix.title() if suffix else "")
@@ -256,23 +258,33 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
         return None
 
     session_id = data.get("sessionId", "")
-    if not session_id:
+    if not isinstance(session_id, str) or not session_id:
         return None
 
     requests = data.get("requests", [])
-    if not requests:
+    if not isinstance(requests, list) or not requests:
         return None
 
-    # Summary: prefer customTitle, then first user message
+    # Summary: prefer customTitle, then first user message.  Each ``.get``
+    # on the way is defended because a malformed transcript or stub
+    # session can put non-dict / non-string values at any layer.
     summary = data.get("customTitle", "")
+    if not isinstance(summary, str):
+        summary = ""
     if not summary and requests:
-        summary = (requests[0].get("message", {}).get("text", "") or "")[:120]
+        first = requests[0] if isinstance(requests[0], dict) else {}
+        msg = first.get("message")
+        text = msg.get("text", "") if isinstance(msg, dict) else ""
+        if isinstance(text, str):
+            summary = text[:120]
     if not summary:
         summary = session_id
 
     # Model from first request
     model = ""
     for req in requests:
+        if not isinstance(req, dict):
+            continue
         model = _extract_model(req)
         if model:
             break
@@ -280,10 +292,21 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
     created_at = _ms_to_iso(data.get("creationDate", 0))
     updated_at = _ms_to_iso(data.get("lastMessageDate", 0)) or created_at
 
-    # Check if any request hit the tool call limit
-    max_tool_calls_exceeded = any(
-        req.get("result", {}).get("metadata", {}).get("maxToolCallsExceeded", False) for req in requests
-    )
+    # Check if any request hit the tool call limit. Each layer is
+    # type-checked so a non-dict ``result`` / ``metadata`` doesn't crash
+    # the discover pass.
+    def _hit_tool_limit(req: object) -> bool:
+        if not isinstance(req, dict):
+            return False
+        result = req.get("result")
+        if not isinstance(result, dict):
+            return False
+        metadata = result.get("metadata")
+        if not isinstance(metadata, dict):
+            return False
+        return bool(metadata.get("maxToolCallsExceeded", False))
+
+    max_tool_calls_exceeded = any(_hit_tool_limit(r) for r in requests)
 
     try:
         source_mtime = path.stat().st_mtime
@@ -395,24 +418,31 @@ def extract_workspace(events: list[dict]) -> dict:
     """Synthesize a workspace-like dict from VS Code Chat events."""
     ws: dict = {}
 
-    meta = events[0] if events and events[0].get("_vscode_meta") else {}
-    ws["id"] = meta.get("sessionId", "")
-    ws["cwd"] = meta.get("cwd", "")
+    meta = events[0] if events and isinstance(events[0], dict) and events[0].get("_vscode_meta") else {}
+    ws["id"] = meta.get("sessionId", "") if isinstance(meta, dict) else ""
+    ws["cwd"] = meta.get("cwd", "") if isinstance(meta, dict) else ""
     ws["branch"] = ""
-    ws["created_at"] = _ms_to_iso(meta.get("creationDate", 0))
-    ws["updated_at"] = _ms_to_iso(meta.get("lastMessageDate", 0)) or ws["created_at"]
+    ws["created_at"] = _ms_to_iso(meta.get("creationDate", 0)) if isinstance(meta, dict) else ""
+    ws["updated_at"] = (
+        _ms_to_iso(meta.get("lastMessageDate", 0)) if isinstance(meta, dict) else ""
+    ) or ws["created_at"]
 
     # Model and summary from requests
-    requests = [e for e in events if not e.get("_vscode_meta")]
+    requests = [e for e in events if isinstance(e, dict) and not e.get("_vscode_meta")]
     for req in requests:
         model = _extract_model(req)
         if model:
             ws["model"] = model
             break
 
-    summary = meta.get("customTitle", "")
+    summary = meta.get("customTitle", "") if isinstance(meta, dict) else ""
+    if not isinstance(summary, str):
+        summary = ""
     if not summary and requests:
-        summary = (requests[0].get("message", {}).get("text", "") or "")[:120]
+        msg = requests[0].get("message")
+        text = msg.get("text", "") if isinstance(msg, dict) else ""
+        if isinstance(text, str):
+            summary = text[:120]
     ws["summary"] = summary or ws["id"]
 
     return ws

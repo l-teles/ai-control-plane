@@ -314,9 +314,13 @@ def render_ask_user_question(tool_input: dict, result: str) -> dict:
 
 
 def render_todowrite(tool_input: dict, result: str) -> dict:
-    todos = tool_input.get("todos") or []
-    if not isinstance(todos, list):
-        todos = []
+    raw_todos = tool_input.get("todos") or []
+    if not isinstance(raw_todos, list):
+        raw_todos = []
+    # Filter to dict items only — the template calls ``t.get("status")``
+    # / ``t.get("content")`` and would crash on a non-dict (int, str,
+    # None) entry from a malformed transcript.
+    todos = [t for t in raw_todos if isinstance(t, dict)]
     return {
         "tool": "TodoWrite",
         "title": f"{len(todos)} task{'s' if len(todos) != 1 else ''}",

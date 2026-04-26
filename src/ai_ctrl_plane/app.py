@@ -116,7 +116,14 @@ def _filter_by_date_range(sessions: list[dict], date_from: str, date_to: str) ->
         return sessions
     out: list[dict] = []
     for s in sessions:
-        created = (s.get("created_at") or "")[:10]  # YYYY-MM-DD prefix
+        raw = s.get("created_at")
+        # Best-effort: if ``created_at`` isn't a string (malformed cached
+        # row or unusual session source), keep the session in the result
+        # rather than silently dropping it from view.
+        if not isinstance(raw, str):
+            out.append(s)
+            continue
+        created = raw[:10]  # YYYY-MM-DD prefix
         if not created:
             out.append(s)
             continue

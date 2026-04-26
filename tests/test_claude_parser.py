@@ -727,6 +727,64 @@ def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) 
     assert extract_searchable_text(tmp_path / "nope.jsonl") == ""
 
 
+def test_extract_searchable_text_skips_non_string_block_values(tmp_path: Path) -> None:
+    """A malformed transcript with ``{"text": null}``, ``{"thinking": 42}``,
+    or non-string ``tool_result.content`` would crash ``len()`` / ``join``
+    and break FTS indexing for the entire session. Each non-string value
+    must be skipped silently. Regression for PR #27 review #33."""
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    events = [
+        # User message with a mix of valid and malformed text blocks.
+        _make_user_event(
+            [
+                {"type": "text", "text": "user_visible"},
+                {"type": "text", "text": None},
+                {"type": "text", "text": 42},
+            ],
+            uuid="u1",
+        ),
+        # Assistant with malformed thinking / text + a tool_use we ignore.
+        _make_assistant_event(
+            [
+                {"type": "thinking", "thinking": None},
+                {"type": "thinking", "thinking": "internal_reasoning"},
+                {"type": "thinking", "thinking": ["bad"]},
+                {"type": "text", "text": "assistant_visible"},
+            ],
+            uuid="a1",
+        ),
+        # Malformed tool_result with non-string content + non-string text in inner blocks.
+        _make_user_event(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tu1",
+                    "content": [
+                        {"type": "text", "text": "tool_visible"},
+                        {"type": "text", "text": None},
+                        {"type": "text", "text": ["bad"]},
+                    ],
+                },
+                {"type": "tool_result", "tool_use_id": "tu2", "content": 42},  # bad content type
+            ],
+            uuid="u2",
+        ),
+        # Malformed summary entry.
+        {"type": "summary", "summary": None, "leafUuid": "u1"},
+    ]
+    _write_jsonl(jsonl, events)
+
+    # No raise — only the string-typed payloads end up in the index.
+    text = extract_searchable_text(jsonl)
+    assert "user_visible" in text
+    assert "internal_reasoning" in text
+    assert "assistant_visible" in text
+    assert "tool_visible" in text
+
+
 def test_summary_entry_overrides_first_user_message_in_session_list(tmp_path: Path) -> None:
     """When Claude auto-generated a `summary` entry for a session, the most
     recent one should be used as the session label rather than the first

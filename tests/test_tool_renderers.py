@@ -328,6 +328,32 @@ def test_renderers_defend_non_string_tool_input_fields() -> None:
         assert rendered["tool"] == tool
 
 
+def test_todowrite_renderer_filters_non_dict_items() -> None:
+    """The template calls ``t.get('status')`` / ``t.get('content')`` on
+    each todo, which crashes on ints / strings / None from a malformed
+    transcript. Filter to dict items only. Regression for PR #27
+    review #34."""
+    rendered = render_tool(
+        "TodoWrite",
+        {
+            "todos": [
+                {"content": "real task", "status": "pending"},
+                "not a dict",
+                42,
+                None,
+                {"content": "another task", "status": "completed"},
+            ]
+        },
+        "",
+    )
+    # Only the two dict items survive.
+    assert len(rendered["todos"]) == 2
+    assert rendered["todos"][0]["content"] == "real task"
+    assert rendered["todos"][1]["content"] == "another task"
+    # Title reflects the post-filter count, not the raw count.
+    assert rendered["title"] == "2 tasks"
+
+
 def test_render_tool_dispatcher_coerces_non_dict_input() -> None:
     """``render_tool`` itself must defend the dispatcher boundary —
     a non-dict ``tool_input`` (e.g. list / str / None from a malformed

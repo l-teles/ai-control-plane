@@ -311,6 +311,17 @@ class CacheDB:
         content_by_id = {
             f"{s['source']}:{s['id']}": _extract_session_content(s) for s in sessions
         }
+
+        def _str(value: object, default: str = "") -> str:
+            """Coerce defensively — discover_sessions normalises most
+            fields, but a malformed cached row or test fixture could put
+            a non-string in any of these slots and crash ``.replace`` /
+            SQLite's adapter."""
+            return value if isinstance(value, str) else default
+
+        def _num(value: object, default: float = 0) -> float | int:
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+
         with self._lock:
             self._conn.executemany(
                 "INSERT OR REPLACE INTO sessions "
@@ -321,19 +332,19 @@ class CacheDB:
                 [
                     (
                         f"{s['source']}:{s['id']}",
-                        s.get("source", ""),
-                        s.get("id", ""),
-                        s.get("summary", ""),
-                        s.get("created_at", ""),
-                        s.get("cwd", "").replace("\\", "/"),
-                        s.get("model", ""),
-                        s.get("input_tokens", 0),
-                        s.get("output_tokens", 0),
-                        s.get("cache_read_tokens", 0),
-                        s.get("cache_creation_tokens", 0),
-                        s.get("estimated_cost", 0),
-                        s.get("source_path", ""),
-                        s.get("source_mtime", 0.0),
+                        _str(s.get("source")),
+                        _str(s.get("id")),
+                        _str(s.get("summary")),
+                        _str(s.get("created_at")),
+                        _str(s.get("cwd")).replace("\\", "/"),
+                        _str(s.get("model")),
+                        _num(s.get("input_tokens"), 0),
+                        _num(s.get("output_tokens"), 0),
+                        _num(s.get("cache_read_tokens"), 0),
+                        _num(s.get("cache_creation_tokens"), 0),
+                        _num(s.get("estimated_cost"), 0),
+                        _str(s.get("source_path")),
+                        _num(s.get("source_mtime"), 0.0),
                         json.dumps(s, default=str),
                     )
                     for s in sessions
