@@ -14,8 +14,11 @@ def test_runner_creates_tables_on_fresh_db(tmp_path: Path) -> None:
     applied = run_migrations(conn)
     assert "001" in applied
     assert "002" in applied
+    assert "003" in applied
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert {"sessions", "projects", "project_memory", "tool_configs", "cache_meta", "schema_migrations"} <= tables
+    # FTS5 virtual table exists alongside the regular tables.
+    assert "sessions_fts" in tables
     conn.close()
 
 
@@ -56,13 +59,14 @@ def test_legacy_db_with_cache_meta_version_skips_initial_migration(tmp_path: Pat
     # later migrations should still apply.
     assert "001" not in applied
     assert "002" in applied
+    assert "003" in applied
     versions = {r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
-    assert versions == {"001", "002"}
+    assert versions == {"001", "002", "003"}
     conn.close()
 
 
 def test_cache_db_exposes_schema_version(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "v.db")
-    assert db.schema_version == "002"
-    assert db.cache_status()["version"] == "002"
+    assert db.schema_version == "003"
+    assert db.cache_status()["version"] == "003"
     db.close()

@@ -56,6 +56,72 @@ _BACKUP_HASH_RE = re.compile(r"^[0-9a-f]{16}-\d{13}$")
 _PROJECT_NAME_RE = re.compile(r"^[-a-zA-Z0-9_.: ]+$")
 
 
+def _parse_natural_date(text: str) -> str:
+    """Convert a free-form date string into ISO ``YYYY-MM-DD``.
+
+    Recognises explicit ``YYYY-MM-DD`` plus a small set of common phrases
+    (``today``, ``yesterday``, ``last week``, ``last month``, ``N days ago``,
+    ``N weeks ago``).  Returns an empty string when the input doesn't
+    match — the caller treats that as "no constraint" rather than an error.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    text = (text or "").strip().lower()
+    if not text:
+        return ""
+
+    # Already ISO YYYY-MM-DD
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+        return text
+
+    today = datetime.now(UTC).date()
+    if text == "today":
+        return today.isoformat()
+    if text == "yesterday":
+        return (today - timedelta(days=1)).isoformat()
+    if text == "last week":
+        return (today - timedelta(days=7)).isoformat()
+    if text == "last month":
+        return (today - timedelta(days=30)).isoformat()
+
+    m = re.match(r"^(\d{1,4})\s+days?\s+ago$", text)
+    if m:
+        return (today - timedelta(days=int(m.group(1)))).isoformat()
+    m = re.match(r"^(\d{1,3})\s+weeks?\s+ago$", text)
+    if m:
+        return (today - timedelta(weeks=int(m.group(1)))).isoformat()
+    m = re.match(r"^(\d{1,3})\s+months?\s+ago$", text)
+    if m:
+        return (today - timedelta(days=int(m.group(1)) * 30)).isoformat()
+    return ""
+
+
+def _filter_by_date_range(sessions: list[dict], date_from: str, date_to: str) -> list[dict]:
+    """Filter *sessions* by ``created_at`` falling within an inclusive date range.
+
+    Either bound may be empty (open-ended).  Bounds parse via
+    :func:`_parse_natural_date` so the caller can hand through whatever
+    the user typed.  Sessions whose ``created_at`` doesn't parse keep
+    showing — the filter is best-effort.
+    """
+    iso_from = _parse_natural_date(date_from) if date_from else ""
+    iso_to = _parse_natural_date(date_to) if date_to else ""
+    if not iso_from and not iso_to:
+        return sessions
+    out: list[dict] = []
+    for s in sessions:
+        created = (s.get("created_at") or "")[:10]  # YYYY-MM-DD prefix
+        if not created:
+            out.append(s)
+            continue
+        if iso_from and created < iso_from:
+            continue
+        if iso_to and created > iso_to:
+            continue
+        out.append(s)
+    return out
+
+
 def _validate_session_id(session_id: str) -> None:
     if not _UUID_RE.match(session_id):
         abort(400, description="Invalid session ID format")
@@ -344,7 +410,18 @@ def create_app(
     @app.route("/sessions")
     def sessions_view():
         force = request.args.get("refresh") == "1"
-        sessions, _ = _build_session_index(force=force)
+        q = (request.args.get("q") or "").strip()[:200]
+        date_from = (request.args.get("from") or "").strip()[:32]
+        date_to = (request.args.get("to") or "").strip()[:32]
+
+        if q:
+            sessions = db.search_sessions(q)
+        else:
+            sessions, _ = _build_session_index(force=force)
+
+        if date_from or date_to:
+            sessions = _filter_by_date_range(sessions, date_from, date_to)
+
         copilot_count = sum(1 for s in sessions if s.get("source") == "copilot")
         claude_count = sum(1 for s in sessions if s.get("source") == "claude")
         vscode_count = sum(1 for s in sessions if s.get("source") == "vscode")
@@ -357,7 +434,17 @@ def create_app(
             copilot_count=copilot_count,
             claude_count=claude_count,
             vscode_count=vscode_count,
+            search_query=q,
+            date_from=date_from,
+            date_to=date_to,
         )
+
+    @app.route("/api/search")
+    def api_search():
+        q = (request.args.get("q") or "").strip()[:200]
+        if not q:
+            return jsonify([])
+        return jsonify(db.search_sessions(q))
 
     @app.route("/session/<session_id>")
     def session_view(session_id: str):

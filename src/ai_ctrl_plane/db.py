@@ -133,7 +133,83 @@ class CacheDB:
         with self._lock:
             for tbl in ("project_memory", "sessions", "projects", "tool_configs"):
                 self._conn.execute(f"DELETE FROM {tbl}")  # noqa: S608
+            self._conn.execute("DELETE FROM sessions_fts")
             self._conn.commit()
+
+    def _index_sessions_fts(self, sessions: list[dict]) -> None:
+        """Insert/replace each session in the FTS index.
+
+        Called from :meth:`insert_sessions` so the index stays in sync
+        with the canonical ``sessions`` table.  Uses ``DELETE`` + ``INSERT``
+        rather than ``INSERT OR REPLACE`` because FTS5 contentless tables
+        don't support replace semantics.
+        """
+        ids = [f"{s['source']}:{s['id']}" for s in sessions]
+        self._conn.executemany("DELETE FROM sessions_fts WHERE session_id = ?", [(i,) for i in ids])
+        self._conn.executemany(
+            "INSERT INTO sessions_fts (session_id, summary, cwd, model, first_user_message) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                (
+                    f"{s['source']}:{s['id']}",
+                    s.get("summary", "") or "",
+                    s.get("cwd", "") or "",
+                    s.get("model", "") or "",
+                    s.get("first_user_content", "") or "",
+                )
+                for s in sessions
+            ],
+        )
+
+    def search_sessions(self, query: str, *, limit: int = 50) -> list[dict]:
+        """Run a full-text search against indexed sessions.
+
+        Returns full session rows (raw_json decoded) ranked by FTS5
+        relevance.  Uses ``MATCH`` with the query as-is — callers should
+        validate / sanitise on the route boundary if accepting untrusted
+        input.  An empty query returns an empty list.
+        """
+        query = (query or "").strip()
+        if not query:
+            return []
+        with self._lock:
+            try:
+                rows = self._conn.execute(
+                    "SELECT s.raw_json FROM sessions s "
+                    "JOIN sessions_fts f ON s.id = f.session_id "
+                    "WHERE sessions_fts MATCH ? "
+                    "ORDER BY rank LIMIT ?",
+                    (query, limit),
+                ).fetchall()
+                return [json.loads(r["raw_json"]) for r in rows]
+            except sqlite3.OperationalError:
+                # Malformed FTS query (e.g. bare quote) — fall back to a
+                # word-level LIKE search so the caller still gets *some*
+                # answer rather than a 500.  One static query per word,
+                # results unioned in Python (avoids dynamic SQL).
+                import re as _re
+
+                words = _re.findall(r"\w+", query)
+                if not words:
+                    return []
+                results: list[dict] = []
+                seen_ids: set[str] = set()
+                for w in words:
+                    pat = "%" + _escape_like(w) + "%"
+                    rows = self._conn.execute(
+                        "SELECT id, raw_json FROM sessions "
+                        "WHERE summary LIKE ? ESCAPE '\\' OR cwd LIKE ? ESCAPE '\\' "
+                        "ORDER BY created DESC LIMIT ?",
+                        (pat, pat, limit),
+                    ).fetchall()
+                    for r in rows:
+                        if r["id"] in seen_ids:
+                            continue
+                        seen_ids.add(r["id"])
+                        results.append(json.loads(r["raw_json"]))
+                        if len(results) >= limit:
+                            return results
+                return results
 
     def insert_sessions(self, sessions: list[dict]) -> None:
         with self._lock:
@@ -164,6 +240,7 @@ class CacheDB:
                     for s in sessions
                 ],
             )
+            self._index_sessions_fts(sessions)
             self._conn.commit()
 
     def get_session_anchors(self) -> dict[str, tuple[str, float]]:
@@ -182,6 +259,7 @@ class CacheDB:
             return
         with self._lock:
             self._conn.executemany("DELETE FROM sessions WHERE id = ?", [(sid,) for sid in ids])
+            self._conn.executemany("DELETE FROM sessions_fts WHERE session_id = ?", [(sid,) for sid in ids])
             self._conn.commit()
 
     def insert_projects(self, projects: list[dict]) -> None:
@@ -429,6 +507,17 @@ def build_cache(
         raise
 
 
+def _safe_thread_target(fn, *args, **kwargs) -> None:
+    """Wrap a background-thread target so a closed-DB at process / test
+    teardown doesn't raise on stderr — the thread just exits."""
+    try:
+        fn(*args, **kwargs)
+    except sqlite3.ProgrammingError:
+        # DB closed underneath us (typical in tests). Status writes already
+        # swallow this; the build path may still hit it via other queries.
+        pass
+
+
 def start_background_build(
     cache: CacheDB,
     copilot_path: Path,
@@ -440,8 +529,8 @@ def start_background_build(
     # Set status synchronously to prevent double-start races
     cache.set_meta("status", "building")
     t = threading.Thread(
-        target=build_cache,
-        args=(cache, copilot_path, claude_path, vscode_path),
+        target=_safe_thread_target,
+        args=(build_cache, cache, copilot_path, claude_path, vscode_path),
         kwargs={"desktop_path": desktop_path},
         daemon=True,
         name="cache-builder",
@@ -570,8 +659,8 @@ def start_background_refresh(
     """Start incremental refresh in a daemon thread."""
     cache.set_meta("status", "refreshing")
     t = threading.Thread(
-        target=refresh_cache,
-        args=(cache, copilot_path, claude_path, vscode_path),
+        target=_safe_thread_target,
+        args=(refresh_cache, cache, copilot_path, claude_path, vscode_path),
         kwargs={"desktop_path": desktop_path},
         daemon=True,
         name="cache-refresher",

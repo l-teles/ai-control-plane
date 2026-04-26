@@ -201,6 +201,101 @@ def test_cache_status_dict(tmp_path: Path) -> None:
     db.close()
 
 
+def test_search_sessions_finds_by_summary_token(tmp_path: Path) -> None:
+    db = CacheDB(tmp_path / "test.db")
+    db.insert_sessions(
+        [
+            {
+                "source": "claude",
+                "id": "11111111-2222-3333-4444-555555555555",
+                "summary": "Refactor authentication module to use JWT",
+                "cwd": "/repo/auth",
+                "model": "claude-opus-4-6",
+                "first_user_content": "I want to refactor auth",
+            },
+            {
+                "source": "copilot",
+                "id": "22222222-3333-4444-5555-666666666666",
+                "summary": "Add unit tests for parser",
+                "cwd": "/repo/parser",
+                "model": "gpt-4",
+                "first_user_content": "Need tests",
+            },
+        ]
+    )
+    hits = db.search_sessions("authentication")
+    assert len(hits) == 1
+    assert hits[0]["summary"].startswith("Refactor authentication")
+    db.close()
+
+
+def test_search_sessions_returns_relevance_order(tmp_path: Path) -> None:
+    db = CacheDB(tmp_path / "test.db")
+    db.insert_sessions(
+        [
+            {
+                "source": "claude",
+                "id": "aaaaaaaa-1111-2222-3333-444444444444",
+                "summary": "auth auth auth tokens",
+                "cwd": "",
+                "first_user_content": "",
+            },
+            {
+                "source": "claude",
+                "id": "bbbbbbbb-1111-2222-3333-444444444444",
+                "summary": "mention of auth, but mostly about parsing",
+                "cwd": "",
+                "first_user_content": "",
+            },
+        ]
+    )
+    hits = db.search_sessions("auth")
+    # Both match; the one with denser term frequency should rank first.
+    assert len(hits) == 2
+    assert hits[0]["summary"].startswith("auth auth auth")
+
+
+def test_search_sessions_empty_query_returns_empty(tmp_path: Path) -> None:
+    db = CacheDB(tmp_path / "test.db")
+    db.insert_sessions(
+        [{"source": "claude", "id": "x-1-2-3-4", "summary": "x", "cwd": "", "first_user_content": ""}]
+    )
+    assert db.search_sessions("") == []
+    assert db.search_sessions("   ") == []
+    db.close()
+
+
+def test_search_sessions_falls_back_on_invalid_fts_query(tmp_path: Path) -> None:
+    """A query that fails FTS5 parsing (e.g. a stray quote) should still
+    return results via a LIKE fallback, not raise."""
+    db = CacheDB(tmp_path / "test.db")
+    db.insert_sessions(
+        [
+            {
+                "source": "claude",
+                "id": "c-1-2-3-4",
+                "summary": "Working with regex patterns",
+                "cwd": "",
+                "first_user_content": "",
+            },
+        ]
+    )
+    hits = db.search_sessions('regex "')
+    assert any("regex" in h["summary"] for h in hits)
+    db.close()
+
+
+def test_delete_session_removes_from_fts(tmp_path: Path) -> None:
+    db = CacheDB(tmp_path / "test.db")
+    db.insert_sessions(
+        [{"source": "claude", "id": "d-1-2-3-4", "summary": "deletable", "cwd": "", "first_user_content": ""}]
+    )
+    assert db.search_sessions("deletable")
+    db.delete_sessions(["claude:d-1-2-3-4"])
+    assert db.search_sessions("deletable") == []
+    db.close()
+
+
 def test_clear_all(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "test.db")
     db.insert_sessions([{"source": "claude", "id": "a-b-c-d-e", "summary": "x", "created_at": "", "cwd": ""}])

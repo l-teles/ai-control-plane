@@ -441,3 +441,124 @@ def test_all_three_sources(tmp_path: Path) -> None:
         data = r.get_json()
         sources = {s["source"] for s in data}
         assert sources == {"copilot", "claude", "vscode"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — search and date filtering
+# ---------------------------------------------------------------------------
+
+
+def test_natural_date_parser_iso_passthrough() -> None:
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    assert _parse_natural_date("2026-04-26") == "2026-04-26"
+
+
+def test_natural_date_parser_today_yesterday() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("today") == today.isoformat()
+    assert _parse_natural_date("yesterday") == (today - timedelta(days=1)).isoformat()
+
+
+def test_natural_date_parser_n_days_ago() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("3 days ago") == (today - timedelta(days=3)).isoformat()
+    assert _parse_natural_date("1 day ago") == (today - timedelta(days=1)).isoformat()
+
+
+def test_natural_date_parser_unrecognised_returns_empty() -> None:
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    assert _parse_natural_date("sometime in the future") == ""
+    assert _parse_natural_date("") == ""
+
+
+def test_filter_by_date_range_inclusive_on_both_bounds() -> None:
+    from ai_ctrl_plane.app import _filter_by_date_range
+
+    sessions = [
+        {"id": "a", "created_at": "2026-04-20T10:00:00Z"},
+        {"id": "b", "created_at": "2026-04-22T10:00:00Z"},
+        {"id": "c", "created_at": "2026-04-25T10:00:00Z"},
+    ]
+    out = _filter_by_date_range(sessions, "2026-04-21", "2026-04-23")
+    assert [s["id"] for s in out] == ["b"]
+
+
+def test_filter_by_date_range_open_ended() -> None:
+    from ai_ctrl_plane.app import _filter_by_date_range
+
+    sessions = [
+        {"id": "a", "created_at": "2026-04-20T10:00:00Z"},
+        {"id": "b", "created_at": "2026-04-25T10:00:00Z"},
+    ]
+    out = _filter_by_date_range(sessions, "2026-04-22", "")
+    assert [s["id"] for s in out] == ["b"]
+    out = _filter_by_date_range(sessions, "", "2026-04-22")
+    assert [s["id"] for s in out] == ["a"]
+
+
+def test_search_route_uses_fts_index(tmp_path: Path) -> None:
+    """A GET to /sessions?q=… runs through ``db.search_sessions`` (FTS) and
+    only the matching session is rendered."""
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid_a = "11111111-aaaa-aaaa-aaaa-111111111111"
+    sid_b = "22222222-bbbb-bbbb-bbbb-222222222222"
+    for sid, summary in [(sid_a, "refactor authentication"), (sid_b, "fix the cache layer")]:
+        with open(project_dir / f"{sid}.jsonl", "w") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "uuid": "u1",
+                        "sessionId": sid,
+                        "timestamp": "2026-04-26T10:00:00Z",
+                        "cwd": "/repo",
+                        "version": "2.1",
+                        "gitBranch": "main",
+                        "message": {"role": "user", "content": summary},
+                    }
+                )
+                + "\n"
+            )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        # First, hit /sessions to populate the cache (build runs in
+        # background — we may need a small synchronous nudge).
+        c.get("/sessions")
+        # Force a cache build so search has data to hit.
+        from ai_ctrl_plane.db import build_cache
+
+        build_cache(
+            app.config["cache_db"],
+            tmp_path / "copilot",
+            tmp_path / "claude_logs",
+            tmp_path / "vscode",
+        )
+        r = c.get("/api/search?q=authentication")
+        assert r.status_code == 200
+        results = r.get_json()
+        ids = {s["id"] for s in results}
+        assert sid_a in ids
+        assert sid_b not in ids
+
+
+def test_search_route_returns_empty_for_blank_query(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "c", tmp_path / "cl", tmp_path / "v", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+    with app.test_client() as cl:
+        r = cl.get("/api/search?q=   ")
+        assert r.status_code == 200
+        assert r.get_json() == []
