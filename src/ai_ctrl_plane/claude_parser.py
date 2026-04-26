@@ -756,12 +756,28 @@ def build_conversation(
     for evt in events:
         if evt.get("type") != "assistant":
             continue
-        for block in evt.get("message", {}).get("content", []) or []:
+        # Defend ``message`` and ``content`` shapes too — a malformed
+        # transcript could have either as a non-dict / non-list and we
+        # don't want a per-event TypeError to tank the whole render.
+        msg = evt.get("message")
+        if not isinstance(msg, dict):
+            continue
+        blocks = msg.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 tu_id = block.get("id", "")
-                if tu_id:
-                    tool_name_by_id[tu_id] = block.get("name", "unknown")
-                    tool_input_by_id[tu_id] = block.get("input", {}) or {}
+                if not isinstance(tu_id, str) or not tu_id:
+                    continue
+                name = block.get("name", "unknown")
+                tool_name_by_id[tu_id] = name if isinstance(name, str) else "unknown"
+                # ``input`` is supposed to be the tool's structured args
+                # dict, but malformed / non-Anthropic MCP servers can
+                # emit lists or strings here. Coerce to ``{}`` so the
+                # renderer dispatcher gets the type it expects.
+                inp = block.get("input")
+                tool_input_by_id[tu_id] = inp if isinstance(inp, dict) else {}
 
     conversation: list[dict] = []
     subagent_tool_ids: set[str] = set()  # track Agent tool_use IDs

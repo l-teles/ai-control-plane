@@ -369,18 +369,31 @@ if (searchInput) {
   searchInput.addEventListener('input', function() {
     var q = this.value.trim();
     if (searchDebounce) clearTimeout(searchDebounce);
+    // Always cancel any in-flight request — whether we're firing a new
+    // one or clearing the box. Without this, a slow response that
+    // resolves AFTER the user cleared the input would set ``searchHits``
+    // to stale results and hide cards even though the search is empty.
+    if (searchInflight) {
+      searchInflight.abort();
+      searchInflight = null;
+    }
     if (q === '') {
       searchHits = '';
       applyFilters();
       return;
     }
     searchDebounce = setTimeout(function() {
-      if (searchInflight) searchInflight.abort();
       var ctrl = new AbortController();
       searchInflight = ctrl;
+      // Capture the query at fire time and verify it still matches the
+      // input at apply time — guards against fetches that resolve after
+      // the user typed more characters (the abort above handles the
+      // common case but request scheduling can still race).
+      var firedFor = q;
       fetch('/api/search?q=' + encodeURIComponent(q), {signal: ctrl.signal})
         .then(function(r) { return r.json(); })
         .then(function(results) {
+          if (searchInput.value.trim() !== firedFor) return;  // stale
           searchHits = new Set(results.map(function(s) { return s.source + ':' + s.id; }));
           applyFilters();
           searchInflight = null;

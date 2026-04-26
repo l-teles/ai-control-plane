@@ -45,6 +45,18 @@ def _truncate(text: str, limit: int = _PREVIEW_CHARS) -> tuple[str, bool]:
     return text[:limit], True
 
 
+def _coerce_str(value: Any, default: str = "") -> str:
+    """Defensive coercion to ``str``.
+
+    Renderers slice / strip / count on ``tool_input`` fields that are
+    *expected* to be strings (file_path, command, content, url, …) but
+    that come from arbitrary MCP tool payloads.  A renderer that
+    crashes on ``"foo".count('\\n')`` against ``None``/``int``/``list``
+    would tank the whole conversation render; coerce instead.
+    """
+    return value if isinstance(value, str) else default
+
+
 def _file_basename(path: str) -> str:
     if not path:
         return ""
@@ -125,9 +137,9 @@ def extract_images_from_result(result: Any) -> list[dict[str, str]]:
 
 
 def render_bash(tool_input: dict, result: str) -> dict:
-    cmd = (tool_input.get("command") or "").strip()
-    description = (tool_input.get("description") or "").strip()
-    output, truncated = _truncate(result or "")
+    cmd = _coerce_str(tool_input.get("command")).strip()
+    description = _coerce_str(tool_input.get("description")).strip()
+    output, truncated = _truncate(_coerce_str(result))
     return {
         "tool": "Bash",
         "title": cmd[:80] if cmd else "(empty command)",
@@ -140,10 +152,10 @@ def render_bash(tool_input: dict, result: str) -> dict:
 
 
 def render_read(tool_input: dict, result: str) -> dict:
-    path = tool_input.get("file_path") or ""
+    path = _coerce_str(tool_input.get("file_path"))
     offset = tool_input.get("offset")
     limit = tool_input.get("limit")
-    body, truncated = _truncate(result or "")
+    body, truncated = _truncate(_coerce_str(result))
     return {
         "tool": "Read",
         "title": _file_basename(path),
@@ -157,8 +169,8 @@ def render_read(tool_input: dict, result: str) -> dict:
 
 
 def render_write(tool_input: dict, result: str) -> dict:
-    path = tool_input.get("file_path") or ""
-    content = tool_input.get("content") or ""
+    path = _coerce_str(tool_input.get("file_path"))
+    content = _coerce_str(tool_input.get("content"))
     body, truncated = _truncate(content)
     return {
         "tool": "Write",
@@ -172,37 +184,38 @@ def render_write(tool_input: dict, result: str) -> dict:
 
 
 def render_edit(tool_input: dict, result: str) -> dict:
+    path = _coerce_str(tool_input.get("file_path"))
     return {
         "tool": "Edit",
-        "title": _file_basename(tool_input.get("file_path") or ""),
-        "subtitle": tool_input.get("file_path") or "",
-        "file_path": tool_input.get("file_path") or "",
-        "old_string": (tool_input.get("old_string") or "")[:_PREVIEW_CHARS],
-        "new_string": (tool_input.get("new_string") or "")[:_PREVIEW_CHARS],
+        "title": _file_basename(path),
+        "subtitle": path,
+        "file_path": path,
+        "old_string": _coerce_str(tool_input.get("old_string"))[:_PREVIEW_CHARS],
+        "new_string": _coerce_str(tool_input.get("new_string"))[:_PREVIEW_CHARS],
         "replace_all": bool(tool_input.get("replace_all")),
     }
 
 
 def render_grep(tool_input: dict, result: str) -> dict:
-    pattern = tool_input.get("pattern") or ""
-    path = tool_input.get("path") or ""
-    output, truncated = _truncate(result or "")
+    pattern = _coerce_str(tool_input.get("pattern"))
+    path = _coerce_str(tool_input.get("path"))
+    output, truncated = _truncate(_coerce_str(result))
     return {
         "tool": "Grep",
         "title": pattern[:60],
         "subtitle": f"in {path}" if path else "",
         "pattern": pattern,
         "path": path,
-        "glob": tool_input.get("glob") or "",
-        "type": tool_input.get("type") or "",
+        "glob": _coerce_str(tool_input.get("glob")),
+        "type": _coerce_str(tool_input.get("type")),
         "output": output,
         "truncated": truncated,
     }
 
 
 def render_glob(tool_input: dict, result: str) -> dict:
-    pat = tool_input.get("pattern") or ""
-    output, truncated = _truncate(result or "")
+    pat = _coerce_str(tool_input.get("pattern"))
+    output, truncated = _truncate(_coerce_str(result))
     matches: list[str] = []
     for line in output.splitlines():
         line = line.strip()
@@ -211,7 +224,7 @@ def render_glob(tool_input: dict, result: str) -> dict:
     return {
         "tool": "Glob",
         "title": pat,
-        "subtitle": tool_input.get("path") or "",
+        "subtitle": _coerce_str(tool_input.get("path")),
         "pattern": pat,
         "matches": matches,
         "match_count": len(matches),
@@ -220,10 +233,10 @@ def render_glob(tool_input: dict, result: str) -> dict:
 
 
 def render_webfetch(tool_input: dict, result: str) -> dict:
-    raw_url = tool_input.get("url") or ""
-    safe_url = sanitize_url(raw_url) if isinstance(raw_url, str) else ""
-    prompt = tool_input.get("prompt") or ""
-    body, truncated = _truncate(result or "")
+    raw_url = _coerce_str(tool_input.get("url"))
+    safe_url = sanitize_url(raw_url) if raw_url else ""
+    prompt = _coerce_str(tool_input.get("prompt"))
+    body, truncated = _truncate(_coerce_str(result))
     return {
         "tool": "WebFetch",
         "title": (safe_url or raw_url)[:80],  # title is text-only; show even unsafe URL
@@ -242,7 +255,7 @@ def render_webfetch(tool_input: dict, result: str) -> dict:
 
 
 def render_websearch(tool_input: dict, result: str) -> dict:
-    query = tool_input.get("query") or ""
+    query = _coerce_str(tool_input.get("query"))
     # Try to parse structured results from the result string. Claude
     # WebSearch typically returns a JSON-ish payload listing
     # ``{"title", "url", "snippet"}`` entries.
@@ -273,7 +286,7 @@ def render_websearch(tool_input: dict, result: str) -> dict:
                         )
         except (json.JSONDecodeError, TypeError):
             pass
-    body, truncated = _truncate(result or "")
+    body, truncated = _truncate(_coerce_str(result))
     return {
         "tool": "WebSearch",
         "title": query[:80],
@@ -286,7 +299,7 @@ def render_websearch(tool_input: dict, result: str) -> dict:
 
 
 def render_ask_user_question(tool_input: dict, result: str) -> dict:
-    question = tool_input.get("question") or tool_input.get("prompt") or ""
+    question = _coerce_str(tool_input.get("question")) or _coerce_str(tool_input.get("prompt"))
     options = tool_input.get("options") or tool_input.get("choices") or []
     if not isinstance(options, list):
         options = [str(options)]
@@ -296,12 +309,14 @@ def render_ask_user_question(tool_input: dict, result: str) -> dict:
         "subtitle": f"{len(options)} option{'s' if len(options) != 1 else ''}" if options else "",
         "question": question,
         "options": [str(o) for o in options],
-        "answer": (result or "").strip()[:500],
+        "answer": _coerce_str(result).strip()[:500],
     }
 
 
 def render_todowrite(tool_input: dict, result: str) -> dict:
     todos = tool_input.get("todos") or []
+    if not isinstance(todos, list):
+        todos = []
     return {
         "tool": "TodoWrite",
         "title": f"{len(todos)} task{'s' if len(todos) != 1 else ''}",
@@ -312,12 +327,12 @@ def render_todowrite(tool_input: dict, result: str) -> dict:
 
 def render_generic(tool_name: str, tool_input: dict, result: str) -> dict:
     """Fallback renderer for tools without a dedicated layout."""
-    body, truncated = _truncate(result or "")
+    body, truncated = _truncate(_coerce_str(result))
     title = ""
     for key in ("file_path", "path", "url", "command", "pattern", "query"):
         v = tool_input.get(key)
-        if v:
-            title = str(v)[:80]
+        if isinstance(v, str) and v:
+            title = v[:80]
             break
     return {
         "tool": tool_name,
@@ -344,12 +359,21 @@ _RENDERERS = {
 }
 
 
-def render_tool(tool_name: str, tool_input: dict, result: str) -> dict:
-    """Dispatch to a tool-specific renderer or fall through to generic."""
+def render_tool(tool_name: str, tool_input: Any, result: Any) -> dict:
+    """Dispatch to a tool-specific renderer or fall through to generic.
+
+    Coerces ``tool_input`` to a dict and ``result`` to a string defensively
+    — a malformed transcript could put a list/string/None in either slot,
+    and renderers assume both are well-typed.
+    """
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+    if not isinstance(result, str):
+        result = "" if result is None else str(result)
     fn = _RENDERERS.get(tool_name)
     if fn is None:
-        return render_generic(tool_name, tool_input or {}, result or "")
-    return fn(tool_input or {}, result or "")
+        return render_generic(tool_name, tool_input, result)
+    return fn(tool_input, result)
 
 
 def render_tool_result(result: Any) -> tuple[str, list[dict[str, str]]]:

@@ -293,6 +293,53 @@ def test_extract_images_handles_malformed_block_payload() -> None:
     assert images[0]["src"].startswith("data:image/png;base64,")
 
 
+def test_renderers_defend_non_string_tool_input_fields() -> None:
+    """Every renderer that takes a ``tool_input`` field must coerce
+    non-string values (None, int, list, dict) without raising. A
+    malformed transcript or quirky MCP tool can put unexpected types
+    in any field; renderers should fail soft. Sweep regression for
+    PR #27 review #27.
+    """
+    bad_input = {
+        "command": 42,
+        "description": ["not", "a", "string"],
+        "file_path": None,
+        "content": 123,
+        "old_string": [],
+        "new_string": {"x": 1},
+        "pattern": None,
+        "path": [],
+        "url": 5,
+        "prompt": None,
+        "query": [],
+        "question": {},
+        "options": "not-a-list-but-OK",
+        "todos": "also-not-a-list",
+    }
+
+    # Each of these used to crash on non-string fields. Now they all
+    # produce a structured dict with safe defaults and don't raise.
+    for tool in (
+        "Bash", "Read", "Write", "Edit", "Grep", "Glob",
+        "WebFetch", "WebSearch", "AskUserQuestion", "TodoWrite",
+    ):
+        rendered = render_tool(tool, bad_input, None)  # also non-string result
+        assert isinstance(rendered, dict)
+        assert rendered["tool"] == tool
+
+
+def test_render_tool_dispatcher_coerces_non_dict_input() -> None:
+    """``render_tool`` itself must defend the dispatcher boundary —
+    a non-dict ``tool_input`` (e.g. list / str / None from a malformed
+    transcript) should be coerced to ``{}`` rather than passed through
+    to a renderer that calls ``.get`` on it. Regression for PR #27
+    review #29."""
+    for bad_input in (None, [], "", 0, ["a", "b"]):
+        rendered = render_tool("Bash", bad_input, "")
+        assert rendered["tool"] == "Bash"
+        assert rendered["command"] == ""
+
+
 def test_websearch_renderer_handles_non_string_fields_in_payload() -> None:
     """A WebSearch JSON payload from a malformed/malicious MCP server
     might include non-string ``title`` / ``url`` / ``snippet`` values.
