@@ -77,6 +77,26 @@ def test_cache_db_exposes_schema_version(tmp_path: Path) -> None:
     db.close()
 
 
+def test_schema_version_orders_numerically_not_lexically(tmp_path: Path) -> None:
+    """``schema_version`` reads the highest applied migration; it must
+    sort by integer value of the version, not lexically — once we cross
+    ``999`` -> ``1000``, lex sort would pick ``999`` over ``1000``.
+    Regression for PR #27 review #22."""
+    db = CacheDB(tmp_path / "v.db")
+    # Inject a forged future migration row at version "1000" so we can
+    # verify the SQL ordering keeps it ahead of the lexically-greater
+    # but numerically-smaller "999".
+    db._conn.execute(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", ("999", "2026-01-01")
+    )
+    db._conn.execute(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", ("1000", "2026-02-01")
+    )
+    db._conn.commit()
+    assert db.schema_version == "1000"
+    db.close()
+
+
 def test_migration_files_sort_numerically_not_lexically() -> None:
     """If we ever cross 999 -> 1000, lexical sort would put 1000 before
     999 ("1" < "9"). The runner sorts by ``int(version)`` to stay

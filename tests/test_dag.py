@@ -113,3 +113,20 @@ def test_two_subagent_runs_are_separated() -> None:
     assert len(runs) == 2
     assert {e.uuid for e in runs[0]} == {"A1", "A2"}
     assert {e.uuid for e in runs[1]} == {"B1", "B2"}
+
+
+def test_find_sidechain_runs_handles_duplicate_uuids() -> None:
+    """``find_sidechain_runs`` must use identity-based dedup, same as
+    ``order_by_dag`` — a sidechain that reuses a UUID across distinct
+    entries (e.g. test fixtures) would otherwise drop later entries
+    silently. Regression for PR #27 review #24."""
+    main = _entry("M", timestamp="t1")
+    # Two distinct entries that happen to share the same uuid "S".
+    s_first = _entry("S", "M", timestamp="t2", is_sidechain=True)
+    s_second = _entry("S", "S", timestamp="t3", is_sidechain=True)
+    # No call to order_by_dag — we want to test the dedup logic
+    # directly without order_by_dag's identity-based pass interfering.
+    runs = find_sidechain_runs([main, s_first, s_second])
+    assert len(runs) == 1
+    # Both entries appear in the run despite the shared uuid.
+    assert len(runs[0]) == 2

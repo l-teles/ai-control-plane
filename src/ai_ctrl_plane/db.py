@@ -176,10 +176,17 @@ class CacheDB:
 
     @property
     def schema_version(self) -> str:
-        """Highest applied migration version (e.g. ``"002"``)."""
+        """Highest applied migration version (e.g. ``"002"``).
+
+        Sorts numerically (``CAST(version AS INTEGER)``) rather than
+        lexically — the column is TEXT but holds numeric strings, and
+        once a future migration crosses a digit-width boundary
+        (``"1000"`` vs ``"999"``) lexical ordering would lie.
+        """
         with self._lock:
             row = self._conn.execute(
-                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
+                "SELECT version FROM schema_migrations "
+                "ORDER BY CAST(version AS INTEGER) DESC LIMIT 1"
             ).fetchone()
         return row["version"] if row else ""
 

@@ -64,15 +64,21 @@ def _parse_natural_date(text: str) -> str:
     ``N weeks ago``).  Returns an empty string when the input doesn't
     match — the caller treats that as "no constraint" rather than an error.
     """
-    from datetime import UTC, datetime, timedelta
+    from datetime import UTC, date, datetime, timedelta
 
     text = (text or "").strip().lower()
     if not text:
         return ""
 
-    # Already ISO YYYY-MM-DD
+    # Already ISO YYYY-MM-DD — but only accept *real* calendar dates;
+    # ``2026-99-99`` matches the regex yet would compare nonsensically
+    # against real ``created_at`` strings in :func:`_filter_by_date_range`.
     if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
-        return text
+        try:
+            date.fromisoformat(text)
+            return text
+        except ValueError:
+            return ""
 
     today = datetime.now(UTC).date()
     if text == "today":

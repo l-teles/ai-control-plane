@@ -481,6 +481,21 @@ def test_natural_date_parser_unrecognised_returns_empty() -> None:
     assert _parse_natural_date("") == ""
 
 
+def test_natural_date_parser_rejects_invalid_calendar_dates() -> None:
+    """``2026-99-99`` matches the regex but isn't a real date; accepting
+    it would cause confusing filter behaviour because the lexical compare
+    in ``_filter_by_date_range`` would drop or include sessions arbitrarily.
+    Regression for PR #27 review #23."""
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    assert _parse_natural_date("2026-99-99") == ""
+    assert _parse_natural_date("2026-13-01") == ""  # invalid month
+    assert _parse_natural_date("2026-02-30") == ""  # Feb 30 doesn't exist
+    # Real dates still pass through.
+    assert _parse_natural_date("2026-04-26") == "2026-04-26"
+    assert _parse_natural_date("2024-02-29") == "2024-02-29"  # leap year
+
+
 def test_filter_by_date_range_inclusive_on_both_bounds() -> None:
     from ai_ctrl_plane.app import _filter_by_date_range
 

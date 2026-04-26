@@ -152,12 +152,15 @@ def find_sidechain_runs(entries: list[TranscriptEntry]) -> list[list[TranscriptE
             continue
         run: list[TranscriptEntry] = []
         stack: list[TranscriptEntry] = [e]
-        seen: set[str] = set()
+        # Identity-based dedup so a sidechain that happens to reuse a UUID
+        # (test fixtures, malformed input) doesn't silently drop later
+        # entries — same approach as ``order_by_dag`` for consistency.
+        seen: set[int] = set()
         while stack:
             node = stack.pop()
-            if node.uuid in seen:
+            if id(node) in seen:
                 continue
-            seen.add(node.uuid)
+            seen.add(id(node))
             if node.is_sidechain:
                 run.append(node)
                 stack.extend(reversed(children_of.get(node.uuid, [])))
