@@ -277,6 +277,69 @@ def test_reindex_missing_fts_backfills_after_index_drop(tmp_path: Path) -> None:
     assert sdir.exists()  # sanity
 
 
+def test_vscode_source_mtime_tracks_workspace_json_too(tmp_path: Path) -> None:
+    """If a VS Code session's sibling ``workspace.json`` is updated
+    without touching the chat session file, refresh must still re-parse
+    the session — otherwise cached ``cwd`` / ``repository`` go stale.
+    Same parity fix as ``test_copilot_source_mtime_tracks_workspace_yaml_too``
+    but for VS Code. Regression for PR #27 review #54."""
+    import os
+    import time
+
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    # Build a minimal VS Code session layout.
+    ws_dir = vscode_dir / "workspaceStorage" / "abc123hash"
+    chat_dir = ws_dir / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    workspace_json = ws_dir / "workspace.json"
+    workspace_json.write_text(
+        json.dumps({"folder": "file:///Users/demo/proj"}),
+        encoding="utf-8",
+    )
+    sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    session_file = chat_dir / f"{sid}.json"
+    session_file.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "sessionId": sid,
+                "creationDate": 1710237600000,
+                "lastMessageDate": 1710237900000,
+                "requests": [
+                    {
+                        "requestId": "r1",
+                        "message": {"text": "hi"},
+                        "response": [{"value": "hello"}],
+                        "result": {"details": "Claude Sonnet 4"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    build_cache(db, copilot_dir, claude_dir, vscode_dir)
+    assert any(s.get("source") == "vscode" for s in db.get_sessions())
+
+    # Update ONLY workspace.json; leave the chat session file untouched.
+    workspace_json.write_text(
+        json.dumps({"folder": "file:///Users/demo/different-proj"}),
+        encoding="utf-8",
+    )
+    future = time.time() + 60
+    os.utime(workspace_json, (future, future))
+
+    counts = refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+    assert counts["updated"] == 1, counts
+    db.close()
+
+
 def test_copilot_source_mtime_tracks_workspace_yaml_too(tmp_path: Path) -> None:
     """If workspace.yaml is updated without touching events.jsonl,
     refresh must still re-parse the session — otherwise cached metadata

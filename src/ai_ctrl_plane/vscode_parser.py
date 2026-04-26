@@ -309,10 +309,23 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
 
     max_tool_calls_exceeded = any(_hit_tool_limit(r) for r in requests)
 
+    # Take the max mtime across the session file and the sibling
+    # ``workspace.json`` — the entry's cached ``cwd`` / ``repository``
+    # come from workspace.json, so editing it alone (without touching
+    # the session file) needs to invalidate the row. Same pattern as
+    # the Copilot parser's ``events.jsonl`` + ``workspace.yaml`` fix.
+    mtimes: list[float] = []
     try:
-        source_mtime = path.stat().st_mtime
+        mtimes.append(path.stat().st_mtime)
     except OSError:
-        source_mtime = 0.0
+        pass
+    workspace_json = path.parent.parent / "workspace.json"
+    if workspace_json.is_file():
+        try:
+            mtimes.append(workspace_json.stat().st_mtime)
+        except OSError:
+            pass
+    source_mtime = max(mtimes) if mtimes else 0.0
 
     entry: dict = {
         "id": session_id,
