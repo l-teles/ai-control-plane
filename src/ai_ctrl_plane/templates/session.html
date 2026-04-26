@@ -401,6 +401,85 @@
   font-style: italic;
 }
 
+/* Slash command */
+.event-slash .event-dot { background: var(--accent); border-color: var(--accent); }
+.event-slash .event-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.event-slash .slash-header { display: flex; align-items: baseline; gap: 8px; }
+.event-slash .slash-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 13px;
+}
+.event-slash .slash-args {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.event-slash .slash-message { margin-top: 4px; font-size: 13px; }
+.event-slash .slash-output {
+  margin-top: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.event-slash .slash-output-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.event-slash .slash-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.event-slash .slash-stderr pre { color: var(--red); }
+
+/* Inline subagent transcript */
+.subagent-transcript {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border-left: 3px solid var(--purple);
+}
+.subagent-transcript-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.subagent-msg {
+  font-size: 12px;
+  margin-bottom: 4px;
+  padding-left: 8px;
+}
+.subagent-role {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.subagent-user { color: var(--text); }
+.subagent-assistant { color: var(--text); }
+.subagent-tool {
+  font-family: var(--font-mono);
+  color: var(--orange);
+  font-size: 11px;
+}
+.subagent-msg .msg-content { display: inline; }
+.subagent-msg .msg-content p { display: inline; margin: 0; }
+
 /* Warning */
 .event-warning .event-dot { background: var(--orange); border-color: var(--orange); }
 .event-warning .event-card {
@@ -854,11 +933,33 @@
         <div class="event-card">
           <div class="tool-header" onclick="var d=this.parentElement.querySelector('.tool-details');if(d){d.classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open');}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            <span style="font-weight:600;">Sub-agent started: {{ item.agent_name }}</span>
-            {% if item.agent_prompt %}<span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>{% endif %}
+            <span style="font-weight:600;">Sub-agent started: {{ item.agent_name }}{% if item.agent_type %} <span style="color:var(--text-secondary);font-weight:400;">({{ item.agent_type }})</span>{% endif %}</span>
+            {% if item.agent_prompt or item.transcript %}<span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>{% endif %}
           </div>
-          {% if item.agent_prompt %}
-          <div class="tool-details" style="color:var(--text-secondary);font-style:italic;">{{ item.agent_prompt }}</div>
+          {% if item.agent_prompt or item.transcript %}
+          <div class="tool-details">
+            {% if item.agent_prompt %}
+            <div style="color:var(--text-secondary);font-style:italic;margin-bottom:8px;">{{ item.agent_prompt }}</div>
+            {% endif %}
+            {% if item.transcript %}
+            <div class="subagent-transcript">
+              <div class="subagent-transcript-label">Inner transcript ({{ item.transcript|length }} events)</div>
+              {% for inner in item.transcript %}
+                {% if inner.kind == 'user_message' %}
+                <div class="subagent-msg subagent-user"><span class="subagent-role">User &rarr;</span> {{ inner.content }}</div>
+                {% elif inner.kind == 'assistant_message' %}
+                <div class="subagent-msg subagent-assistant"><span class="subagent-role">Assistant &rarr;</span> <div class="msg-content">{{ md_to_html(inner.content)|safe }}</div></div>
+                {% elif inner.kind == 'tool_start' %}
+                <div class="subagent-msg subagent-tool">&rarr; {{ inner.tool_name }}</div>
+                {% elif inner.kind == 'tool_complete' %}
+                <div class="subagent-msg subagent-tool">&larr; {{ 'ok' if inner.success else 'error' }}</div>
+                {% elif inner.kind == 'slash_command' %}
+                <div class="subagent-msg subagent-tool">&rarr; {{ inner.command }} {{ inner.args }}</div>
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
           {% endif %}
         </div>
       </div>
@@ -908,6 +1009,33 @@
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">Model changed to <strong>{{ item.new_model }}</strong>{% if item.reasoning_effort %} (reasoning: {{ item.reasoning_effort }}){% endif %}</div>
+      </div>
+
+      {% elif item.kind == 'slash_command' %}
+      <div class="event event-slash" data-kind="user">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">
+          <div class="slash-header">
+            <span class="slash-name">{{ item.command }}</span>
+            {% if item.args %}<span class="slash-args">{{ item.args }}</span>{% endif %}
+          </div>
+          {% if item.message and item.message != item.command %}
+          <div class="slash-message">{{ item.message }}</div>
+          {% endif %}
+          {% if item.stdout %}
+          <div class="slash-output">
+            <div class="slash-output-label">stdout</div>
+            <pre>{{ item.stdout }}</pre>
+          </div>
+          {% endif %}
+          {% if item.stderr %}
+          <div class="slash-output slash-stderr">
+            <div class="slash-output-label">stderr</div>
+            <pre>{{ item.stderr }}</pre>
+          </div>
+          {% endif %}
+        </div>
       </div>
 
       {% elif item.kind == 'notification' %}

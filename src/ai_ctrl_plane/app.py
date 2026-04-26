@@ -377,7 +377,8 @@ def create_app(
             session_file = Path(session_info["path"])
             events = claude_parser.parse_events(session_file)
             conv_events = claude_parser.parse_events_for_conversation(session_file)
-            conversation = claude_parser.build_conversation(conv_events)
+            subagents = claude_parser.parse_subagent_transcripts(session_file)
+            conversation = claude_parser.build_conversation(conv_events, subagent_transcripts=subagents)
             stats = claude_parser.compute_stats(events)
             ws = claude_parser.extract_workspace(events)
             snapshots: dict = {}

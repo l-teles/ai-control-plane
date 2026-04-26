@@ -27,6 +27,10 @@ _XML_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+# Slash-command markup that Claude Code injects into user messages when the
+# user runs ``/commandname`` from the prompt. Each tag is optional.
+_SLASH_TAGS = ("command-name", "command-message", "command-args", "local-command-stdout", "local-command-stderr")
+
 
 def _split_xml_and_text(content: str) -> tuple[str, str]:
     """Split content into XML context (notification) and remaining user text.
@@ -40,6 +44,81 @@ def _split_xml_and_text(content: str) -> tuple[str, str]:
         if stripped:
             xml_text += stripped + " "
     return xml_text.strip(), remaining
+
+
+def _parse_slash_command(content: str) -> dict | None:
+    """Parse Claude Code slash-command markup into structured fields.
+
+    Returns ``{"name", "message", "args", "stdout", "stderr"}`` when the
+    content contains a ``<command-name>`` tag, else ``None``.
+    """
+    if "<command-name>" not in content:
+        return None
+    parts: dict[str, str] = {}
+    for tag in _SLASH_TAGS:
+        m = re.search(rf"<{tag}>(.*?)</{tag}>", content, re.DOTALL)
+        if m:
+            parts[tag] = m.group(1).strip()
+    if "command-name" not in parts:
+        return None
+    return {
+        "name": parts.get("command-name", ""),
+        "message": parts.get("command-message", ""),
+        "args": parts.get("command-args", ""),
+        "stdout": parts.get("local-command-stdout", ""),
+        "stderr": parts.get("local-command-stderr", ""),
+    }
+
+
+def _emit_xml_user_content(
+    content: str,
+    ts: str,
+    perm: str,
+    sidechain: bool,
+    conversation: list[dict],
+) -> None:
+    """Emit conversation items for a user message containing XML markup.
+
+    Slash commands (``<command-name>…``) are surfaced as a structured
+    ``slash_command`` item; other XML context becomes a notification with
+    any trailing user text emitted as a separate user_message.
+    """
+    sc = _parse_slash_command(content)
+    if sc:
+        conversation.append(
+            {
+                "kind": "slash_command",
+                "timestamp": ts,
+                "command": sc["name"],
+                "message": sc["message"],
+                "args": sc["args"],
+                "stdout": sc["stdout"],
+                "stderr": sc["stderr"],
+                "permission_mode": perm,
+                "is_sidechain": sidechain,
+            }
+        )
+        return
+    notif_text, user_text = _split_xml_and_text(content)
+    if notif_text:
+        conversation.append(
+            {
+                "kind": "notification",
+                "timestamp": ts,
+                "message": notif_text[:500],
+            }
+        )
+    if user_text:
+        conversation.append(
+            {
+                "kind": "user_message",
+                "timestamp": ts,
+                "content": user_text,
+                "attachments": [],
+                "permission_mode": perm,
+                "is_sidechain": sidechain,
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +168,46 @@ def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
     and snapshot timeline items) while still filtering queue-operation.
     """
     return _load_events(jsonl_path, _SKIP_TYPES)
+
+
+def parse_subagent_transcripts(session_jsonl: Path) -> dict[str, dict]:
+    """Load subagent transcripts that accompany a Claude session.
+
+    Claude Code 2.1.2+ stores each Task/Agent subagent invocation in a
+    sibling directory at ``<session_uuid>/subagents/agent-<id>.jsonl`` with
+    a matching ``agent-<id>.meta.json`` containing the agent's ``agentType``
+    and ``description``.
+
+    Returns ``{description: {"agent_type", "description", "events", "path"}}``
+    keyed by description, which is what the main thread's ``Agent`` /
+    ``dispatch_agent`` tool_use carries in ``input.description``.  Empty
+    dict if the session has no subagent directory.
+    """
+    out: dict[str, dict] = {}
+    subagent_dir = session_jsonl.parent / session_jsonl.stem / "subagents"
+    if not subagent_dir.is_dir():
+        return out
+
+    for meta_path in sorted(subagent_dir.glob("agent-*.meta.json")):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.loads(f.read())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        events_path = meta_path.with_suffix("").with_suffix(".jsonl")
+        if not events_path.is_file():
+            continue
+        events = _load_events(events_path, _SKIP_TYPES)
+        description = (meta.get("description") or "").strip()
+        if not description:
+            continue
+        out[description] = {
+            "agent_type": meta.get("agentType", ""),
+            "description": description,
+            "events": events,
+            "path": str(events_path),
+        }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +413,43 @@ def _scan_token_usage(jsonl_path: Path) -> dict:
     }
 
 
+def _scan_summaries(jsonl_path: Path) -> list[tuple[str, str]]:
+    """Scan a JSONL for ``type=summary`` entries.
+
+    Returns a list of ``(leaf_uuid, summary_text)`` in file order.  Summary
+    entries are emitted asynchronously by Claude Code when it auto-generates
+    a description of a thread, and are useful as a richer label than the
+    first user message for the session list.
+
+    The scan filters lines by string match before JSON-decoding so it stays
+    cheap on long sessions where 99 % of lines aren't summaries.
+    """
+    out: list[tuple[str, str]] = []
+    if not jsonl_path.is_file():
+        return out
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # Cheap pre-filter that's tolerant of whitespace in the
+                # JSON serialiser. Production Claude files have no spaces;
+                # test fixtures may.
+                if '"summary"' not in line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if evt.get("type") != "summary":
+                    continue
+                summary = (evt.get("summary") or "").strip()
+                leaf = evt.get("leafUuid") or ""
+                if summary:
+                    out.append((leaf, summary))
+    except OSError:
+        pass
+    return out
+
+
 def _count_permissions(cwd: str) -> dict[str, int]:
     """Count permission rules from repo-local Claude settings.
 
@@ -368,6 +524,13 @@ def discover_sessions(base: Path) -> list[dict]:
             # Fall back to slug only if no user content
             if summary == raw_slug and summary:
                 summary = slug_display
+
+            # If Claude auto-generated a summary for this session, use the
+            # most recent one — it's a curated description of what the
+            # thread was about, more useful than the first user message.
+            file_summaries = _scan_summaries(jsonl_file)
+            if file_summaries:
+                summary = file_summaries[-1][1]
 
             # Compute permission counts once per project from first session's cwd
             if permission_counts is None and meta.get("cwd"):
@@ -458,7 +621,10 @@ def extract_workspace(events: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def build_conversation(events: list[dict]) -> list[dict]:
+def build_conversation(
+    events: list[dict],
+    subagent_transcripts: dict[str, dict] | None = None,
+) -> list[dict]:
     """Build a conversation view from Claude JSONL events.
 
     Produces items with the same ``kind`` values as the Copilot parser so the
@@ -468,6 +634,11 @@ def build_conversation(events: list[dict]) -> list[dict]:
     the pipeline runs, so resumed sessions and parallel-Task transcripts
     render with each child immediately following its parent regardless of
     the order in which lines were appended to the JSONL file.
+
+    If ``subagent_transcripts`` is provided (typically from
+    :func:`parse_subagent_transcripts`), each ``Agent`` / ``dispatch_agent``
+    tool call is inlined with its inner transcript attached to the
+    ``subagent_start`` item under a ``transcript`` field.
     """
     from .dag import order_by_dag
     from .models import parse_entries
@@ -475,6 +646,8 @@ def build_conversation(events: list[dict]) -> list[dict]:
     typed = parse_entries(events)
     typed = order_by_dag(typed)
     events = [e.raw for e in typed]
+
+    sub_lookup = dict(subagent_transcripts or {})
 
     conversation: list[dict] = []
     subagent_tool_ids: set[str] = set()  # track Agent tool_use IDs
@@ -596,26 +769,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 if texts:
                     joined = "\n".join(texts)
                     if joined.startswith("<"):
-                        notif_text, user_text = _split_xml_and_text(joined)
-                        if notif_text:
-                            conversation.append(
-                                {
-                                    "kind": "notification",
-                                    "timestamp": ts,
-                                    "message": notif_text[:500],
-                                }
-                            )
-                        if user_text:
-                            conversation.append(
-                                {
-                                    "kind": "user_message",
-                                    "timestamp": ts,
-                                    "content": user_text,
-                                    "attachments": [],
-                                    "permission_mode": _perm,
-                                    "is_sidechain": _sidechain,
-                                }
-                            )
+                        _emit_xml_user_content(joined, ts, _perm, _sidechain, conversation)
                     else:
                         conversation.append(
                             {
@@ -632,28 +786,10 @@ def build_conversation(events: list[dict]) -> list[dict]:
             # String content — user message
             if isinstance(content, str) and content:
                 # System-injected XML context (e.g. <command-name>, <ide_opened_file>,
-                # <local-command-stderr>) — split into notification + user message.
+                # <local-command-stderr>) — split into slash_command / notification
+                # / user_message via the helper.
                 if content.startswith("<"):
-                    notif_text, user_text = _split_xml_and_text(content)
-                    if notif_text:
-                        conversation.append(
-                            {
-                                "kind": "notification",
-                                "timestamp": ts,
-                                "message": notif_text[:500],
-                            }
-                        )
-                    if user_text:
-                        conversation.append(
-                            {
-                                "kind": "user_message",
-                                "timestamp": ts,
-                                "content": user_text,
-                                "attachments": [],
-                                "permission_mode": _perm,
-                                "is_sidechain": _sidechain,
-                            }
-                        )
+                    _emit_xml_user_content(content, ts, _perm, _sidechain, conversation)
                     continue
                 conversation.append(
                     {
@@ -742,18 +878,24 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 tu_name = tu.get("name", "unknown")
                 if tu_name in ("Agent", "dispatch_agent"):
                     agent_input = tu.get("input", {})
-                    agent_name = agent_input.get("description", agent_input.get("prompt", tu_name))
+                    description = agent_input.get("description", "") or ""
+                    agent_name = description or agent_input.get("prompt", tu_name)
                     agent_prompt = agent_input.get("prompt", "")
                     subagent_tool_ids.add(tu["id"])
-                    conversation.append(
-                        {
-                            "kind": "subagent_start",
-                            "timestamp": info["timestamp"],
-                            "agent_name": str(agent_name)[:120],
-                            "agent_prompt": str(agent_prompt)[:2000],
-                            "tool_call_id": tu["id"],
-                        }
-                    )
+                    item: dict = {
+                        "kind": "subagent_start",
+                        "timestamp": info["timestamp"],
+                        "agent_name": str(agent_name)[:120],
+                        "agent_prompt": str(agent_prompt)[:2000],
+                        "tool_call_id": tu["id"],
+                    }
+                    sub = sub_lookup.get(description)
+                    if sub:
+                        item["agent_type"] = sub.get("agent_type", "")
+                        # Recurse to render the inner transcript with the
+                        # same conversation kinds as the parent.
+                        item["transcript"] = build_conversation(sub.get("events", []))
+                    conversation.append(item)
                 else:
                     conversation.append(
                         {

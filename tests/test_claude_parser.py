@@ -259,17 +259,42 @@ def test_build_conversation_xml_context_with_user_text() -> None:
     assert "Heya, Please fix the TF diffs." in user_msgs[0]["content"]
 
 
-def test_build_conversation_xml_only_no_user_text() -> None:
-    """Pure XML context with no trailing user text becomes just a notification."""
+def test_build_conversation_slash_command_emits_structured_kind() -> None:
+    """Slash command markup is surfaced as a dedicated ``slash_command`` item
+    with command name, args, stdout, and stderr exposed as fields rather than
+    flattened into a notification string."""
     events = [
-        _make_user_event("<command-name>/review</command-name><command-args></command-args>"),
+        _make_user_event(
+            "<command-name>/review</command-name>"
+            "<command-message>review</command-message>"
+            "<command-args>--all</command-args>"
+            "<local-command-stdout>10 issues found</local-command-stdout>"
+            "<local-command-stderr></local-command-stderr>"
+        ),
+    ]
+    conv = build_conversation(events)
+    slash = [c for c in conv if c["kind"] == "slash_command"]
+    assert len(slash) == 1
+    assert slash[0]["command"] == "/review"
+    assert slash[0]["args"] == "--all"
+    assert slash[0]["stdout"] == "10 issues found"
+    assert slash[0]["stderr"] == ""
+    # Should NOT also appear as a notification or user_message
+    assert not [c for c in conv if c["kind"] == "notification"]
+    assert not [c for c in conv if c["kind"] == "user_message"]
+
+
+def test_build_conversation_xml_without_command_name_is_still_notification() -> None:
+    """Non-slash XML markup keeps the old notification + user_message split."""
+    events = [
+        _make_user_event("<ide_opened_file>foo.py</ide_opened_file>fix this"),
     ]
     conv = build_conversation(events)
     notifs = [c for c in conv if c["kind"] == "notification"]
     user_msgs = [c for c in conv if c["kind"] == "user_message"]
     assert len(notifs) == 1
-    assert "/review" in notifs[0]["message"]
-    assert len(user_msgs) == 0
+    assert len(user_msgs) == 1
+    assert user_msgs[0]["content"] == "fix this"
 
 
 def test_build_conversation_requestid_merge() -> None:
@@ -627,6 +652,111 @@ def test_build_conversation_reorders_resumed_session_by_dag() -> None:
     # comes immediately after its user prompt and before "answer for second".
     assert assistant_texts.index("hello") < assistant_texts.index("answer for first")
     assert assistant_texts.index("answer for first") < assistant_texts.index("answer for second")
+
+
+def test_summary_entry_overrides_first_user_message_in_session_list(tmp_path: Path) -> None:
+    """When Claude auto-generated a `summary` entry for a session, the most
+    recent one should be used as the session label rather than the first
+    user message."""
+    project_dir = tmp_path / "-Users-test-project"
+    project_dir.mkdir()
+    sid = "11111111-2222-3333-4444-555555555555"
+    events = [
+        _make_user_event("How do I write tests?", uuid="u1", session_id=sid),
+        _make_assistant_event(
+            [{"type": "text", "text": "Here's how"}], request_id="r1", uuid="a1"
+        ),
+        {"type": "summary", "summary": "Walked through how to write pytest fixtures", "leafUuid": "a1"},
+    ]
+    enriched = [{"sessionId": sid, **e} if e.get("type") != "summary" else e for e in events]
+    _write_jsonl(project_dir / f"{sid}.jsonl", enriched)
+    sessions = discover_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0]["summary"] == "Walked through how to write pytest fixtures"
+
+
+def test_subagent_transcript_loaded_and_attached(tmp_path: Path) -> None:
+    """When a session has subagent files in `<session>/subagents/`, the
+    matching `Agent` tool_use should carry an inlined transcript."""
+    from ai_ctrl_plane.claude_parser import parse_subagent_transcripts
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    project_dir = tmp_path / "-Users-test"
+    project_dir.mkdir()
+    session_jsonl = project_dir / f"{sid}.jsonl"
+    sub_dir = project_dir / sid / "subagents"
+    sub_dir.mkdir(parents=True)
+
+    # Subagent meta + transcript
+    (sub_dir / "agent-deadbeef.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "Find the bug"}),
+        encoding="utf-8",
+    )
+    _write_jsonl(
+        sub_dir / "agent-deadbeef.jsonl",
+        [
+            _make_user_event("Find the bug", uuid="su1", session_id=sid, isSidechain=True, agentId="deadbeef"),
+            _make_assistant_event(
+                [{"type": "text", "text": "Found it in foo.py:42"}],
+                request_id="rsub",
+                uuid="sa1",
+            ),
+        ],
+    )
+
+    # Verify the helper finds and parses both files
+    subs = parse_subagent_transcripts(session_jsonl)
+    assert "Find the bug" in subs
+    assert subs["Find the bug"]["agent_type"] == "Explore"
+    assert len(subs["Find the bug"]["events"]) == 2
+
+    # Verify the conversation builder attaches the transcript on subagent_start
+    main_events = [
+        _make_user_event("Help me find a bug", uuid="u1", session_id=sid),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_x",
+                    "name": "Agent",
+                    "input": {"description": "Find the bug", "prompt": "Look in foo.py"},
+                },
+            ],
+            request_id="r1",
+            uuid="a1",
+        ),
+    ]
+    conv = build_conversation(main_events, subagent_transcripts=subs)
+    starts = [c for c in conv if c["kind"] == "subagent_start"]
+    assert len(starts) == 1
+    assert starts[0]["agent_type"] == "Explore"
+    assert "transcript" in starts[0]
+    assert isinstance(starts[0]["transcript"], list)
+    inner_msgs = [c for c in starts[0]["transcript"] if c["kind"] == "assistant_message"]
+    assert any("Found it in foo.py:42" in m["content"] for m in inner_msgs)
+
+
+def test_subagent_transcript_absent_when_no_match(tmp_path: Path) -> None:
+    """If no subagent file matches the Agent tool_use's description, the
+    item still emits — just without a `transcript` field."""
+    main_events = [
+        _make_user_event("Help"),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_y",
+                    "name": "Agent",
+                    "input": {"description": "Some other task", "prompt": "..."},
+                },
+            ],
+            request_id="r1",
+        ),
+    ]
+    conv = build_conversation(main_events, subagent_transcripts={"a different task": {"events": []}})
+    starts = [c for c in conv if c["kind"] == "subagent_start"]
+    assert len(starts) == 1
+    assert "transcript" not in starts[0]
 
 
 def test_subagent_conversation_events() -> None:
