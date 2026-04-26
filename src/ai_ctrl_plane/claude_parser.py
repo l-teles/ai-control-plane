@@ -378,9 +378,16 @@ def discover_sessions(base: Path) -> list[dict]:
             # Token usage and cost estimation
             tokens = _scan_token_usage(jsonl_file)
 
+            try:
+                source_mtime = jsonl_file.stat().st_mtime
+            except OSError:
+                source_mtime = 0.0
+
             session_entry: dict = {
                 "id": session_id,
                 "path": str(jsonl_file),
+                "source_path": str(jsonl_file),
+                "source_mtime": source_mtime,
                 "summary": summary,
                 "repository": "",
                 "branch": meta.get("gitBranch", ""),

@@ -135,8 +135,8 @@ class CacheDB:
                 "INSERT OR REPLACE INTO sessions "
                 "(id, source, uuid, summary, created, cwd, model, "
                 "input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, "
-                "estimated_cost, raw_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "estimated_cost, source_path, source_mtime, raw_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         f"{s['source']}:{s['id']}",
@@ -151,11 +151,31 @@ class CacheDB:
                         s.get("cache_read_tokens", 0),
                         s.get("cache_creation_tokens", 0),
                         s.get("estimated_cost", 0),
+                        s.get("source_path", ""),
+                        s.get("source_mtime", 0.0),
                         json.dumps(s, default=str),
                     )
                     for s in sessions
                 ],
             )
+            self._conn.commit()
+
+    def get_session_anchors(self) -> dict[str, tuple[str, float]]:
+        """Return ``{source_path: (session_id, mtime)}`` for every cached session.
+
+        Used by the incremental refresh to decide what's new, changed, or gone.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, source_path, source_mtime FROM sessions WHERE source_path IS NOT NULL"
+            ).fetchall()
+        return {r["source_path"]: (r["id"], r["source_mtime"] or 0.0) for r in rows if r["source_path"]}
+
+    def delete_sessions(self, ids: list[str]) -> None:
+        if not ids:
+            return
+        with self._lock:
+            self._conn.executemany("DELETE FROM sessions WHERE id = ?", [(sid,) for sid in ids])
             self._conn.commit()
 
     def insert_projects(self, projects: list[dict]) -> None:
@@ -419,6 +439,136 @@ def start_background_build(
         kwargs={"desktop_path": desktop_path},
         daemon=True,
         name="cache-builder",
+    )
+    t.start()
+    return t
+
+
+# ---------------------------------------------------------------------------
+# Incremental refresh
+# ---------------------------------------------------------------------------
+
+
+def refresh_cache(
+    cache: CacheDB,
+    copilot_path: Path,
+    claude_path: Path,
+    vscode_path: Path,
+    desktop_path: Path | None = None,
+) -> dict[str, int]:
+    """Update the cache without wiping it.
+
+    Walks each source's filesystem, compares each session's source-file mtime
+    against the cached value, and only re-parses sessions that are new or
+    modified. Sessions whose source file no longer exists are dropped.
+
+    Tool configs and project memory are always re-read (cheap relative to
+    session parsing).
+
+    Returns ``{"added": int, "updated": int, "removed": int, "unchanged": int}``.
+    """
+    from .claude_parser import discover_sessions as claude_discover
+    from .config_readers import read_all_configs
+    from .config_readers.claude_config import read_claude_desktop_config, read_claude_projects
+    from .parser import discover_sessions as copilot_discover
+    from .vscode_parser import discover_all_vscode_sessions
+
+    counts = {"added": 0, "updated": 0, "removed": 0, "unchanged": 0}
+
+    try:
+        cache.set_meta("status", "refreshing")
+
+        cached = cache.get_session_anchors()  # {source_path: (id, mtime)}
+        cached_paths = set(cached)
+
+        copilot_sessions = copilot_discover(copilot_path)
+        for s in copilot_sessions:
+            s.setdefault("source", "copilot")
+        claude_sessions = claude_discover(claude_path)
+        vscode_sessions = discover_all_vscode_sessions(vscode_path)
+        fs_sessions = copilot_sessions + claude_sessions + vscode_sessions
+
+        to_upsert: list[dict] = []
+        seen_paths: set[str] = set()
+        for s in fs_sessions:
+            sp = s.get("source_path", "")
+            if not sp:
+                # Parser didn't supply an anchor — fall back to a full upsert
+                # so the session still ends up in the cache.
+                to_upsert.append(s)
+                counts["added"] += 1
+                continue
+            seen_paths.add(sp)
+            current = cached.get(sp)
+            new_mtime = float(s.get("source_mtime", 0.0))
+            if current is None:
+                to_upsert.append(s)
+                counts["added"] += 1
+            elif new_mtime > current[1]:
+                to_upsert.append(s)
+                counts["updated"] += 1
+            else:
+                counts["unchanged"] += 1
+
+        if to_upsert:
+            cache.insert_sessions(to_upsert)
+
+        gone_paths = cached_paths - seen_paths
+        if gone_paths:
+            ids_to_remove = [cached[p][0] for p in gone_paths]
+            cache.delete_sessions(ids_to_remove)
+            counts["removed"] = len(ids_to_remove)
+
+        # Tool configs and project metadata are cheap; refresh them every time.
+        configs = read_all_configs()
+        for tool, cfg in configs.items():
+            cache.insert_tool_config(tool, cfg)
+        cache.insert_tool_config("claude_desktop", read_claude_desktop_config(desktop_dir=desktop_path))
+
+        claude_home = claude_path.parent
+        project_data = read_claude_projects(claude_home)
+        # Wipe + re-insert projects/memory — small data volume, simpler than diffing.
+        with cache._lock:
+            cache._conn.execute("DELETE FROM project_memory")
+            cache._conn.execute("DELETE FROM projects")
+            cache._conn.commit()
+        cache.insert_projects(project_data["projects"])
+        memory_items = [
+            {
+                "project_encoded_name": p["encoded_name"],
+                "filename": mf["filename"],
+                "content": mf["content"],
+            }
+            for p in project_data["projects"]
+            for mf in p.get("memory_files", [])
+        ]
+        if memory_items:
+            cache.insert_project_memory(memory_items)
+
+        cache.set_meta("status", "ready")
+        cache.set_meta("built_at", _now_iso())
+        return counts
+
+    except Exception:
+        cache.set_meta("status", "error")
+        raise
+
+
+def start_background_refresh(
+    cache: CacheDB,
+    copilot_path: Path,
+    claude_path: Path,
+    vscode_path: Path,
+    desktop_path: Path | None = None,
+) -> threading.Thread:
+    """Start incremental refresh in a daemon thread."""
+    cache.set_meta("status", "refreshing")
+    t = threading.Thread(
+        target=refresh_cache,
+        args=(cache, copilot_path, claude_path, vscode_path),
+        kwargs={"desktop_path": desktop_path},
+        daemon=True,
+        name="cache-refresher",
     )
     t.start()
     return t

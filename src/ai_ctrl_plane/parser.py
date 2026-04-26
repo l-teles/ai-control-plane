@@ -116,20 +116,28 @@ def discover_sessions(base: Path) -> list[dict]:
     if not base.is_dir():
         return sessions
     for d in sorted(base.iterdir()):
-        if d.is_dir() and (d / "events.jsonl").exists():
-            ws = parse_workspace(d)
-            sessions.append(
-                {
-                    "id": d.name,
-                    "path": str(d),
-                    "summary": ws.get("summary", d.name),
-                    "repository": ws.get("repository", ""),
-                    "branch": ws.get("branch", ""),
-                    "cwd": ws.get("cwd", ""),
-                    "created_at": str(ws.get("created_at", "")),
-                    "updated_at": str(ws.get("updated_at", "")),
-                }
-            )
+        events_jsonl = d / "events.jsonl"
+        if not (d.is_dir() and events_jsonl.exists()):
+            continue
+        ws = parse_workspace(d)
+        try:
+            source_mtime = events_jsonl.stat().st_mtime
+        except OSError:
+            source_mtime = 0.0
+        sessions.append(
+            {
+                "id": d.name,
+                "path": str(d),
+                "source_path": str(events_jsonl),
+                "source_mtime": source_mtime,
+                "summary": ws.get("summary", d.name),
+                "repository": ws.get("repository", ""),
+                "branch": ws.get("branch", ""),
+                "cwd": ws.get("cwd", ""),
+                "created_at": str(ws.get("created_at", "")),
+                "updated_at": str(ws.get("updated_at", "")),
+            }
+        )
     sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
     return sessions
 

@@ -285,9 +285,16 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
         req.get("result", {}).get("metadata", {}).get("maxToolCallsExceeded", False) for req in requests
     )
 
+    try:
+        source_mtime = path.stat().st_mtime
+    except OSError:
+        source_mtime = 0.0
+
     entry: dict = {
         "id": session_id,
         "path": str(path),
+        "source_path": str(path),
+        "source_mtime": source_mtime,
         "summary": summary,
         "repository": repo,
         "branch": "",

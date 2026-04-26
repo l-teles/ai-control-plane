@@ -17,7 +17,7 @@ from . import claude_parser, vscode_parser
 from .config_readers.claude_config import _default_claude_desktop_dir, read_claude_config, read_claude_desktop_config
 from .config_readers.copilot_config import read_copilot_config
 from .config_readers.vscode_config import read_vscode_config
-from .db import CacheDB, default_cache_dir, start_background_build
+from .db import CacheDB, default_cache_dir, start_background_build, start_background_refresh
 from .parser import (
     _default_copilot_dir,
     duration_between,
@@ -220,8 +220,12 @@ def create_app(
 
     atexit.register(db.close)
 
-    # Start background cache build if not already ready
-    if db.status != "ready":
+    # If the cache has never been built, do a full background build.
+    # Otherwise kick off an incremental refresh so new sessions appear
+    # without the user having to click "rebuild".
+    if db.status == "ready":
+        start_background_refresh(db, copilot_path, claude_path, vscode_path, desktop_path)
+    elif db.status not in ("building", "refreshing"):
         start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
 
     # -- Unified session index (cached) ---------------------------------------
@@ -231,7 +235,7 @@ def create_app(
 
     def _build_session_index(*, force: bool = False) -> tuple[list[dict], dict[str, dict]]:
         # Try DB first (also use partial data while building)
-        if db.status in ("ready", "building") and not force:
+        if db.status in ("ready", "building", "refreshing") and not force:
             sessions = db.get_sessions()
             if sessions:
                 idx = {f"{s['source']}:{s['id']}": s for s in sessions}
@@ -435,7 +439,7 @@ def create_app(
         while the cache is being populated.
         """
         result: dict[str, dict] = {}
-        if db.status in ("ready", "building"):
+        if db.status in ("ready", "building", "refreshing"):
             cached = db.get_all_tool_configs()
             if cached:
                 result = dict(cached)
@@ -452,7 +456,7 @@ def create_app(
     def _get_tool_config(tool: str) -> dict:
         if tool not in _VALID_TOOLS:
             abort(404)
-        if db.status in ("ready", "building"):
+        if db.status in ("ready", "building", "refreshing"):
             cached = db.get_tool_config(tool)
             if cached:
                 return cached
@@ -1009,7 +1013,8 @@ def create_app(
 
     @app.route("/settings/rebuild-cache", methods=["POST"])
     def rebuild_cache():
-        if db.status != "building":
+        # Manual rebuild does a full wipe+build (the user explicitly asked for it).
+        if db.status not in ("building", "refreshing"):
             start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
         return redirect(url_for("settings_view"))
 
