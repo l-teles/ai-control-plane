@@ -42,11 +42,25 @@ from .parser import (
 # Validation helpers
 # ---------------------------------------------------------------------------
 
-# Session IDs are UUIDs — enforce that to prevent path traversal.
+# Session IDs are UUIDs, optionally prefixed by ``<source>:`` to
+# disambiguate when the same UUID exists across multiple sources
+# (claude / copilot / vscode). Both forms are accepted by the
+# /session/<id> route; the prefix is stripped before the value is
+# used as a filesystem path component.
 _UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    r"^(?:(?:claude|copilot|vscode):)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+
+
+def _bare_uuid(session_id: str) -> str:
+    """Return the UUID part of a session id, stripping any ``source:`` prefix.
+
+    Used before passing the value to ``_safe_copilot_dir`` (which uses
+    it as a directory name and would reject the colon as a path-traversal
+    attempt).
+    """
+    return session_id.split(":", 1)[1] if ":" in session_id else session_id
 
 # Backup hash filenames: hex-timestamp
 _BACKUP_HASH_RE = re.compile(r"^[0-9a-f]{16}-\d{13}$")
@@ -530,7 +544,7 @@ def create_app(
             ws = vscode_parser.extract_workspace(events)
             snapshots = {}
         else:
-            session_dir = _safe_copilot_dir(copilot_path, session_id)
+            session_dir = _safe_copilot_dir(copilot_path, _bare_uuid(session_id))
             if not session_dir.is_dir():
                 abort(404)
             ws = parse_workspace(session_dir)
@@ -1016,7 +1030,7 @@ def create_app(
         elif source == "vscode":
             events = vscode_parser.parse_events(Path(session_info["path"]))
         else:
-            session_dir = _safe_copilot_dir(copilot_path, session_id)
+            session_dir = _safe_copilot_dir(copilot_path, _bare_uuid(session_id))
             if not session_dir.is_dir():
                 abort(404)
             events = copilot_parse_events(session_dir)
@@ -1027,7 +1041,7 @@ def create_app(
     def api_backup(session_id: str, backup_hash: str):
         _validate_session_id(session_id)
         _validate_backup_hash(backup_hash)
-        session_dir = _safe_copilot_dir(copilot_path, session_id)
+        session_dir = _safe_copilot_dir(copilot_path, _bare_uuid(session_id))
         safe_hash = secure_filename(backup_hash)
         if not safe_hash or safe_hash != backup_hash:
             abort(400)

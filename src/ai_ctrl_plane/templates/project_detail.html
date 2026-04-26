@@ -269,7 +269,7 @@
         <div class="section-body">
           <div class="session-list-compact">
             {% for s in project_sessions[:20] %}
-            <a class="session-item" href="/session/{{ s.id }}">
+            <a class="session-item" href="/session/{{ s.source }}:{{ s.id }}">
               <span class="badge badge-source-{{ s.source }}">{{ s.source|capitalize }}</span>
               <span class="session-summary">{{ s.summary or s.id }}</span>
               {% if s.created_at %}

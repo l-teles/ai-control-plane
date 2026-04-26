@@ -242,7 +242,12 @@
 
   <div class="sessions-grid" id="sessions-grid">
     {% for s in sessions %}
-    <a class="session-card" href="/session/{{ s.id }}" data-source="{{ s.source }}"
+    {# Use the composite ``source:id`` form so two sessions that
+       happen to share a UUID across sources are still individually
+       reachable — the route accepts both forms but ``_lookup_session``
+       rejects bare UUIDs as ambiguous when more than one source has
+       the same id. #}
+    <a class="session-card" href="/session/{{ s.source }}:{{ s.id }}" data-source="{{ s.source }}"
        data-session-id="{{ s.source }}:{{ s.id }}">
       <h2>{{ s.summary or s.id }}</h2>
       <div class="session-meta">

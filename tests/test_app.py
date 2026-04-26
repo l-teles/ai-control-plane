@@ -623,6 +623,71 @@ def test_search_route_returns_slim_response_shape(tmp_path: Path) -> None:
         assert results[0]["id"] == sid
 
 
+def test_session_view_accepts_composite_source_id(tmp_path: Path) -> None:
+    """Two sessions sharing a UUID across sources should each be
+    individually reachable via ``/session/<source>:<uuid>``. Bare-UUID
+    URLs would 400 with "Ambiguous session ID" in this case.
+    Regression for PR #27 review #50."""
+    # Set up a Copilot session and a Claude session sharing the same UUID.
+    sid = "11111111-2222-3333-4444-555555555555"
+
+    copilot_session = tmp_path / "copilot" / sid
+    copilot_session.mkdir(parents=True)
+    (copilot_session / "workspace.yaml").write_text(
+        f"id: {sid}\nsummary: Copilot Side\nrepository: x\nbranch: main\n"
+        "created_at: 2026-04-26T10:00:00.000Z\nupdated_at: 2026-04-26T10:05:00.000Z\n",
+        encoding="utf-8",
+    )
+    (copilot_session / "events.jsonl").write_text(
+        json.dumps({"type": "session.start", "data": {}, "timestamp": "2026-04-26T10:00:00Z"}) + "\n",
+        encoding="utf-8",
+    )
+
+    claude_dir = tmp_path / "claude" / "-Users-test-project"
+    claude_dir.mkdir(parents=True)
+    with open(claude_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T11:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "Claude side"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        # Bare UUID is ambiguous — server returns 400.
+        r_bare = c.get(f"/session/{sid}")
+        assert r_bare.status_code == 400
+
+        # Composite IDs are unambiguous — both sessions are reachable.
+        r_copilot = c.get(f"/session/copilot:{sid}")
+        assert r_copilot.status_code == 200
+        assert b"Copilot Side" in r_copilot.data
+
+        r_claude = c.get(f"/session/claude:{sid}")
+        assert r_claude.status_code == 200
+        # Claude render uses summary or first-user-content; either way
+        # the page renders without a 400 / 500.
+
+        # /sessions list emits composite-form hrefs so users can click
+        # through to the right session.
+        r_list = c.get("/sessions")
+        assert r_list.status_code == 200
+        assert f"/session/copilot:{sid}".encode() in r_list.data
+        assert f"/session/claude:{sid}".encode() in r_list.data
+
+
 def test_search_falls_back_to_fs_scan_when_cache_empty(tmp_path: Path) -> None:
     """On a fresh install the FTS index is empty during the initial
     background build. A search request shouldn't return zero hits when

@@ -452,7 +452,7 @@ a.metric-card:hover { text-decoration: none; }
       </div>
       <div class="recent-list">
         {% for s in sessions[:5] %}
-        <a class="recent-item" href="/session/{{ s.id }}">
+        <a class="recent-item" href="/session/{{ s.source }}:{{ s.id }}">
           {% if s.source == 'claude' %}
           <span class="badge badge-source-claude">Claude</span>
           {% elif s.source == 'vscode' %}
