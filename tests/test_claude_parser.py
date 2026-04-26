@@ -654,6 +654,55 @@ def test_build_conversation_reorders_resumed_session_by_dag() -> None:
     assert assistant_texts.index("answer for first") < assistant_texts.index("answer for second")
 
 
+def test_extract_searchable_text_pulls_user_assistant_thinking_and_tool_results(tmp_path: Path) -> None:
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    events = [
+        _make_user_event("plain user prompt", uuid="u1"),
+        _make_assistant_event(
+            [
+                {"type": "thinking", "thinking": "internal_reasoning_token"},
+                {"type": "text", "text": "assistant_reply_token"},
+            ],
+            uuid="a1",
+        ),
+        _make_user_event(
+            [{"type": "tool_result", "tool_use_id": "t1", "content": "tool_output_token"}],
+            uuid="u2",
+        ),
+        {"type": "summary", "summary": "summary_token", "leafUuid": "a1"},
+    ]
+    _write_jsonl(jsonl, events)
+    text = extract_searchable_text(jsonl)
+    assert "plain user prompt" in text
+    assert "internal_reasoning_token" in text
+    assert "assistant_reply_token" in text
+    assert "tool_output_token" in text
+    assert "summary_token" in text
+
+
+def test_extract_searchable_text_strips_xml_markup(tmp_path: Path) -> None:
+    """Slash-command and IDE-context tags add noise; they shouldn't appear
+    as bare angle brackets in the indexed text."""
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    _write_jsonl(jsonl, [_make_user_event("<command-name>/test</command-name>visible_text", uuid="u1")])
+    text = extract_searchable_text(jsonl)
+    assert "visible_text" in text
+    assert "<command-name>" not in text
+    assert "</command-name>" not in text
+
+
+def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) -> None:
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    assert extract_searchable_text(tmp_path / "nope.jsonl") == ""
+
+
 def test_summary_entry_overrides_first_user_message_in_session_list(tmp_path: Path) -> None:
     """When Claude auto-generated a `summary` entry for a session, the most
     recent one should be used as the session label rather than the first

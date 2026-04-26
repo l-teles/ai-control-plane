@@ -60,6 +60,58 @@ def parse_events(session_dir: Path) -> list[dict]:
     return events
 
 
+_FTS_CONTENT_LIMIT = 500_000
+
+
+def extract_searchable_text(session_dir: Path) -> str:
+    """Concatenate user + assistant text from a Copilot session for FTS.
+
+    Reads ``events.jsonl`` and pulls ``user.message.content``,
+    ``assistant.message.content``, and ``assistant.message.reasoningText``.
+    """
+    events_jsonl = session_dir / "events.jsonl"
+    if not events_jsonl.is_file():
+        return ""
+    parts: list[str] = []
+    total = 0
+    try:
+        with open(events_jsonl, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if total >= _FTS_CONTENT_LIMIT:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = evt.get("type", "")
+                d = evt.get("data") or {}
+                if t == "user.message":
+                    txt = d.get("content", "") or ""
+                    if isinstance(txt, str) and txt:
+                        parts.append(txt)
+                        total += len(txt)
+                elif t == "assistant.message":
+                    txt = d.get("content", "") or ""
+                    if isinstance(txt, str) and txt:
+                        parts.append(txt)
+                        total += len(txt)
+                    reasoning = d.get("reasoningText", "") or ""
+                    if isinstance(reasoning, str) and reasoning:
+                        parts.append(reasoning)
+                        total += len(reasoning)
+                elif t == "tool.execution_complete":
+                    res = d.get("result", "")
+                    if isinstance(res, str) and res:
+                        parts.append(res)
+                        total += len(res)
+    except OSError:
+        return ""
+    return "\n".join(parts)[:_FTS_CONTENT_LIMIT]
+
+
 def parse_snapshots(session_dir: Path) -> dict:
     """Read the rewind-snapshots/index.json file."""
     content = _safe_open(session_dir, "rewind-snapshots", "index.json")

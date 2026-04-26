@@ -170,6 +170,86 @@ def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
     return _load_events(jsonl_path, _SKIP_TYPES)
 
 
+# Cap per-session indexed content so a few multi-megabyte sessions don't
+# blow the cache size out (FTS5 handles big content fine, but holding the
+# whole transcript in memory for 100s of sessions during a full rebuild
+# does add up). 500 KB is comfortably more than any reasonable session.
+_FTS_CONTENT_LIMIT = 500_000
+
+
+def extract_searchable_text(jsonl_path: Path) -> str:
+    """Concatenate user + assistant text content from a Claude JSONL.
+
+    Used to populate the FTS index so search hits actual conversation
+    content, not just the session summary and first message.  XML markup
+    (``<command-name>``, ``<ide_opened_file>``, etc.) is stripped — those
+    tags are noise for term-frequency-based ranking.
+    """
+    if not jsonl_path.is_file():
+        return ""
+    parts: list[str] = []
+    total = 0
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if total >= _FTS_CONTENT_LIMIT:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = evt.get("type", "")
+                if t not in ("user", "assistant", "summary"):
+                    continue
+                if t == "summary":
+                    s = evt.get("summary", "") or ""
+                    if s:
+                        parts.append(s)
+                        total += len(s)
+                    continue
+                msg = evt.get("message") or {}
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    parts.append(content)
+                    total += len(content)
+                elif isinstance(content, list):
+                    for b in content:
+                        if not isinstance(b, dict):
+                            continue
+                        bt = b.get("type")
+                        if bt == "text":
+                            txt = b.get("text", "") or ""
+                            parts.append(txt)
+                            total += len(txt)
+                        elif bt == "thinking":
+                            txt = b.get("thinking", "") or ""
+                            parts.append(txt)
+                            total += len(txt)
+                        elif bt == "tool_result":
+                            # Tool output text — useful for searches like
+                            # "where did `npm install` fail?".  We skip
+                            # nested image / structured blocks.
+                            tc = b.get("content", "")
+                            if isinstance(tc, str):
+                                parts.append(tc)
+                                total += len(tc)
+                            elif isinstance(tc, list):
+                                for inner in tc:
+                                    if isinstance(inner, dict) and inner.get("type") == "text":
+                                        txt = inner.get("text", "") or ""
+                                        parts.append(txt)
+                                        total += len(txt)
+    except OSError:
+        return ""
+    text = "\n".join(parts)[:_FTS_CONTENT_LIMIT]
+    # Strip XML markup wholesale — slash-command and IDE-context tags add
+    # noise without useful tokens.
+    text = re.sub(r"<[^>]+>", " ", text)
+    return text
+
+
 def parse_subagent_transcripts(session_jsonl: Path) -> dict[str, dict]:
     """Load subagent transcripts that accompany a Claude session.
 

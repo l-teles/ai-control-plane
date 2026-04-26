@@ -285,6 +285,132 @@ def test_search_sessions_falls_back_on_invalid_fts_query(tmp_path: Path) -> None
     db.close()
 
 
+def test_search_sessions_finds_match_in_conversation_body(tmp_path: Path) -> None:
+    """A word that only appears deep in the conversation — not in summary,
+    cwd, model, or first user message — should still be findable."""
+    import json as _json
+
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = project_dir / f"{sid}.jsonl"
+    events = [
+        {
+            "type": "user",
+            "uuid": "u1",
+            "sessionId": sid,
+            "timestamp": "2026-04-26T10:00:00Z",
+            "cwd": "/repo",
+            "version": "2.1",
+            "gitBranch": "main",
+            "message": {"role": "user", "content": "general greeting"},
+        },
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "requestId": "r1",
+            "sessionId": sid,
+            "timestamp": "2026-04-26T10:00:01Z",
+            "cwd": "/repo",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Discussing kernel-bypass networking via DPDK"}
+                ],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        },
+    ]
+    with open(jsonl, "w", encoding="utf-8") as fh:
+        for e in events:
+            fh.write(_json.dumps(e) + "\n")
+
+    db = CacheDB(tmp_path / "cache.db")
+    db.insert_sessions(
+        [
+            {
+                "source": "claude",
+                "id": sid,
+                "summary": "general greeting",  # deliberately NOT containing the term we'll search for
+                "cwd": "/repo",
+                "model": "",
+                "first_user_content": "general greeting",
+                "source_path": str(jsonl),
+                "source_mtime": jsonl.stat().st_mtime,
+                "created_at": "2026-04-26T10:00:00Z",
+            }
+        ]
+    )
+
+    # Term appears only in the assistant body — must still be searchable.
+    hits = db.search_sessions("DPDK")
+    assert len(hits) == 1
+    assert hits[0]["id"] == sid
+
+    # Multi-token query (FTS implicit AND) on body terms
+    hits = db.search_sessions("kernel bypass")
+    assert len(hits) == 1
+    db.close()
+
+
+def test_search_sessions_indexes_tool_result_text(tmp_path: Path) -> None:
+    """Tool results carry a lot of useful searchable text (file contents,
+    Bash output, etc.) — the FTS index should cover them."""
+    import json as _json
+
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "22222222-3333-4444-5555-666666666666"
+    jsonl = project_dir / f"{sid}.jsonl"
+    events = [
+        {
+            "type": "user",
+            "uuid": "u1",
+            "sessionId": sid,
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "list files"},
+        },
+        {
+            "type": "user",
+            "uuid": "u2",
+            "sessionId": sid,
+            "timestamp": "2026-04-26T10:00:01Z",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tu_1",
+                        "content": "needle_token_xyz appears here",
+                    }
+                ],
+            },
+        },
+    ]
+    with open(jsonl, "w", encoding="utf-8") as fh:
+        for e in events:
+            fh.write(_json.dumps(e) + "\n")
+
+    db = CacheDB(tmp_path / "cache.db")
+    db.insert_sessions(
+        [
+            {
+                "source": "claude",
+                "id": sid,
+                "summary": "list files",
+                "cwd": "/r",
+                "first_user_content": "list files",
+                "source_path": str(jsonl),
+                "source_mtime": jsonl.stat().st_mtime,
+                "created_at": "2026-04-26T10:00:00Z",
+            }
+        ]
+    )
+    hits = db.search_sessions("needle_token_xyz")
+    assert len(hits) == 1
+    db.close()
+
+
 def test_delete_session_removes_from_fts(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "test.db")
     db.insert_sessions(

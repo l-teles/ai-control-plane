@@ -316,6 +316,42 @@ def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
+_FTS_CONTENT_LIMIT = 500_000
+
+
+def extract_searchable_text(path: Path) -> str:
+    """Concatenate user prompts + model responses from a VS Code Chat
+    session for FTS.
+
+    Reads the request/response array; each request carries a user
+    ``message.text`` and a ``response`` list of ``{value, kind}`` chunks.
+    """
+    data = _read_session_json(path)
+    if not data:
+        return ""
+    parts: list[str] = []
+    total = 0
+    for req in data.get("requests") or []:
+        if total >= _FTS_CONTENT_LIMIT:
+            break
+        if not isinstance(req, dict):
+            continue
+        msg = req.get("message") or {}
+        if isinstance(msg, dict):
+            text = msg.get("text", "") or msg.get("parsedText", "") or ""
+            if isinstance(text, str) and text:
+                parts.append(text)
+                total += len(text)
+        for r in req.get("response") or []:
+            if not isinstance(r, dict):
+                continue
+            text = r.get("value", "") or r.get("text", "") or ""
+            if isinstance(text, str) and text:
+                parts.append(text)
+                total += len(text)
+    return "\n".join(parts)[:_FTS_CONTENT_LIMIT]
+
+
 def parse_events(path: Path) -> list[dict]:
     """Read a VS Code Chat session file and return a metadata dict + requests.
 

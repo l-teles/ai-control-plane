@@ -857,3 +857,27 @@ def test_parse_events_cp1252_invalid_bytes(tmp_path: Path) -> None:
     events = parse_events(jsonl_path)
     assert len(events) >= 1
     assert any("Łódź" in str(e) for e in events)
+
+
+def test_extract_searchable_text_concatenates_request_and_response(tmp_path: Path) -> None:
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    chat_dir = tmp_path / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    session = _make_session(
+        requests=[
+            _make_request(text="user_prompt_token", response_text="assistant_response_token"),
+        ]
+    )
+    p = chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+    p.write_text(json.dumps(session), encoding="utf-8")
+
+    text = extract_searchable_text(p)
+    assert "user_prompt_token" in text
+    assert "assistant_response_token" in text
+
+
+def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) -> None:
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    assert extract_searchable_text(tmp_path / "does-not-exist.json") == ""

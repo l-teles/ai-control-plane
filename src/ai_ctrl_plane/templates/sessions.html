@@ -234,16 +234,16 @@
   </form>
 
   <div class="filters">
-    <button class="filter-btn active" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
+    <button class="filter-btn active" data-filter="all" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
+    <button class="filter-btn" data-filter="claude" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
+    <button class="filter-btn" data-filter="copilot" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
+    <button class="filter-btn" data-filter="vscode" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
   </div>
 
   <div class="sessions-grid" id="sessions-grid">
     {% for s in sessions %}
     <a class="session-card" href="/session/{{ s.id }}" data-source="{{ s.source }}"
-       data-search="{{ (s.summary or s.id)|lower }} {{ (s.branch or '')|lower }} {{ (s.cwd or '')|lower }} {{ (s.repository or '')|lower }} {{ (s.model or '')|lower }} {{ (s.slug or '')|lower }}">
+       data-session-id="{{ s.source }}:{{ s.id }}">
       <h2>{{ s.summary or s.id }}</h2>
       <div class="session-meta">
         {% if s.source == 'claude' %}
@@ -311,20 +311,42 @@
 {% block scripts_extra %}
 <script>
 var currentFilter = 'all';
-var currentSearch = '';
+// IDs returned by the most recent /api/search call. Empty string means
+// "no search active — every card is eligible". A Set means "only cards
+// whose data-session-id is in this set are eligible".
+var searchHits = '';
 
 function applyFilters() {
   var cards = document.querySelectorAll('#sessions-grid .session-card');
   var visible = 0;
+  // Per-source totals reflect "matches the search" regardless of the
+  // currently active source filter, so the count badges show how many
+  // hits are in each tool — useful for deciding which source filter to
+  // click after searching.
+  var bySource = {claude: 0, copilot: 0, vscode: 0};
   cards.forEach(function(card) {
     var sourceMatch = currentFilter === 'all' || card.dataset.source === currentFilter;
-    var searchMatch = !currentSearch || card.dataset.search.indexOf(currentSearch) !== -1;
+    var searchMatch = searchHits === '' || searchHits.has(card.dataset.sessionId);
+    if (searchMatch) {
+      var src = card.dataset.source || '';
+      if (bySource[src] !== undefined) bySource[src]++;
+    }
     var show = sourceMatch && searchMatch;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
   var nr = document.getElementById('no-results');
   if (nr) nr.style.display = visible === 0 ? '' : 'none';
+  function setCount(filter, n) {
+    var btn = document.querySelector('.filter-btn[data-filter="' + filter + '"]');
+    if (!btn) return;
+    var c = btn.querySelector('.count');
+    if (c) c.textContent = n;
+  }
+  setCount('all', bySource.claude + bySource.copilot + bySource.vscode);
+  setCount('claude', bySource.claude);
+  setCount('copilot', bySource.copilot);
+  setCount('vscode', bySource.vscode);
 }
 
 function filterSessions(source, btn) {
@@ -337,11 +359,36 @@ function filterSessions(source, btn) {
   applyFilters();
 }
 
+// Debounced server-side search via /api/search — uses the same FTS index
+// as the form submit, so live-filter results match what you'd see after
+// pressing Enter.
 var searchInput = document.getElementById('search');
+var searchInflight = null;
+var searchDebounce = null;
 if (searchInput) {
   searchInput.addEventListener('input', function() {
-    currentSearch = this.value.toLowerCase().trim();
-    applyFilters();
+    var q = this.value.trim();
+    if (searchDebounce) clearTimeout(searchDebounce);
+    if (q === '') {
+      searchHits = '';
+      applyFilters();
+      return;
+    }
+    searchDebounce = setTimeout(function() {
+      if (searchInflight) searchInflight.abort();
+      var ctrl = new AbortController();
+      searchInflight = ctrl;
+      fetch('/api/search?q=' + encodeURIComponent(q), {signal: ctrl.signal})
+        .then(function(r) { return r.json(); })
+        .then(function(results) {
+          searchHits = new Set(results.map(function(s) { return s.source + ':' + s.id; }));
+          applyFilters();
+          searchInflight = null;
+        })
+        .catch(function(err) {
+          if (err.name !== 'AbortError') console.error(err);
+        });
+    }, 200);
   });
 }
 

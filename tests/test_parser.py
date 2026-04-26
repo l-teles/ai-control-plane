@@ -110,6 +110,35 @@ def test_parse_events(tmp_session: Path) -> None:
     assert events[-1]["type"] == "session.shutdown"
 
 
+def test_extract_searchable_text_concatenates_user_and_assistant(tmp_path: Path) -> None:
+    from ai_ctrl_plane.parser import extract_searchable_text
+
+    sdir = tmp_path / "sess"
+    sdir.mkdir()
+    (sdir / "events.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type": "user.message", "data": {"content": "hello world"}, "timestamp": "t"}',
+                '{"type": "assistant.message", "data": {"content": "DPDK bypass", "reasoningText": "thinking"}}',
+                '{"type": "tool.execution_complete", "data": {"result": "needle_result"}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    text = extract_searchable_text(sdir)
+    assert "hello world" in text
+    assert "DPDK bypass" in text
+    assert "thinking" in text
+    assert "needle_result" in text
+
+
+def test_extract_searchable_text_returns_empty_for_missing_session(tmp_path: Path) -> None:
+    from ai_ctrl_plane.parser import extract_searchable_text
+
+    assert extract_searchable_text(tmp_path / "nope") == ""
+
+
 def test_build_conversation(tmp_session: Path) -> None:
     events = parse_events(tmp_session / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
     conv = build_conversation(events)
