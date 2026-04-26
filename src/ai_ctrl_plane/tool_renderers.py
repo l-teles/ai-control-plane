@@ -59,6 +59,10 @@ _DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpe?g|gif|webp));base64,([A-Za-z
 # inline SVG executes scripts when rendered in ``<img>`` (it's an XML
 # document, not an opaque pixel buffer), which would defeat the CSP.
 _SAFE_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"})
+# Cap base64 image payloads to ~1.5 MB decoded (2 MB base64 ≈ 1.5 MB
+# raw). Larger images get dropped — they'd otherwise inflate the HTML
+# response, push memory pressure on the browser, and stall page paint.
+_MAX_IMAGE_BASE64_SIZE = 2_000_000
 
 
 def extract_images_from_result(result: Any) -> list[dict[str, str]]:
@@ -83,18 +87,25 @@ def extract_images_from_result(result: Any) -> list[dict[str, str]]:
                     if media not in _SAFE_IMAGE_MIME_TYPES:
                         continue  # reject SVG and other potentially active formats
                     data = source.get("data", "")
-                    if data:
-                        out.append({"src": f"data:{media};base64,{data}", "alt": "tool result image"})
+                    if not data or len(data) > _MAX_IMAGE_BASE64_SIZE:
+                        continue  # drop oversized payloads (don't bloat HTML)
+                    out.append({"src": f"data:{media};base64,{data}", "alt": "tool result image"})
             elif block.get("type") == "text":
                 # A text block may contain a data URL — pick those up too.
                 text = block.get("text", "") or ""
-                m = _DATA_URL_RE.match(text.strip())
+                stripped = text.strip()
+                if len(stripped) > _MAX_IMAGE_BASE64_SIZE:
+                    continue
+                m = _DATA_URL_RE.match(stripped)
                 if m:
-                    out.append({"src": text.strip(), "alt": "tool result image"})
+                    out.append({"src": stripped, "alt": "tool result image"})
     elif isinstance(result, str):
-        m = _DATA_URL_RE.match(result.strip())
+        stripped = result.strip()
+        if len(stripped) > _MAX_IMAGE_BASE64_SIZE:
+            return out
+        m = _DATA_URL_RE.match(stripped)
         if m:
-            out.append({"src": result.strip(), "alt": "tool result image"})
+            out.append({"src": stripped, "alt": "tool result image"})
     return out
 
 

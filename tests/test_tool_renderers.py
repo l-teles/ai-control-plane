@@ -198,3 +198,25 @@ def test_extract_images_accepts_safe_raster_types() -> None:
         images = extract_images_from_result(blocks)
         assert len(images) == 1, f"expected {media} to be accepted"
         assert images[0]["src"].startswith(f"data:{media};base64,")
+
+
+def test_extract_images_drops_oversized_block_image() -> None:
+    """An image block whose base64 payload exceeds the cap is dropped
+    silently to keep the HTML response from ballooning. Regression for
+    PR #27 review comment 15."""
+    huge = "A" * 2_000_001  # > _MAX_IMAGE_BASE64_SIZE
+    blocks = [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": huge}}]
+    assert extract_images_from_result(blocks) == []
+
+
+def test_extract_images_drops_oversized_data_url_in_text_block() -> None:
+    """Same cap applies to data URLs that arrive inside a text block."""
+    huge_data_url = "data:image/png;base64," + ("A" * 2_000_001)
+    blocks = [{"type": "text", "text": huge_data_url}]
+    assert extract_images_from_result(blocks) == []
+
+
+def test_extract_images_drops_oversized_data_url_string() -> None:
+    """And to results that are a bare data URL string."""
+    huge_data_url = "data:image/png;base64," + ("A" * 2_000_001)
+    assert extract_images_from_result(huge_data_url) == []

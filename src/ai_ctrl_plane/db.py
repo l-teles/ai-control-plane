@@ -192,30 +192,31 @@ class CacheDB:
             self._conn.execute("DELETE FROM sessions_fts")
             self._conn.commit()
 
-    def _index_sessions_fts(self, sessions: list[dict]) -> None:
+    def _index_sessions_fts(self, sessions: list[dict], content_by_id: dict[str, str]) -> None:
         """Insert/replace each session in the FTS index.
 
-        Pulls the full conversation text for each session via the source's
-        ``extract_searchable_text`` helper so search hits message bodies,
-        not just metadata.  Called from :meth:`insert_sessions` so the
-        index stays in sync with the canonical ``sessions`` table.
-        Uses ``DELETE`` + ``INSERT`` rather than ``INSERT OR REPLACE``
-        because FTS5 virtual tables don't support replace semantics.
+        ``content_by_id`` maps ``source:id`` to the pre-extracted
+        searchable text for each session — caller is responsible for
+        running ``_extract_session_content`` outside the DB lock so
+        concurrent route reads aren't blocked by file I/O during a build
+        or refresh. Uses ``DELETE`` + ``INSERT`` rather than ``INSERT
+        OR REPLACE`` because FTS5 virtual tables don't support replace
+        semantics.
         """
         ids = [f"{s['source']}:{s['id']}" for s in sessions]
         self._conn.executemany("DELETE FROM sessions_fts WHERE session_id = ?", [(i,) for i in ids])
 
         rows = []
         for s in sessions:
-            content = _extract_session_content(s)
+            full_id = f"{s['source']}:{s['id']}"
             rows.append(
                 (
-                    f"{s['source']}:{s['id']}",
+                    full_id,
                     s.get("summary", "") or "",
                     s.get("cwd", "") or "",
                     s.get("model", "") or "",
                     s.get("first_user_content", "") or "",
-                    content,
+                    content_by_id.get(full_id, ""),
                 )
             )
         self._conn.executemany(
@@ -252,11 +253,17 @@ class CacheDB:
             return []
         with self._lock:
             try:
+                # Reference the FTS table by its real name throughout —
+                # FTS5's ``MATCH`` operator only resolves the LHS against
+                # the underlying virtual-table identifier (an alias on
+                # the JOIN raises "no such column"), so ``sessions_fts``
+                # appears on both the MATCH and the rank column for
+                # consistency.
                 rows = self._conn.execute(
                     "SELECT s.raw_json FROM sessions s "
-                    "JOIN sessions_fts f ON s.id = f.session_id "
+                    "JOIN sessions_fts ON s.id = sessions_fts.session_id "
                     "WHERE sessions_fts MATCH ? "
-                    "ORDER BY rank LIMIT ?",
+                    "ORDER BY sessions_fts.rank LIMIT ?",
                     (cleaned, limit),
                 ).fetchall()
                 return [json.loads(r["raw_json"]) for r in rows]
@@ -290,6 +297,13 @@ class CacheDB:
                 return results
 
     def insert_sessions(self, sessions: list[dict]) -> None:
+        # Compute the per-session FTS content (file I/O + parsing) BEFORE
+        # acquiring the DB lock, so concurrent route reads aren't blocked
+        # while we read up to N session files from disk during a refresh
+        # or full build. The lock then only wraps the DELETE/INSERT pair.
+        content_by_id = {
+            f"{s['source']}:{s['id']}": _extract_session_content(s) for s in sessions
+        }
         with self._lock:
             self._conn.executemany(
                 "INSERT OR REPLACE INTO sessions "
@@ -318,7 +332,7 @@ class CacheDB:
                     for s in sessions
                 ],
             )
-            self._index_sessions_fts(sessions)
+            self._index_sessions_fts(sessions, content_by_id)
             self._conn.commit()
 
     def get_session_anchors(self) -> dict[str, tuple[str, float]]:
@@ -400,8 +414,13 @@ class CacheDB:
             rebuilt.append(session)
         if not rebuilt:
             return 0
+        # Compute content outside the lock — see ``insert_sessions``
+        # for the same reasoning.
+        content_by_id = {
+            f"{s['source']}:{s['id']}": _extract_session_content(s) for s in rebuilt
+        }
         with self._lock:
-            self._index_sessions_fts(rebuilt)
+            self._index_sessions_fts(rebuilt, content_by_id)
             self._conn.commit()
         return len(rebuilt)
 
