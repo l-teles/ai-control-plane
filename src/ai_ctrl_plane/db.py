@@ -324,13 +324,29 @@ class CacheDB:
     def get_session_anchors(self) -> dict[str, tuple[str, float]]:
         """Return ``{source_path: (session_id, mtime)}`` for every cached session.
 
-        Used by the incremental refresh to decide what's new, changed, or gone.
+        Used by the incremental refresh to skip re-parsing files whose mtime
+        hasn't advanced.  Rows with a NULL ``source_path`` (legacy entries
+        from caches built before migration 002) aren't included here — see
+        :meth:`get_all_session_ids` for the gone-detection diff that does
+        catch them.
         """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id, source_path, source_mtime FROM sessions WHERE source_path IS NOT NULL"
             ).fetchall()
         return {r["source_path"]: (r["id"], r["source_mtime"] or 0.0) for r in rows if r["source_path"]}
+
+    def get_all_session_ids(self) -> set[str]:
+        """Return every cached session's full ``source:uuid`` id.
+
+        Used alongside :meth:`get_session_anchors` so refresh can drop
+        legacy rows (NULL ``source_path``) whose source files have been
+        deleted on disk — those rows would otherwise persist forever
+        because the path-based gone-detection can't see them.
+        """
+        with self._lock:
+            rows = self._conn.execute("SELECT id FROM sessions").fetchall()
+        return {r["id"] for r in rows}
 
     def delete_sessions(self, ids: list[str]) -> None:
         if not ids:
@@ -651,8 +667,12 @@ def refresh_cache(
     try:
         cache.set_meta("status", "refreshing")
 
+        # Path-based map: lets us skip re-parsing unchanged files (mtime check).
         cached = cache.get_session_anchors()  # {source_path: (id, mtime)}
-        cached_paths = set(cached)
+        # Id-based set: lets us drop sessions whose source files no longer
+        # exist, including legacy rows (pre-migration-002) that have a
+        # NULL source_path and therefore aren't in the path map above.
+        cached_ids = cache.get_all_session_ids()
 
         copilot_sessions = copilot_discover(copilot_path)
         for s in copilot_sessions:
@@ -662,8 +682,10 @@ def refresh_cache(
         fs_sessions = copilot_sessions + claude_sessions + vscode_sessions
 
         to_upsert: list[dict] = []
-        seen_paths: set[str] = set()
+        fs_ids: set[str] = set()
         for s in fs_sessions:
+            full_id = f"{s['source']}:{s['id']}"
+            fs_ids.add(full_id)
             sp = s.get("source_path", "")
             if not sp:
                 # Parser didn't supply an anchor — fall back to a full upsert
@@ -671,10 +693,12 @@ def refresh_cache(
                 to_upsert.append(s)
                 counts["added"] += 1
                 continue
-            seen_paths.add(sp)
             current = cached.get(sp)
             new_mtime = float(s.get("source_mtime", 0.0))
             if current is None:
+                # New file OR a legacy NULL-anchor row whose id is now
+                # being upgraded to a proper anchor.  ``insert_sessions``
+                # uses INSERT OR REPLACE, so the row is upgraded in place.
                 to_upsert.append(s)
                 counts["added"] += 1
             elif new_mtime > current[1]:
@@ -686,11 +710,12 @@ def refresh_cache(
         if to_upsert:
             cache.insert_sessions(to_upsert)
 
-        gone_paths = cached_paths - seen_paths
-        if gone_paths:
-            ids_to_remove = [cached[p][0] for p in gone_paths]
-            cache.delete_sessions(ids_to_remove)
-            counts["removed"] = len(ids_to_remove)
+        # Id-based gone detection — drops both modern path-tracked rows
+        # and legacy NULL-anchor rows whose underlying files are gone.
+        gone_ids = cached_ids - fs_ids
+        if gone_ids:
+            cache.delete_sessions(list(gone_ids))
+            counts["removed"] = len(gone_ids)
 
         # Tool configs and project metadata are cheap; refresh them every time.
         configs = read_all_configs()

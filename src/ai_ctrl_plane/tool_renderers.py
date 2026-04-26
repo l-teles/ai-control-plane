@@ -27,13 +27,18 @@ from typing import Any
 from .ansi import ansi_to_html
 
 # How many characters of file/output content to inline before truncating.
-# Long content gets a "..." suffix and the full text remains in the raw
-# `result` field so the user can expand it.
+# When the limit is hit, the helper returns ``was_truncated=True`` and the
+# template renders a "… truncated" indicator below the preview; the full
+# text remains in the raw ``result`` field on the conversation item so
+# the user can fall back to it via the JSON API.
 _PREVIEW_CHARS = 4_000
 
 
 def _truncate(text: str, limit: int = _PREVIEW_CHARS) -> tuple[str, bool]:
-    """Return (truncated_text, was_truncated)."""
+    """Return (truncated_text, was_truncated). The caller / template is
+    responsible for surfacing a visual cue when ``was_truncated`` is True
+    (no ``...`` is appended here so the preview can be safely embedded in
+    HTML attributes etc.)."""
     if len(text) <= limit:
         return text, False
     return text[:limit], True

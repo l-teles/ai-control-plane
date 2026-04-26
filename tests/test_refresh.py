@@ -134,6 +134,72 @@ def test_refresh_sets_status_back_to_ready(tmp_path: Path) -> None:
     db.close()
 
 
+def test_refresh_drops_legacy_null_source_path_session_when_file_gone(tmp_path: Path) -> None:
+    """A session inserted before migration 002 (so source_path is NULL)
+    whose underlying file no longer exists must still be removed by
+    refresh_cache. Regression for PR #27 review comment 6."""
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    # Simulate a legacy row directly via SQL — bypass insert_sessions which
+    # would populate source_path. This mirrors the state of a cache that
+    # was first built under the old schema.
+    sid = "claude:legacy-1111-2222-3333-444444444444"
+    db._conn.execute(
+        "INSERT INTO sessions (id, source, uuid, summary, created, raw_json, source_path, source_mtime) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)",
+        (sid, "claude", "legacy-1111-2222-3333-444444444444", "old", "2026-01-01T00:00:00Z", "{}"),
+    )
+    db._conn.commit()
+    assert sid in db.get_all_session_ids()
+    # And it's invisible to the path-based map by design:
+    assert db.get_session_anchors() == {}
+
+    # Now refresh with empty filesystem — the legacy row should be dropped.
+    counts = refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+    assert counts["removed"] == 1
+    assert sid not in db.get_all_session_ids()
+    db.close()
+
+
+def test_refresh_upgrades_legacy_null_source_path_row_in_place(tmp_path: Path) -> None:
+    """When a legacy NULL-anchor row's id matches a file still on disk,
+    the refresh should re-insert it with proper source_path/mtime
+    populated rather than leaving it stuck without an anchor."""
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    # Make a real Copilot session on disk and pre-seed a legacy row with
+    # the same id but NULL anchor.
+    sid_uuid = "aaaaaaaa-1111-2222-3333-444444444444"
+    _make_copilot_session(copilot_dir, sid_uuid)
+    composite_id = f"copilot:{sid_uuid}"
+    db._conn.execute(
+        "INSERT INTO sessions (id, source, uuid, summary, created, raw_json, source_path, source_mtime) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)",
+        (composite_id, "copilot", sid_uuid, "old", "2026-01-01T00:00:00Z", "{}"),
+    )
+    db._conn.commit()
+
+    refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+
+    # After refresh the row must have a real source_path / source_mtime.
+    anchors = db.get_session_anchors()
+    assert any(p.endswith("events.jsonl") for p in anchors)
+    # And it's still the same session id (replaced in place, not duplicated).
+    assert composite_id in db.get_all_session_ids()
+    assert len([sid for sid in db.get_all_session_ids() if sid_uuid in sid]) == 1
+    db.close()
+
+
 def test_get_session_anchors_round_trip(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "cache.db")
     db.insert_sessions(
