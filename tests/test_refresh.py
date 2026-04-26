@@ -107,8 +107,13 @@ def test_refresh_detects_session_when_mtime_goes_backwards(tmp_path: Path) -> No
     """If a file is restored from backup or checked out from VCS, its
     mtime can be older than the cached value but the content is still
     different. ``!=`` (rather than ``>``) catches that case. Regression
-    for PR #27 review #35."""
-    import os
+    for PR #27 review #35.
+
+    Tests the *logic* (cached vs FS mtime delta) by bumping the cached
+    mtime forward via SQL — using ``os.utime`` to set the file's mtime
+    backwards isn't portable enough across CI filesystems (NTFS on the
+    Windows runner doesn't always honour the rewind in pytest tempdirs).
+    """
     import time
 
     db = CacheDB(tmp_path / "cache.db")
@@ -118,21 +123,21 @@ def test_refresh_detects_session_when_mtime_goes_backwards(tmp_path: Path) -> No
     for d in (copilot_dir, claude_dir, vscode_dir):
         d.mkdir()
 
-    sdir = _make_copilot_session(copilot_dir, "aaaaaaaa-1111-2222-3333-444444444444")
-    # First build records the current mtime.
+    _make_copilot_session(copilot_dir, "aaaaaaaa-1111-2222-3333-444444444444")
     build_cache(db, copilot_dir, claude_dir, vscode_dir)
 
-    # Modify the file, then set its mtime to *earlier* than the cached
-    # value (simulating a backup restore).
-    events = sdir / "events.jsonl"
-    events.write_text("modified\n", encoding="utf-8")
-    past = time.time() - 86400  # one day ago
-    os.utime(events, (past, past))
+    # Force the cached mtime to be *ahead* of the FS mtime — exactly the
+    # state that would arise from a backup restore or a VCS checkout
+    # that moved the file's mtime backwards. The file on disk is
+    # unchanged from build time, so under the old ``>`` semantics
+    # refresh would treat it as unchanged. Under ``!=`` it correctly
+    # re-parses.
+    future = time.time() + 86400
+    db._conn.execute("UPDATE sessions SET source_mtime = ?", (future,))
+    db._conn.commit()
 
     counts = refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
-    # ``!=`` semantics: any mtime delta — backwards too — is treated as
-    # changed.
-    assert counts["updated"] == 1
+    assert counts["updated"] == 1, counts
     db.close()
 
 
