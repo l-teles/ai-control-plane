@@ -881,3 +881,15 @@ def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) 
     from ai_ctrl_plane.vscode_parser import extract_searchable_text
 
     assert extract_searchable_text(tmp_path / "does-not-exist.json") == ""
+
+
+def test_extract_searchable_text_returns_empty_for_non_dict_root(tmp_path: Path) -> None:
+    """``json.load`` of a ``.json`` file can legally return a list/scalar/null
+    at the root. The function should bail rather than crash on
+    ``data.get(...)``. Regression for PR #27 review #41."""
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    for payload in ('["a", "b"]', '"just a string"', "42", "null", "true"):
+        p = tmp_path / "session.json"
+        p.write_text(payload, encoding="utf-8")
+        assert extract_searchable_text(p) == "", f"payload {payload!r} should return empty"

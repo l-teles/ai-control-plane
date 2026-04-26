@@ -254,7 +254,9 @@ def discover_all_vscode_sessions(vscode_path: Path) -> list[dict]:
 def _session_entry_from_file(path: Path, cwd: str, repo: str) -> dict | None:
     """Build a session index entry from a chat session file."""
     data = _read_session_json(path)
-    if not data:
+    # JSON root can legally be a list / scalar / null; we only handle
+    # dict-shaped session files.
+    if not isinstance(data, dict):
         return None
 
     session_id = data.get("sessionId", "")
@@ -350,7 +352,11 @@ def extract_searchable_text(path: Path) -> str:
     ``message.text`` and a ``response`` list of ``{value, kind}`` chunks.
     """
     data = _read_session_json(path)
-    if not data:
+    # ``_read_session_json`` returns ``json.load`` for ``.json`` files,
+    # which is legally any JSON value at the root (list, string, number,
+    # null, …). We only support dict-shaped sessions; bail otherwise so
+    # ``data.get()`` can't crash on a non-dict.
+    if not isinstance(data, dict):
         return ""
     parts: list[str] = []
     total = 0
@@ -382,7 +388,9 @@ def parse_events(path: Path) -> list[dict]:
     request objects from the session JSON.
     """
     data = _read_session_json(path)
-    if not data:
+    # JSON root can legally be a list / scalar / null; we only handle
+    # dict-shaped session files.
+    if not isinstance(data, dict):
         return []
 
     meta = {

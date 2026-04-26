@@ -140,6 +140,45 @@ def test_text_content_filters_non_string_text_blocks() -> None:
     assert entry.text_content == "first\nlast"
 
 
+def test_from_dict_coerces_non_dict_message_and_snapshot() -> None:
+    """A malformed event with ``message: [list]`` or ``snapshot: "str"``
+    used to leak non-dicts into the entry; the property accessors
+    (``model``, ``usage``, ``content``) would then crash on ``.get``.
+    Regression for PR #27 review #42."""
+    entry = TranscriptEntry.from_dict(
+        {
+            "type": "assistant",
+            "uuid": "x",
+            "message": ["list", "instead", "of", "dict"],
+            "snapshot": "string instead of dict",
+        }
+    )
+    # Coerced to empty dict — accessors don't raise.
+    assert entry.message == {}
+    assert entry.snapshot == {}
+    assert entry.model == ""
+    assert entry.usage == {}
+    assert entry.content == ""
+
+
+def test_from_dict_coerces_non_string_fields() -> None:
+    """A malformed event with non-string ``type`` / ``uuid`` / ``timestamp``
+    etc. shouldn't leak those values into the typed fields where they
+    would silently break comparisons (``entry.type == \"user\"``)."""
+    entry = TranscriptEntry.from_dict(
+        {
+            "type": 42,
+            "uuid": ["not", "a", "string"],
+            "timestamp": None,
+            "cwd": {"x": 1},
+        }
+    )
+    assert entry.type == ""
+    assert entry.uuid == ""
+    assert entry.timestamp == ""
+    assert entry.cwd == ""
+
+
 def test_thinking_text_filters_non_string_blocks() -> None:
     """Same defensive filter as ``text_content`` but for thinking blocks.
     Regression for PR #27 review #32."""

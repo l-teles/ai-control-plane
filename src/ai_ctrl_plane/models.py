@@ -48,25 +48,39 @@ class TranscriptEntry:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> TranscriptEntry:
+        # Coerce defensively at every field — a malformed transcript
+        # (or a quirky MCP-emitted event) can put non-string values in
+        # the string-typed slots and non-dict values in ``message`` /
+        # ``snapshot``.  Without these guards, downstream property
+        # accessors like ``model`` / ``content`` would do ``.get`` on a
+        # non-dict and crash, or a string comparison like
+        # ``entry.type == "user"`` would silently mismatch when ``type``
+        # is unexpectedly e.g. an int.
+        def _s(value: Any) -> str:
+            return value if isinstance(value, str) else ""
+
+        def _d(value: Any) -> dict[str, Any]:
+            return value if isinstance(value, dict) else {}
+
         return cls(
-            type=d.get("type", "") or "",
-            uuid=d.get("uuid", "") or "",
-            parent_uuid=d.get("parentUuid", "") or "",
-            leaf_uuid=d.get("leafUuid", "") or "",
-            session_id=d.get("sessionId", "") or "",
-            timestamp=d.get("timestamp", "") or "",
+            type=_s(d.get("type")),
+            uuid=_s(d.get("uuid")),
+            parent_uuid=_s(d.get("parentUuid")),
+            leaf_uuid=_s(d.get("leafUuid")),
+            session_id=_s(d.get("sessionId")),
+            timestamp=_s(d.get("timestamp")),
             is_sidechain=bool(d.get("isSidechain", False)),
             is_meta=bool(d.get("isMeta", False)),
-            cwd=d.get("cwd", "") or "",
-            git_branch=d.get("gitBranch", "") or "",
-            version=d.get("version", "") or "",
-            user_type=d.get("userType", "") or "",
-            agent_id=d.get("agentId", "") or "",
-            permission_mode=d.get("permissionMode", "") or "",
-            request_id=d.get("requestId", "") or "",
-            message=d.get("message") or {},
-            summary=d.get("summary", "") or "",
-            snapshot=d.get("snapshot") or {},
+            cwd=_s(d.get("cwd")),
+            git_branch=_s(d.get("gitBranch")),
+            version=_s(d.get("version")),
+            user_type=_s(d.get("userType")),
+            agent_id=_s(d.get("agentId")),
+            permission_mode=_s(d.get("permissionMode")),
+            request_id=_s(d.get("requestId")),
+            message=_d(d.get("message")),
+            summary=_s(d.get("summary")),
+            snapshot=_d(d.get("snapshot")),
             raw=d,
         )
 
