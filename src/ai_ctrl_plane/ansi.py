@@ -19,8 +19,11 @@ import re
 # We strip these (we only render the final state of the buffer, not the
 # ANSI animation).  The 'm' (SGR) form is intercepted *before* this regex.
 _CURSOR_CONTROL_RE = re.compile(r"\x1b\[[0-9;?]*[ABCDEFGHJKSTfilnsuh]")
-# Other escape sequences (bell, OSC, etc.) — strip wholesale.
-_OTHER_ESC_RE = re.compile(r"\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\\|\x1b[NO][@-^]?")
+# Other escape sequences (bell, OSC, DCS, single-shift G2/G3) — strip wholesale.
+# The ESC N / ESC O single-shift sequences carry a single argument byte from
+# the G2/G3 character set; we don't render those alternate sets, so we drop
+# the prefix and let the argument byte (if any) fall through as plain text.
+_OTHER_ESC_RE = re.compile(r"\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\\|\x1b[NO]")
 # SGR (Select Graphic Rendition) — ESC [ <params> m
 _SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 

@@ -50,6 +50,10 @@ def _file_basename(path: str) -> str:
 # ---------------------------------------------------------------------------
 
 _DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=]+)$")
+# Allow only inert raster formats. Notably excludes ``image/svg+xml`` —
+# inline SVG executes scripts when rendered in ``<img>`` (it's an XML
+# document, not an opaque pixel buffer), which would defeat the CSP.
+_SAFE_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"})
 
 
 def extract_images_from_result(result: Any) -> list[dict[str, str]]:
@@ -71,6 +75,8 @@ def extract_images_from_result(result: Any) -> list[dict[str, str]]:
                 source = block.get("source") or {}
                 if source.get("type") == "base64":
                     media = source.get("media_type", "image/png")
+                    if media not in _SAFE_IMAGE_MIME_TYPES:
+                        continue  # reject SVG and other potentially active formats
                     data = source.get("data", "")
                     if data:
                         out.append({"src": f"data:{media};base64,{data}", "alt": "tool result image"})
@@ -321,7 +327,11 @@ def render_tool_result(result: Any) -> tuple[str, list[dict[str, str]]]:
         text_parts: list[str] = []
         for block in result:
             if isinstance(block, dict) and block.get("type") == "text":
-                text_parts.append(block.get("text", ""))
+                # ``"text": null`` is valid JSON and shows up in some tool
+                # results — coerce so ``"\n".join`` doesn't TypeError.
+                text = block.get("text") or ""
+                if isinstance(text, str):
+                    text_parts.append(text)
         return "\n".join(text_parts), images
     return str(result), images
 

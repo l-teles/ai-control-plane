@@ -137,3 +137,46 @@ def test_render_tool_result_drops_text_when_string_is_pure_image() -> None:
     text, images = render_tool_result("data:image/png;base64,AAA")
     assert text == ""
     assert len(images) == 1
+
+
+def test_render_tool_result_handles_null_text_block() -> None:
+    """A tool_result text block with ``"text": null`` shouldn't crash —
+    Python's ``"\\n".join`` raises ``TypeError`` on a None element."""
+    blocks = [
+        {"type": "text", "text": None},
+        {"type": "text", "text": "real content"},
+    ]
+    text, images = render_tool_result(blocks)
+    assert text == "\nreal content"
+    assert images == []
+
+
+def test_extract_images_rejects_svg_mime_type() -> None:
+    """SVG image blocks would render JS when placed in <img>; reject."""
+    blocks = [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/svg+xml", "data": "PHN2Zw=="},
+        },
+    ]
+    images = extract_images_from_result(blocks)
+    assert images == []
+
+
+def test_extract_images_rejects_unknown_mime_type() -> None:
+    """Anything outside the safe-raster allowlist gets dropped."""
+    blocks = [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "text/html", "data": "PGh0bWw+"},
+        },
+    ]
+    assert extract_images_from_result(blocks) == []
+
+
+def test_extract_images_accepts_safe_raster_types() -> None:
+    for media in ("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"):
+        blocks = [{"type": "image", "source": {"type": "base64", "media_type": media, "data": "AAA"}}]
+        images = extract_images_from_result(blocks)
+        assert len(images) == 1, f"expected {media} to be accepted"
+        assert images[0]["src"].startswith(f"data:{media};base64,")

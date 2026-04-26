@@ -156,6 +156,9 @@ def find_sidechain_runs(entries: list[TranscriptEntry]) -> list[list[TranscriptE
             if node.is_sidechain:
                 run.append(node)
                 stack.extend(reversed(children_of.get(node.uuid, [])))
-        run.sort(key=lambda x: x.timestamp or "")
+        # The DFS above produces DAG-order; the input is already DAG-ordered
+        # by ``order_by_dag`` per the docstring contract, so we don't add a
+        # timestamp sort that would risk re-ordering siblings whose
+        # timestamps tie or — in malformed input — go backwards.
         runs.append(run)
     return runs

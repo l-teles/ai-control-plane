@@ -236,6 +236,16 @@ class CacheDB:
         ``_conn`` directly.
 
         An empty query returns an empty list.
+
+        Implementation notes
+        --------------------
+        Ranking uses FTS5's standard ``rank`` virtual column (BM25-derived,
+        stable since SQLite 3.20 / 2017; Python 3.13 ships ≥ 3.43).  The
+        ``except OperationalError`` branch below is a defensive fallback
+        for genuinely malformed queries that slip past the sanitiser; it
+        only matches against ``summary`` and ``cwd`` (not the conversation
+        body), so search quality degrades there.  In practice almost
+        every user query takes the FTS path.
         """
         cleaned = _sanitise_fts_query(query or "")
         if not cleaned:
