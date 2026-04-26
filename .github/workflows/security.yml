@@ -40,6 +40,12 @@ jobs:
           python-version: "3.13"
       - name: Install pip-audit and dependencies
         run: |
+          # Upgrade pip before auditing — the runner's preinstalled pip is
+          # itself audited by ``pip-audit`` (it scans the whole env), so a
+          # CVE in pip's bundled version fails the job even when project
+          # deps are clean.  Pulling the latest pip lets us pick up any
+          # available fix automatically.
+          python -m pip install --upgrade pip
           pip install -r .github/requirements-security.txt
           pip install -e .
       - name: Audit dependencies
