@@ -122,12 +122,22 @@ class TranscriptEntry:
 
     @property
     def text_content(self) -> str:
-        """Concatenated text from text blocks, or the raw string content."""
+        """Concatenated text from text blocks, or the raw string content.
+
+        Filters non-string ``text`` values (``None``, ``int``, lists from
+        a malformed transcript or quirky MCP tool) so ``"\\n".join`` can
+        never raise ``TypeError`` and break callers that read this for
+        DAG ordering / search indexing.
+        """
         c = self.content
         if isinstance(c, str):
             return c
         if isinstance(c, list):
-            return "\n".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+            return "\n".join(
+                b["text"]
+                for b in c
+                if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)
+            )
         return ""
 
     @property
@@ -140,7 +150,14 @@ class TranscriptEntry:
 
     @property
     def thinking_text(self) -> str:
-        return "\n\n".join(b.get("thinking", "") for b in self.content_blocks if b.get("type") == "thinking")
+        """Concatenated thinking-block text, with the same string-only
+        filter as :attr:`text_content` so a ``{"thinking": null}`` block
+        can't crash ``"\\n\\n".join``."""
+        return "\n\n".join(
+            b["thinking"]
+            for b in self.content_blocks
+            if b.get("type") == "thinking" and isinstance(b.get("thinking"), str)
+        )
 
 
 def parse_entries(events: list[dict[str, Any]]) -> list[TranscriptEntry]:

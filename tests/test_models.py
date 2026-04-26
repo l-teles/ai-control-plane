@@ -116,3 +116,44 @@ def test_parse_entries_returns_typed_list() -> None:
     assert all(isinstance(e, TranscriptEntry) for e in entries)
     assert entries[0].is_user
     assert entries[1].is_assistant
+
+
+def test_text_content_filters_non_string_text_blocks() -> None:
+    """``text_content`` joins on ``b['text']``; a block with ``"text": null``
+    or any non-string would otherwise crash ``"\\n".join`` with TypeError.
+    Regression for PR #27 review #31."""
+    entry = TranscriptEntry.from_dict(
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "first"},
+                    {"type": "text", "text": None},  # would have crashed
+                    {"type": "text", "text": 42},  # also non-string
+                    {"type": "text", "text": ["wrapped"]},
+                    {"type": "text", "text": "last"},
+                ]
+            },
+        }
+    )
+    # No raise; non-string blocks dropped.
+    assert entry.text_content == "first\nlast"
+
+
+def test_thinking_text_filters_non_string_blocks() -> None:
+    """Same defensive filter as ``text_content`` but for thinking blocks.
+    Regression for PR #27 review #32."""
+    entry = TranscriptEntry.from_dict(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "thinking", "thinking": "step one"},
+                    {"type": "thinking", "thinking": None},  # would crash
+                    {"type": "thinking", "thinking": 7},
+                    {"type": "thinking", "thinking": "step two"},
+                ]
+            },
+        }
+    )
+    assert entry.thinking_text == "step one\n\nstep two"
