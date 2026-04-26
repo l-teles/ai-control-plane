@@ -822,6 +822,37 @@ def test_safe_read_json_utf8(tmp_path):
     assert "日本語" in result["note"]
 
 
+def test_read_repo_permissions_handles_non_dict_permissions(tmp_path):
+    """A corrupted settings file with ``"permissions": []`` (or any
+    non-dict value) used to crash ``perms.get(...)``. Regression for
+    PR #27 review #51."""
+    from ai_ctrl_plane.config_readers.claude_config import _read_repo_permissions
+
+    repo = tmp_path / "repo"
+    claude_dir = repo / ".claude"
+    claude_dir.mkdir(parents=True)
+
+    for bad_perms_payload in (
+        '{"permissions": []}',
+        '{"permissions": "not-a-dict"}',
+        '{"permissions": 42}',
+        '{"permissions": null}',
+    ):
+        (claude_dir / "settings.json").write_text(bad_perms_payload, encoding="utf-8")
+        result = _read_repo_permissions(str(repo))
+        assert result == {"allow": [], "deny": [], "ask": []}, (
+            f"payload {bad_perms_payload!r} should yield empty rule lists"
+        )
+
+    # Valid permissions still work.
+    (claude_dir / "settings.json").write_text(
+        '{"permissions": {"allow": ["Read"], "deny": ["Bash"]}}', encoding="utf-8"
+    )
+    result = _read_repo_permissions(str(repo))
+    assert result["allow"] == ["Read"]
+    assert result["deny"] == ["Bash"]
+
+
 def test_safe_read_json_returns_none_for_non_dict_root(tmp_path):
     """The declared return type is ``dict | None`` but ``json.load`` can
     return any JSON value at the root. Non-dict roots must be coerced

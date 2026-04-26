@@ -457,6 +457,11 @@ def _read_repo_permissions(real_path: str) -> dict:
     for name in ("settings.json", "settings.local.json"):
         cfg = safe_read_json(repo / ".claude" / name) or {}
         perms = cfg.get("permissions", {})
+        # ``permissions`` is supposed to be a dict but a corrupted
+        # settings file could put a list / scalar there; the inner
+        # ``perms.get(...)`` would crash.
+        if not isinstance(perms, dict):
+            continue
         for key in ("allow", "deny", "ask"):
             items = perms.get(key, [])
             if isinstance(items, list):

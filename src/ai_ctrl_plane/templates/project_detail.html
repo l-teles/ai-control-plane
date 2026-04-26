@@ -167,32 +167,43 @@
       {# ── Metadata ── #}
       {% set meta = project.metadata or {} %}
 
-      {% set perms = meta.get('permissions', {}) %}
-      {% set has_perms = perms.get('allow') or perms.get('deny') or perms.get('ask') %}
-      {% if has_perms %}
+      {# Defensive coercion — a malformed metadata payload can put a   #}
+      {# non-dict at ``permissions`` or non-list at any of the three   #}
+      {# inner keys. ``is iterable and is not string`` matches lists / #}
+      {# tuples but rejects strings (which are also iterable, and      #}
+      {# would otherwise count by character length).                   #}
+      {% set _raw_perms = meta.get('permissions', {}) %}
+      {% set perms = _raw_perms if _raw_perms is mapping else {} %}
+      {% set _allow = perms.get('allow') %}
+      {% set _deny = perms.get('deny') %}
+      {% set _ask = perms.get('ask') %}
+      {% set allow = _allow if (_allow is iterable and _allow is not string and _allow is not mapping) else [] %}
+      {% set deny = _deny if (_deny is iterable and _deny is not string and _deny is not mapping) else [] %}
+      {% set ask = _ask if (_ask is iterable and _ask is not string and _ask is not mapping) else [] %}
+      {% if allow or deny or ask %}
       <div class="section">
         <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Permissions</h3>
         <div class="section-body">
-          {% if perms.get('allow') %}
-          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--green);margin:8px 0 6px;">Allow ({{ perms.allow|length }})</h4>
+          {% if allow %}
+          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--green);margin:8px 0 6px;">Allow ({{ allow|length }})</h4>
           <div class="kv-grid">
-            {% for tool in perms.allow %}
+            {% for tool in allow %}
             <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ tool }}</span></div>
             {% endfor %}
           </div>
           {% endif %}
-          {% if perms.get('deny') %}
-          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--red, #e06c75);margin:8px 0 6px;">Deny ({{ perms.deny|length }})</h4>
+          {% if deny %}
+          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--red, #e06c75);margin:8px 0 6px;">Deny ({{ deny|length }})</h4>
           <div class="kv-grid">
-            {% for tool in perms.deny %}
+            {% for tool in deny %}
             <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ tool }}</span></div>
             {% endfor %}
           </div>
           {% endif %}
-          {% if perms.get('ask') %}
-          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--orange);margin:8px 0 6px;">Ask ({{ perms.ask|length }})</h4>
+          {% if ask %}
+          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--orange);margin:8px 0 6px;">Ask ({{ ask|length }})</h4>
           <div class="kv-grid">
-            {% for tool in perms.ask %}
+            {% for tool in ask %}
             <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ tool }}</span></div>
             {% endfor %}
           </div>

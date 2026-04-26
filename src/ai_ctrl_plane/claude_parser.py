@@ -595,7 +595,10 @@ def _count_permissions(cwd: str) -> dict[str, int]:
     Returns counts for allow, deny, and ask lists.
     """
     counts: dict[str, int] = {"allow": 0, "deny": 0, "ask": 0}
-    if not cwd:
+    # ``cwd`` comes from a JSONL event field that ``extract_workspace`` /
+    # ``_first_metadata`` don't yet type-check. A non-string ``cwd``
+    # (None / int / dict from a malformed event) would crash ``Path()``.
+    if not isinstance(cwd, str) or not cwd:
         return counts
     repo = Path(cwd)
     seen: dict[str, set[str]] = {"allow": set(), "deny": set(), "ask": set()}

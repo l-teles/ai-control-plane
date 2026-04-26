@@ -721,6 +721,17 @@ def test_extract_searchable_text_preserves_non_context_angle_brackets(tmp_path: 
     assert "<component" in text
 
 
+def test_count_permissions_handles_non_string_cwd() -> None:
+    """``cwd`` from a malformed transcript event can be non-string;
+    constructing a Path would TypeError. Coerce to safe defaults.
+    Regression for PR #27 review #53."""
+    from ai_ctrl_plane.claude_parser import _count_permissions
+
+    for bad in (None, 42, [], {"x": 1}, True):
+        result = _count_permissions(bad)
+        assert result == {"allow": 0, "deny": 0, "ask": 0}
+
+
 def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) -> None:
     from ai_ctrl_plane.claude_parser import extract_searchable_text
 
