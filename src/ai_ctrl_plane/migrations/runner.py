@@ -24,9 +24,14 @@ def _now_iso() -> str:
 
 
 def _migration_files() -> list[Traversable]:
-    """Return migration files sorted by version number."""
+    """Return migration files sorted by version number.
+
+    Sorts numerically (``int(version)``) rather than lexically so a
+    future ``1000_*.sql`` doesn't sort before ``999_*.sql`` once
+    versions cross a digit-width boundary.
+    """
     pkg = files(__package__)
-    found: list[tuple[str, Traversable]] = []
+    found: list[tuple[int, Traversable]] = []
     for entry in pkg.iterdir():
         name = entry.name
         if not name.endswith(".sql"):
@@ -34,7 +39,7 @@ def _migration_files() -> list[Traversable]:
         m = _VERSION_RE.match(name)
         if not m:
             continue
-        found.append((m.group(1), entry))
+        found.append((int(m.group(1)), entry))
     found.sort(key=lambda x: x[0])
     return [entry for _, entry in found]
 

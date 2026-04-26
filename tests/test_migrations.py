@@ -75,3 +75,16 @@ def test_cache_db_exposes_schema_version(tmp_path: Path) -> None:
     assert db.schema_version == "004"
     assert db.cache_status()["version"] == "004"
     db.close()
+
+
+def test_migration_files_sort_numerically_not_lexically() -> None:
+    """If we ever cross 999 -> 1000, lexical sort would put 1000 before
+    999 ("1" < "9"). The runner sorts by ``int(version)`` to stay
+    correct across digit-width boundaries. Regression for PR #27
+    review #19."""
+    from ai_ctrl_plane.migrations.runner import _VERSION_RE, _migration_files
+
+    files = _migration_files()
+    versions = [int(_VERSION_RE.match(f.name).group(1)) for f in files]  # type: ignore[union-attr]
+    # The captured versions come out in ascending integer order.
+    assert versions == sorted(versions)

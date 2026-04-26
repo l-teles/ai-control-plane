@@ -62,8 +62,30 @@ def test_webfetch_renderer_carries_url_and_prompt() -> None:
         "Page summary",
     )
     assert rendered["url"] == "https://example.com"
+    assert rendered["url_display"] == "https://example.com"
     assert rendered["prompt"] == "Summarise"
     assert rendered["content"] == "Page summary"
+
+
+def test_webfetch_renderer_strips_unsafe_url_scheme() -> None:
+    """A ``javascript:`` URL would execute on click if rendered into an
+    ``<a href>``. The renderer empties ``url`` (so the template falls
+    back to non-clickable text) but keeps the original on
+    ``url_display`` for visibility. Regression for PR #27 review #20."""
+    rendered = render_tool(
+        "WebFetch",
+        {"url": "javascript:alert(1)", "prompt": "x"},
+        "",
+    )
+    assert rendered["url"] == ""  # blocked
+    assert rendered["url_display"] == "javascript:alert(1)"
+
+
+def test_webfetch_renderer_passes_through_safe_schemes() -> None:
+    for scheme in ("http", "https", "mailto"):
+        url = f"{scheme}:foo@example.com" if scheme == "mailto" else f"{scheme}://example.com/path"
+        rendered = render_tool("WebFetch", {"url": url, "prompt": ""}, "")
+        assert rendered["url"] == url, f"expected {scheme} to pass through"
 
 
 def test_websearch_renderer_parses_structured_results() -> None:
@@ -78,6 +100,24 @@ def test_websearch_renderer_parses_structured_results() -> None:
     assert len(rendered["results"]) == 2
     assert rendered["results"][0]["url"] == "https://a.example"
     assert rendered["results"][1]["snippet"] == "two"
+
+
+def test_websearch_renderer_strips_unsafe_url_schemes_in_results() -> None:
+    """Per-hit URLs go through the same sanitiser as WebFetch — a
+    ``javascript:`` payload from a malicious search result would be
+    rendered into ``<a href>`` and execute on click without this.
+    Regression for PR #27 review #21."""
+    payload = json.dumps(
+        [
+            {"title": "Safe", "url": "https://safe.example", "snippet": "ok"},
+            {"title": "Malicious", "url": "javascript:alert(1)", "snippet": "evil"},
+        ]
+    )
+    rendered = render_tool("WebSearch", {"query": "x"}, payload)
+    safe, evil = rendered["results"]
+    assert safe["url"] == "https://safe.example"
+    assert evil["url"] == ""  # blocked
+    assert evil["url_display"] == "javascript:alert(1)"  # but visible as text
 
 
 def test_websearch_renderer_handles_non_json_result() -> None:

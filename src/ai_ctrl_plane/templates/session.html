@@ -1157,7 +1157,15 @@
               <ul class="glob-matches">{% for p in r.matches %}<li>{{ p }}</li>{% endfor %}</ul>
               {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
             {% elif r.tool == 'WebFetch' %}
-              {% if r.url %}<div class="webfetch-url"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url }}</a></div>{% endif %}
+              {% if r.url_display %}
+                <div class="webfetch-url">
+                  {% if r.url %}
+                    <a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url_display }}</a>
+                  {% else %}
+                    <span title="URL scheme blocked for safety">{{ r.url_display }}</span>
+                  {% endif %}
+                </div>
+              {% endif %}
               <div class="webfetch-content">{{ md_to_html(r.content)|safe }}</div>
               {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
             {% elif r.tool == 'WebSearch' %}
@@ -1165,7 +1173,13 @@
               <ol class="websearch-results">
                 {% for hit in r.results %}
                 <li>
-                  <div class="ws-title"><a href="{{ hit.url }}" target="_blank" rel="noopener">{{ hit.title }}</a></div>
+                  <div class="ws-title">
+                    {% if hit.url %}
+                      <a href="{{ hit.url }}" target="_blank" rel="noopener">{{ hit.title or hit.url_display }}</a>
+                    {% else %}
+                      <span title="URL scheme blocked for safety">{{ hit.title or hit.url_display }}</span>
+                    {% endif %}
+                  </div>
                   {% if hit.snippet %}<div class="ws-snippet">{{ hit.snippet }}</div>{% endif %}
                 </li>
                 {% endfor %}

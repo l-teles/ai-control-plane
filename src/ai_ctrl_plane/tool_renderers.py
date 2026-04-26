@@ -25,6 +25,7 @@ import re
 from typing import Any
 
 from .ansi import ansi_to_html
+from .config_readers._common import sanitize_url
 
 # How many characters of file/output content to inline before truncating.
 # When the limit is hit, the helper returns ``was_truncated=True`` and the
@@ -210,14 +211,21 @@ def render_glob(tool_input: dict, result: str) -> dict:
 
 
 def render_webfetch(tool_input: dict, result: str) -> dict:
-    url = tool_input.get("url") or ""
+    raw_url = tool_input.get("url") or ""
+    safe_url = sanitize_url(raw_url) if isinstance(raw_url, str) else ""
     prompt = tool_input.get("prompt") or ""
     body, truncated = _truncate(result or "")
     return {
         "tool": "WebFetch",
-        "title": url[:80],
+        "title": (safe_url or raw_url)[:80],  # title is text-only; show even unsafe URL
         "subtitle": prompt[:120],
-        "url": url,
+        # ``url`` is the link target — empty when the scheme isn't safe,
+        # so the template can render plain text instead of a clickable
+        # link for ``javascript:`` etc.
+        "url": safe_url,
+        # ``url_display`` is what we *show* to the user, regardless of
+        # safety; the template uses this for the visible link text.
+        "url_display": raw_url,
         "prompt": prompt,
         "content": body,
         "truncated": truncated,
@@ -236,10 +244,16 @@ def render_websearch(tool_input: dict, result: str) -> dict:
             if isinstance(parsed, list):
                 for r in parsed:
                     if isinstance(r, dict):
+                        raw_url = r.get("url", "")
                         results.append(
                             {
                                 "title": r.get("title", ""),
-                                "url": r.get("url", ""),
+                                # Sanitise scheme — a ``javascript:`` URL
+                                # rendered into ``<a href>`` would execute
+                                # on click. Empty string when unsafe; the
+                                # template falls back to plain text.
+                                "url": sanitize_url(raw_url) if isinstance(raw_url, str) else "",
+                                "url_display": raw_url if isinstance(raw_url, str) else "",
                                 "snippet": (r.get("snippet") or r.get("description") or "")[:300],
                             }
                         )
