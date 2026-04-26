@@ -117,10 +117,14 @@ def _first_metadata(jsonl_path: Path) -> dict:
 
                 if not meta.get("sessionId"):
                     meta["sessionId"] = evt.get("sessionId", "")
-                    meta["cwd"] = evt.get("cwd", "")
-                    meta["gitBranch"] = evt.get("gitBranch", "")
-                    meta["version"] = evt.get("version", "")
-                    meta["created_at"] = evt.get("timestamp", "")
+                if not meta.get("cwd") and evt.get("cwd"):
+                    meta["cwd"] = evt["cwd"]
+                if not meta.get("gitBranch") and evt.get("gitBranch"):
+                    meta["gitBranch"] = evt["gitBranch"]
+                if not meta.get("version") and evt.get("version"):
+                    meta["version"] = evt["version"]
+                if not meta.get("created_at") and evt.get("timestamp"):
+                    meta["created_at"] = evt["timestamp"]
 
                 if evt.get("slug") and not meta.get("slug"):
                     meta["slug"] = evt["slug"]
@@ -290,6 +294,46 @@ def _scan_token_usage(jsonl_path: Path) -> dict:
     }
 
 
+def _count_permissions(cwd: str) -> dict[str, int]:
+    """Count permission rules from repo-local Claude settings.
+
+    Reads ``<cwd>/.claude/settings.json`` and ``<cwd>/.claude/settings.local.json``.
+    Returns counts for allow, deny, and ask lists.
+    """
+    counts: dict[str, int] = {"allow": 0, "deny": 0, "ask": 0}
+    if not cwd:
+        return counts
+    repo = Path(cwd)
+    seen: dict[str, set[str]] = {"allow": set(), "deny": set(), "ask": set()}
+    for name in ("settings.json", "settings.local.json"):
+        cfg_path = repo / ".claude" / name
+        if not cfg_path.is_file():
+            continue
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = json.loads(f.read())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        perms = cfg.get("permissions", {})
+        for key in ("allow", "deny", "ask"):
+            items = perms.get(key, [])
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, str):
+                        seen[key].add(item)
+    for key in counts:
+        counts[key] = len(seen[key])
+    return counts
+
+
+def _count_memory_files(project_dir: Path) -> int:
+    """Count markdown files in a project's memory subdirectory."""
+    memory_dir = project_dir / "memory"
+    if not memory_dir.is_dir():
+        return 0
+    return sum(1 for f in memory_dir.iterdir() if f.is_file() and f.suffix == ".md")
+
+
 def discover_sessions(base: Path) -> list[dict]:
     """Scan Claude project directories for session JSONL files."""
     sessions: list[dict] = []
@@ -302,6 +346,9 @@ def discover_sessions(base: Path) -> list[dict]:
         # Skip known non-session directories
         if project_dir.name in ("memory", ".cache"):
             continue
+
+        memory_count = _count_memory_files(project_dir)
+        permission_counts: dict[str, int] | None = None  # lazy, computed from first session's cwd
 
         for jsonl_file in sorted(project_dir.glob("*.jsonl")):
             # Skip files in subdirectories (subagent logs etc.)
@@ -321,6 +368,10 @@ def discover_sessions(base: Path) -> list[dict]:
             # Fall back to slug only if no user content
             if summary == raw_slug and summary:
                 summary = slug_display
+
+            # Compute permission counts once per project from first session's cwd
+            if permission_counts is None and meta.get("cwd"):
+                permission_counts = _count_permissions(meta["cwd"])
 
             updated_at = _last_timestamp(jsonl_file)
 
@@ -343,6 +394,9 @@ def discover_sessions(base: Path) -> list[dict]:
                 "cache_read_tokens": tokens["cache_read_tokens"],
                 "cache_creation_tokens": tokens["cache_creation_tokens"],
                 "estimated_cost": tokens["estimated_cost"],
+                "memory_count": memory_count,
+                "project_name": project_dir.name,
+                "permission_counts": permission_counts or {},
             }
             if slug_display:
                 session_entry["slug"] = slug_display

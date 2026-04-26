@@ -167,6 +167,40 @@
       {# ── Metadata ── #}
       {% set meta = project.metadata or {} %}
 
+      {% set perms = meta.get('permissions', {}) %}
+      {% set has_perms = perms.get('allow') or perms.get('deny') or perms.get('ask') %}
+      {% if has_perms %}
+      <div class="section">
+        <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Permissions</h3>
+        <div class="section-body">
+          {% if perms.get('allow') %}
+          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--green);margin:8px 0 6px;">Allow ({{ perms.allow|length }})</h4>
+          <div class="kv-grid">
+            {% for tool in perms.allow %}
+            <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ tool }}</span></div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if perms.get('deny') %}
+          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--red, #e06c75);margin:8px 0 6px;">Deny ({{ perms.deny|length }})</h4>
+          <div class="kv-grid">
+            {% for tool in perms.deny %}
+            <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ tool }}</span></div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if perms.get('ask') %}
+          <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--orange);margin:8px 0 6px;">Ask ({{ perms.ask|length }})</h4>
+          <div class="kv-grid">
+            {% for tool in perms.ask %}
+            <div class="kv-item"><span class="kv-key" style="font-family:var(--font-mono);font-size:12px;">{{ tool }}</span></div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
       {% if meta.get('allowedTools') %}
       <div class="section">
         <h3 onclick="this.parentElement.classList.toggle('collapsed')">{{ chevron() }}Allowed Tools ({{ meta.allowedTools|length }})</h3>

@@ -365,6 +365,10 @@ def create_app(
 
         source = session_info.get("source", "copilot")
 
+        memory_count = 0
+        project_name = ""
+        permission_counts: dict[str, int] = {}
+
         if source == "claude":
             session_file = Path(session_info["path"])
             events = claude_parser.parse_events(session_file)
@@ -373,6 +377,11 @@ def create_app(
             stats = claude_parser.compute_stats(events)
             ws = claude_parser.extract_workspace(events)
             snapshots: dict = {}
+            # Memory and permission info from the project directory
+            project_dir = session_file.parent
+            project_name = project_dir.name
+            memory_count = claude_parser._count_memory_files(project_dir)
+            permission_counts = claude_parser._count_permissions(ws.get("cwd", ""))
         elif source == "vscode":
             session_file = Path(session_info["path"])
             events = vscode_parser.parse_events(session_file)
@@ -398,6 +407,9 @@ def create_app(
             stats=stats,
             snapshots=snapshots,
             source=source,
+            memory_count=memory_count,
+            project_name=project_name,
+            permission_counts=permission_counts,
             ts_display=ts_display,
             duration_between=duration_between,
             md_to_html=md_to_html,

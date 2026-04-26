@@ -208,6 +208,14 @@
         {% if s.slug %}
         <span class="badge badge-model">{{ s.slug }}</span>
         {% endif %}
+        {% if s.memory_count %}
+        <span class="badge badge-model" title="{{ s.memory_count }} memory file{{ 's' if s.memory_count != 1 }}">&#x1f9e0; {{ s.memory_count }}</span>
+        {% endif %}
+        {% set pc = s.get('permission_counts', {}) %}
+        {% set total_perms = (pc.get('allow', 0) or 0) + (pc.get('deny', 0) or 0) + (pc.get('ask', 0) or 0) %}
+        {% if total_perms %}
+        <span class="badge badge-model" title="{{ pc.get('allow', 0) }} allow, {{ pc.get('deny', 0) }} deny, {{ pc.get('ask', 0) }} ask">&#x1f512; {{ total_perms }}</span>
+        {% endif %}
         {% if s.model %}
         <span class="badge badge-model">{{ s.model }}</span>
         {% endif %}

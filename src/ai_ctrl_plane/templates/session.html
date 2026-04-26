@@ -606,6 +606,19 @@
       <div class="info-row"><span class="info-key">Slug</span><span class="info-val">{{ ws.slug }}</span></div>
       {% endif %}
       <div class="info-row"><span class="info-key">Source</span><span class="info-val">{{ 'Claude Code' if source == 'claude' else ('VS Code Chat' if source == 'vscode' else 'Copilot') }}</span></div>
+      {% if memory_count %}
+      <div class="info-row">
+        <span class="info-key">Memories</span>
+        <span class="info-val"><a href="/projects/{{ project_name }}" style="color:var(--accent);text-decoration:none;">&#x1f9e0; {{ memory_count }} memory file{{ 's' if memory_count != 1 }}</a></span>
+      </div>
+      {% endif %}
+      {% set total_perms = (permission_counts.get('allow', 0) or 0) + (permission_counts.get('deny', 0) or 0) + (permission_counts.get('ask', 0) or 0) %}
+      {% if total_perms %}
+      <div class="info-row">
+        <span class="info-key">Permissions</span>
+        <span class="info-val"><a href="/projects/{{ project_name }}" style="color:var(--accent);text-decoration:none;">&#x1f512; {{ permission_counts.get('allow', 0) }} allow, {{ permission_counts.get('deny', 0) }} deny, {{ permission_counts.get('ask', 0) }} ask</a></span>
+      </div>
+      {% endif %}
       <div class="info-row"><span class="info-key">ID</span><span class="info-val" style="font-size:10px;">{{ session_id }}</span></div>
     </div>
 

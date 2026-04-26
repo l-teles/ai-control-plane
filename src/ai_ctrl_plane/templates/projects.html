@@ -137,6 +137,15 @@
         {% if p.has_trust_accepted %}
         <span class="badge badge-on">Trusted</span>
         {% endif %}
+        {% set perms = (p.metadata or {}).get('permissions', {}) %}
+        {% set allow_count = perms.get('allow', [])|length if perms.get('allow') is iterable else 0 %}
+        {% if allow_count %}
+        <span class="badge badge-on" title="{{ allow_count }} tool{{ 's' if allow_count != 1 }} skipping approval">{{ allow_count }} Skipping Approval</span>
+        {% endif %}
+        {% set deny_count = perms.get('deny', [])|length if perms.get('deny') is iterable else 0 %}
+        {% if deny_count %}
+        <span class="badge badge-off" title="{{ deny_count }} tool{{ 's' if deny_count != 1 }} denied">{{ deny_count }} Denied</span>
+        {% endif %}
       </div>
     </a>
     {% endfor %}
