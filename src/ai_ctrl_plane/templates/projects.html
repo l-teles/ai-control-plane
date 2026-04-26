@@ -138,11 +138,17 @@
         <span class="badge badge-on">Trusted</span>
         {% endif %}
         {% set perms = (p.metadata or {}).get('permissions', {}) %}
-        {% set allow_count = perms.get('allow', [])|length if perms.get('allow') is iterable else 0 %}
+        {# ``is iterable`` matches strings too — a malformed metadata#}
+        {# entry like ``"allow": "Bash"`` would otherwise be counted by#}
+        {# its character length. Combine with ``is not string`` to#}
+        {# accept only true list/tuple-shaped values.                  #}
+        {% set _allow = perms.get('allow') %}
+        {% set allow_count = _allow|length if (_allow is iterable and _allow is not string) else 0 %}
         {% if allow_count %}
         <span class="badge badge-on" title="{{ allow_count }} tool{{ 's' if allow_count != 1 }} skipping approval">{{ allow_count }} Skipping Approval</span>
         {% endif %}
-        {% set deny_count = perms.get('deny', [])|length if perms.get('deny') is iterable else 0 %}
+        {% set _deny = perms.get('deny') %}
+        {% set deny_count = _deny|length if (_deny is iterable and _deny is not string) else 0 %}
         {% if deny_count %}
         <span class="badge badge-off" title="{{ deny_count }} tool{{ 's' if deny_count != 1 }} denied">{{ deny_count }} Denied</span>
         {% endif %}

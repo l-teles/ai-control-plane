@@ -103,6 +103,39 @@ def test_refresh_removes_deleted_session(tmp_path: Path) -> None:
     db.close()
 
 
+def test_refresh_detects_session_when_mtime_goes_backwards(tmp_path: Path) -> None:
+    """If a file is restored from backup or checked out from VCS, its
+    mtime can be older than the cached value but the content is still
+    different. ``!=`` (rather than ``>``) catches that case. Regression
+    for PR #27 review #35."""
+    import os
+    import time
+
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    sdir = _make_copilot_session(copilot_dir, "aaaaaaaa-1111-2222-3333-444444444444")
+    # First build records the current mtime.
+    build_cache(db, copilot_dir, claude_dir, vscode_dir)
+
+    # Modify the file, then set its mtime to *earlier* than the cached
+    # value (simulating a backup restore).
+    events = sdir / "events.jsonl"
+    events.write_text("modified\n", encoding="utf-8")
+    past = time.time() - 86400  # one day ago
+    os.utime(events, (past, past))
+
+    counts = refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+    # ``!=`` semantics: any mtime delta — backwards too — is treated as
+    # changed.
+    assert counts["updated"] == 1
+    db.close()
+
+
 def test_refresh_leaves_unchanged_sessions_alone(tmp_path: Path) -> None:
     """Touch nothing; refresh should report 0 added/updated/removed."""
     db = CacheDB(tmp_path / "cache.db")

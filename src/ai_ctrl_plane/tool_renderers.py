@@ -18,7 +18,6 @@ Unknown tools fall through to a generic renderer.
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
@@ -408,5 +407,3 @@ def render_tool_result(result: Any) -> tuple[str, list[dict[str, str]]]:
     return str(result), images
 
 
-# Keep `base64` import live for type-checkers that flag unused stdlib.
-_ = base64

@@ -482,6 +482,14 @@
   overflow: hidden;
 }
 .minimap-bar {
+  /* Reset default <button> styling — we render these as buttons for
+     keyboard accessibility (focusable + Enter/Space activation) but
+     they need to look identical to the original <div> markers. */
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
   position: absolute;
   top: 0;
   bottom: 0;
@@ -490,7 +498,11 @@
   opacity: 0.7;
   transition: opacity var(--transition), transform var(--transition);
 }
-.minimap-bar:hover { opacity: 1; transform: scaleX(2); }
+.minimap-bar:hover, .minimap-bar:focus-visible {
+  opacity: 1;
+  transform: scaleX(2);
+}
+.minimap-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .minimap-bar.kind-user { background: var(--accent); }
 .minimap-bar.kind-assistant { background: var(--purple); }
 .minimap-bar.kind-tool { background: var(--orange); }
@@ -1282,7 +1294,7 @@
       </div>
 
       {% elif item.kind == 'slash_command' %}
-      <div class="event event-slash" data-kind="user_message">
+      <div class="event event-slash" data-kind="slash_command">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">
@@ -1376,18 +1388,25 @@ function filterEvents(kind, btn) {
   document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
   btn.classList.add('active');
   document.querySelectorAll('#timeline .event').forEach(function(el) {
+    var dk = el.dataset.kind;
     if (kind === 'all') {
       el.style.display = '';
     } else if (kind === 'tool') {
-      el.style.display = (el.dataset.kind === 'tool') ? '' : 'none';
+      el.style.display = (dk === 'tool') ? '' : 'none';
+    } else if (kind === 'user_message') {
+      // The User filter covers both plain user messages and slash
+      // commands — they're both user-typed input. Bucket explicitly
+      // here rather than papering over by setting their data-kind to
+      // the same value (which would make the DOM lie about the kind).
+      el.style.display = (dk === 'user_message' || dk === 'slash_command') ? '' : 'none';
     } else if (kind === 'error') {
-      el.style.display = (el.dataset.kind === 'error' || el.dataset.kind === 'warning') ? '' : 'none';
+      el.style.display = (dk === 'error' || dk === 'warning') ? '' : 'none';
     } else if (kind === 'notification') {
       // The notification group covers a few mostly-metadata kinds.
       var allowed = ['notification', 'session', 'turn'];
-      el.style.display = allowed.indexOf(el.dataset.kind) >= 0 ? '' : 'none';
+      el.style.display = allowed.indexOf(dk) >= 0 ? '' : 'none';
     } else {
-      el.style.display = (el.dataset.kind === kind) ? '' : 'none';
+      el.style.display = (dk === kind) ? '' : 'none';
     }
   });
 }
@@ -1403,28 +1422,35 @@ function filterEvents(kind, btn) {
   // Normalise the per-event data-kind into a small palette of bucket
   // names that match the .kind-* CSS classes on .minimap-bar.
   function bucketFor(k) {
-    if (k === 'user_message') return 'user';
+    if (k === 'user_message' || k === 'slash_command') return 'user';
     if (k === 'assistant_message') return 'assistant';
     if (k === 'error' || k === 'warning') return 'error';
     if (k === 'tool') return 'tool';
     if (k === 'subagent') return 'subagent';
     return 'notification';
   }
+  function jumpTo(ev) {
+    ev.scrollIntoView({behavior: 'smooth', block: 'center'});
+    ev.style.transition = 'background 0.2s';
+    var card = ev.querySelector('.event-card');
+    if (card) {
+      var orig = card.style.boxShadow;
+      card.style.boxShadow = '0 0 0 2px var(--accent)';
+      setTimeout(function() { card.style.boxShadow = orig; }, 1200);
+    }
+  }
   events.forEach(function(ev, i) {
-    var bar = document.createElement('div');
+    // Use a real <button> so the marker is keyboard-focusable, has the
+    // right semantics for assistive tech, and gets Enter/Space-to-click
+    // behaviour for free.
+    var bar = document.createElement('button');
+    bar.type = 'button';
     bar.className = 'minimap-bar kind-' + bucketFor(ev.dataset.kind || '');
     bar.style.left = ((i / events.length) * 100).toFixed(2) + '%';
-    bar.title = ev.dataset.kind || '';
-    bar.addEventListener('click', function() {
-      ev.scrollIntoView({behavior: 'smooth', block: 'center'});
-      ev.style.transition = 'background 0.2s';
-      var card = ev.querySelector('.event-card');
-      if (card) {
-        var orig = card.style.boxShadow;
-        card.style.boxShadow = '0 0 0 2px var(--accent)';
-        setTimeout(function() { card.style.boxShadow = orig; }, 1200);
-      }
-    });
+    var label = (ev.dataset.kind || 'event') + ' (event ' + (i + 1) + ' of ' + events.length + ')';
+    bar.setAttribute('aria-label', 'Jump to ' + label);
+    bar.title = label;
+    bar.addEventListener('click', function() { jumpTo(ev); });
     frag.appendChild(bar);
   });
   track.appendChild(frag);

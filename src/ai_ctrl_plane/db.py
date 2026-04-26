@@ -802,7 +802,12 @@ def refresh_cache(
                 # uses INSERT OR REPLACE, so the row is upgraded in place.
                 to_upsert.append(s)
                 counts["added"] += 1
-            elif new_mtime > current[1]:
+            elif new_mtime != current[1]:
+                # Use ``!=`` rather than ``>`` so a file restored from
+                # backup, checked out from VCS, or edited on a filesystem
+                # with coarse/skewed mtime resolution is still detected
+                # as changed (its mtime can equal or even predate the
+                # cached value).
                 to_upsert.append(s)
                 counts["updated"] += 1
             else:
