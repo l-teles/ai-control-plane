@@ -85,15 +85,24 @@ def extract_images_from_result(result: Any) -> list[dict[str, str]]:
                 source = block.get("source") or {}
                 if source.get("type") == "base64":
                     media = source.get("media_type", "image/png")
+                    data = source.get("data", "")
+                    # Defend against malformed payloads (lists, ints, None,
+                    # etc.) — ``in`` on a frozenset of strings raises on
+                    # unhashable types, ``len`` raises on non-sized values.
+                    # Skip the block silently rather than tank the whole
+                    # conversation render.
+                    if not isinstance(media, str) or not isinstance(data, str):
+                        continue
                     if media not in _SAFE_IMAGE_MIME_TYPES:
                         continue  # reject SVG and other potentially active formats
-                    data = source.get("data", "")
                     if not data or len(data) > _MAX_IMAGE_BASE64_SIZE:
                         continue  # drop oversized payloads (don't bloat HTML)
                     out.append({"src": f"data:{media};base64,{data}", "alt": "tool result image"})
             elif block.get("type") == "text":
                 # A text block may contain a data URL — pick those up too.
-                text = block.get("text", "") or ""
+                text = block.get("text", "")
+                if not isinstance(text, str):
+                    continue
                 stripped = text.strip()
                 if len(stripped) > _MAX_IMAGE_BASE64_SIZE:
                     continue
@@ -245,16 +254,21 @@ def render_websearch(tool_input: dict, result: str) -> dict:
                 for r in parsed:
                     if isinstance(r, dict):
                         raw_url = r.get("url", "")
+                        title = r.get("title", "")
+                        snippet = r.get("snippet") or r.get("description") or ""
                         results.append(
                             {
-                                "title": r.get("title", ""),
+                                # Coerce to str defensively — JSON values
+                                # parsed from arbitrary MCP tool output
+                                # may not be the type we expect.
+                                "title": title if isinstance(title, str) else "",
                                 # Sanitise scheme — a ``javascript:`` URL
                                 # rendered into ``<a href>`` would execute
                                 # on click. Empty string when unsafe; the
                                 # template falls back to plain text.
                                 "url": sanitize_url(raw_url) if isinstance(raw_url, str) else "",
                                 "url_display": raw_url if isinstance(raw_url, str) else "",
-                                "snippet": (r.get("snippet") or r.get("description") or "")[:300],
+                                "snippet": snippet[:300] if isinstance(snippet, str) else "",
                             }
                         )
         except (json.JSONDecodeError, TypeError):

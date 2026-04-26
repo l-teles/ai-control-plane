@@ -47,15 +47,70 @@ def test_runner_records_applied_version_with_timestamp(tmp_path: Path) -> None:
 
 
 def test_legacy_db_with_cache_meta_version_skips_initial_migration(tmp_path: Path) -> None:
-    """A pre-runner database (cache_meta.version row but no schema_migrations table)
-    should be treated as having migration 001 already applied so we don't try to
-    re-create its existing tables on top."""
+    """A pre-runner database (``cache_meta.version`` row, no
+    ``schema_migrations`` table) should be treated as having migration 001
+    already applied so the runner doesn't try to re-create its tables on
+    top.
+
+    The fixture mirrors the *full* v3 schema — every table and column
+    that migration 001 declares — so the test exercises a realistic
+    upgrade path. A minimal stub would skip 001 and pass even if later
+    migrations referenced columns the legacy DB didn't have.
+    """
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
-    # Simulate the v1/v2/v3 schema state that pre-dated the runner.
-    conn.execute("CREATE TABLE cache_meta (key TEXT PRIMARY KEY, value TEXT)")
-    conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, raw_json TEXT)")
-    conn.execute("INSERT INTO cache_meta (key, value) VALUES ('version', '3')")
+    # Mirror migrations/001_initial.sql as the v3 state.
+    conn.executescript(
+        """
+        CREATE TABLE cache_meta (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            uuid TEXT NOT NULL,
+            summary TEXT,
+            created TEXT,
+            cwd TEXT,
+            model TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            cache_read_tokens INTEGER DEFAULT 0,
+            cache_creation_tokens INTEGER DEFAULT 0,
+            estimated_cost REAL DEFAULT 0,
+            raw_json TEXT
+        );
+        CREATE TABLE projects (
+            encoded_name TEXT PRIMARY KEY,
+            path TEXT, name TEXT,
+            session_count INTEGER DEFAULT 0,
+            memory_file_count INTEGER DEFAULT 0,
+            last_cost REAL,
+            last_session_id TEXT,
+            last_input_tokens INTEGER,
+            last_output_tokens INTEGER,
+            has_trust_accepted INTEGER DEFAULT 0,
+            onboarding_seen_count INTEGER DEFAULT 0,
+            metadata_json TEXT
+        );
+        CREATE TABLE project_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_encoded_name TEXT NOT NULL REFERENCES projects(encoded_name),
+            filename TEXT NOT NULL,
+            content TEXT
+        );
+        CREATE TABLE tool_configs (
+            tool TEXT PRIMARY KEY, config_json TEXT, updated_at TEXT
+        );
+        CREATE INDEX idx_sessions_cwd ON sessions(cwd);
+        CREATE INDEX idx_sessions_created ON sessions(created);
+        INSERT INTO cache_meta (key, value) VALUES ('version', '3');
+        -- And a representative legacy session row so the test verifies
+        -- that downstream code (later migrations + refresh_cache) can
+        -- read from columns that 001 declares.
+        INSERT INTO sessions (id, source, uuid, summary, created, cwd, raw_json)
+        VALUES ('claude:legacy-aaaa', 'claude', 'legacy-aaaa', 'old session',
+                '2026-01-01T00:00:00Z', '/tmp/repo', '{}');
+        """
+    )
     conn.commit()
 
     applied = run_migrations(conn)
@@ -67,6 +122,14 @@ def test_legacy_db_with_cache_meta_version_skips_initial_migration(tmp_path: Pat
     assert "004" in applied
     versions = {r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
     assert versions == {"001", "002", "003", "004"}
+    # The legacy row survives the migration and the new columns added
+    # by 002 (source_path, source_mtime) are now reachable as NULL.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    assert "source_path" in cols
+    assert "source_mtime" in cols
+    row = conn.execute("SELECT id, source, uuid, source_path FROM sessions").fetchone()
+    assert row[0] == "claude:legacy-aaaa"
+    assert row[3] is None  # source_path is NULL on the legacy row
     conn.close()
 
 

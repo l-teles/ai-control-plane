@@ -260,3 +260,58 @@ def test_extract_images_drops_oversized_data_url_string() -> None:
     """And to results that are a bare data URL string."""
     huge_data_url = "data:image/png;base64," + ("A" * 2_000_001)
     assert extract_images_from_result(huge_data_url) == []
+
+
+def test_extract_images_handles_malformed_block_payload() -> None:
+    """Image blocks with non-string ``media_type`` / ``data`` (e.g. lists,
+    None, ints from a malformed MCP tool result) must not crash the
+    whole conversation render — skip the block silently. Regression for
+    PR #27 review #25."""
+    bad_blocks = [
+        # media_type is a list — would raise on ``in`` against a frozenset
+        {"type": "image", "source": {"type": "base64", "media_type": ["image/png"], "data": "AAA"}},
+        # media_type is None
+        {"type": "image", "source": {"type": "base64", "media_type": None, "data": "AAA"}},
+        # data is an int — would raise on ``len()``
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": 42}},
+        # data is None
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": None}},
+        # text block with non-string ``text`` field
+        {"type": "text", "text": 42},
+        {"type": "text", "text": None},
+    ]
+    for block in bad_blocks:
+        assert extract_images_from_result([block]) == [], f"block {block!r} should be skipped"
+
+    # And a mix of bad + good still surfaces the good one.
+    mixed = [
+        {"type": "image", "source": {"type": "base64", "media_type": ["broken"], "data": "x"}},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAA"}},
+    ]
+    images = extract_images_from_result(mixed)
+    assert len(images) == 1
+    assert images[0]["src"].startswith("data:image/png;base64,")
+
+
+def test_websearch_renderer_handles_non_string_fields_in_payload() -> None:
+    """A WebSearch JSON payload from a malformed/malicious MCP server
+    might include non-string ``title`` / ``url`` / ``snippet`` values.
+    The renderer should coerce / drop rather than crash. Sweep follow-up
+    to PR #27 review #25."""
+    payload = json.dumps(
+        [
+            {"title": 42, "url": ["https://x.example"], "snippet": None},
+            {"title": "ok", "url": "https://safe.example", "snippet": 99},
+        ]
+    )
+    rendered = render_tool("WebSearch", {"query": "x"}, payload)
+    assert len(rendered["results"]) == 2
+    bad, good = rendered["results"]
+    # Bad entry coerced to safe defaults — no crash.
+    assert bad["title"] == ""
+    assert bad["url"] == ""
+    assert bad["snippet"] == ""
+    # Good entry passes through.
+    assert good["title"] == "ok"
+    assert good["url"] == "https://safe.example"
+    assert good["snippet"] == ""  # snippet was 99, an int — coerced to ""
