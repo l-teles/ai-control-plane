@@ -584,6 +584,51 @@ def test_subagent_count_in_stats() -> None:
     assert stats["tool_calls"]["dispatch_agent"] == 1
 
 
+def test_build_conversation_reorders_resumed_session_by_dag() -> None:
+    """A session resumed from message ``b`` (so original branch ``c=>d`` and
+    resumed branch ``e=>f`` both share parent ``b``) should render with each
+    branch's children adjacent to their parent — not interleaved by file order.
+    """
+    events = [
+        _make_user_event("hi", uuid="a", ts="2026-04-26T10:00:00Z"),
+        _make_assistant_event(
+            [{"type": "text", "text": "hello"}],
+            uuid="b",
+            request_id="rb",
+            ts="2026-04-26T10:00:01Z",
+            parentUuid="a",
+        ),
+        # Original branch (c=>d), written first
+        _make_user_event("first follow-up", uuid="c", ts="2026-04-26T10:00:02Z", parentUuid="b"),
+        _make_assistant_event(
+            [{"type": "text", "text": "answer for first"}],
+            uuid="d",
+            request_id="rd",
+            ts="2026-04-26T10:00:03Z",
+            parentUuid="c",
+        ),
+        # Resumed branch (e=>f), written later but parents off `b` again
+        _make_user_event("second follow-up", uuid="e", ts="2026-04-26T10:00:04Z", parentUuid="b"),
+        _make_assistant_event(
+            [{"type": "text", "text": "answer for second"}],
+            uuid="f",
+            request_id="rf",
+            ts="2026-04-26T10:00:05Z",
+            parentUuid="e",
+        ),
+    ]
+    conv = build_conversation(events)
+    # Pull out the user_message contents in conversation order.
+    user_msgs = [c["content"] for c in conv if c.get("kind") == "user_message"]
+    # Branch c=>d should be fully visited before branch e=>f.
+    assert user_msgs.index("first follow-up") < user_msgs.index("second follow-up")
+    assistant_texts = [c["content"] for c in conv if c.get("kind") == "assistant_message"]
+    # The "hello" reply (b) precedes both branch replies; "answer for first"
+    # comes immediately after its user prompt and before "answer for second".
+    assert assistant_texts.index("hello") < assistant_texts.index("answer for first")
+    assert assistant_texts.index("answer for first") < assistant_texts.index("answer for second")
+
+
 def test_subagent_conversation_events() -> None:
     """build_conversation emits subagent_start / subagent_complete for Agent tools."""
     events = [

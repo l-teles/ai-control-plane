@@ -463,7 +463,19 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
     Produces items with the same ``kind`` values as the Copilot parser so the
     templates can render them identically.
+
+    Events are reordered into DAG (parent_uuid) order before the rest of
+    the pipeline runs, so resumed sessions and parallel-Task transcripts
+    render with each child immediately following its parent regardless of
+    the order in which lines were appended to the JSONL file.
     """
+    from .dag import order_by_dag
+    from .models import parse_entries
+
+    typed = parse_entries(events)
+    typed = order_by_dag(typed)
+    events = [e.raw for e in typed]
+
     conversation: list[dict] = []
     subagent_tool_ids: set[str] = set()  # track Agent tool_use IDs
 
