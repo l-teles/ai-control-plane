@@ -172,10 +172,22 @@ def discover_sessions(base: Path) -> list[dict]:
         if not (d.is_dir() and events_jsonl.exists()):
             continue
         ws = parse_workspace(d)
+        # Take the max mtime across the two files that drive the cached
+        # session row: events.jsonl (conversation events) and workspace.yaml
+        # (summary / repo / branch / cwd). If either is touched, the cache
+        # row is stale and refresh should re-parse.
+        mtimes: list[float] = []
         try:
-            source_mtime = events_jsonl.stat().st_mtime
+            mtimes.append(events_jsonl.stat().st_mtime)
         except OSError:
-            source_mtime = 0.0
+            pass
+        workspace_yaml = d / "workspace.yaml"
+        if workspace_yaml.is_file():
+            try:
+                mtimes.append(workspace_yaml.stat().st_mtime)
+            except OSError:
+                pass
+        source_mtime = max(mtimes) if mtimes else 0.0
         sessions.append(
             {
                 "id": d.name,

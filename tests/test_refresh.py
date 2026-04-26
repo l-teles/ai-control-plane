@@ -200,6 +200,79 @@ def test_refresh_upgrades_legacy_null_source_path_row_in_place(tmp_path: Path) -
     db.close()
 
 
+def test_reindex_missing_fts_backfills_after_index_drop(tmp_path: Path) -> None:
+    """Migration 004 drops sessions_fts. After it runs, the canonical
+    sessions table still has rows but the FTS index is empty until each
+    session file is touched. ``reindex_missing_fts`` should rebuild the
+    missing rows from whatever's in the sessions table. Regression for
+    PR #27 review comment 8."""
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    sdir = _make_copilot_session(copilot_dir, "aaaaaaaa-1111-2222-3333-444444444444", "indexed_keyword")
+    build_cache(db, copilot_dir, claude_dir, vscode_dir)
+    # Confirm the FTS index has the row to start with.
+    assert db.search_sessions("indexed_keyword")
+
+    # Simulate the post-migration state: drop and recreate sessions_fts
+    # (mirroring what migration 004 does).
+    db._conn.execute("DELETE FROM sessions_fts")
+    db._conn.commit()
+    assert db.search_sessions("indexed_keyword") == []
+
+    # Touch nothing on disk; just call refresh — it should backfill via
+    # reindex_missing_fts before doing anything else.
+    refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+    assert db.search_sessions("indexed_keyword")
+
+    # Direct test of the helper too.
+    db._conn.execute("DELETE FROM sessions_fts")
+    db._conn.commit()
+    n = db.reindex_missing_fts()
+    assert n == 1
+    assert db.search_sessions("indexed_keyword")
+    db.close()
+    assert sdir.exists()  # sanity
+
+
+def test_copilot_source_mtime_tracks_workspace_yaml_too(tmp_path: Path) -> None:
+    """If workspace.yaml is updated without touching events.jsonl,
+    refresh must still re-parse the session — otherwise cached metadata
+    (summary / repo / branch / cwd) goes stale. Regression for PR #27
+    review comment 9."""
+    import os
+    import time
+
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    sdir = _make_copilot_session(copilot_dir, "aaaaaaaa-1111-2222-3333-444444444444", "Original Summary")
+    build_cache(db, copilot_dir, claude_dir, vscode_dir)
+    assert db.get_sessions()[0]["summary"] == "Original Summary"
+
+    # Update workspace.yaml ONLY — leave events.jsonl untouched.
+    (sdir / "workspace.yaml").write_text(
+        "summary: Updated Summary\nrepository: test/repo\nbranch: main\ncwd: /tmp/proj\n"
+        "created_at: '2026-04-26T10:00:00Z'\nupdated_at: '2026-04-26T10:01:00Z'\n",
+        encoding="utf-8",
+    )
+    future = time.time() + 60
+    os.utime(sdir / "workspace.yaml", (future, future))
+
+    counts = refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+    assert counts["updated"] == 1
+    assert db.get_sessions()[0]["summary"] == "Updated Summary"
+    db.close()
+
+
 def test_get_session_anchors_round_trip(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "cache.db")
     db.insert_sessions(

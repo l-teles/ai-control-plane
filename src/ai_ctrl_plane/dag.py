@@ -24,11 +24,16 @@ MAX_DEPTH = 50_000
 def order_by_dag(entries: list[TranscriptEntry]) -> list[TranscriptEntry]:
     """Reorder *entries* so each child follows its parent.
 
-    Nodes whose ``parent_uuid`` points to an entry not in the file (an
+    Sibling entries (multiple children of the same parent, or multiple
+    roots) are sorted by ``(timestamp, file_index)`` — earlier timestamp
+    first, file-write order as deterministic tiebreak.  This puts the
+    older branch ahead of a resumed branch that diverges from the same
+    parent, which matches what users expect when reading a session that
+    was resumed mid-thread.
+
+    Entries whose ``parent_uuid`` points to an entry not in the file (an
     "orphan", typically from a session resume) are treated as roots and
-    surfaced in the order they first appear.  Multiple children of the
-    same parent are visited in timestamp order; ties fall back to the
-    original file index so the output is deterministic.
+    sorted with the same key alongside any genuine root.
 
     Entries without a ``uuid`` are passed through untouched in their
     original positions — they're metadata events (``summary``, hooks,

@@ -348,6 +348,63 @@ class CacheDB:
             rows = self._conn.execute("SELECT id FROM sessions").fetchall()
         return {r["id"] for r in rows}
 
+    def reindex_missing_fts(self) -> int:
+        """Rebuild FTS rows for any session that exists in ``sessions``
+        but is missing from ``sessions_fts``.
+
+        Called by :func:`refresh_cache` so a migration that recreates
+        ``sessions_fts`` (e.g. 004 dropping/re-creating it for the new
+        ``content`` column) doesn't leave the index half-populated:
+        without this, refresh would only re-index sessions whose source
+        file's mtime had advanced, and unchanged sessions would silently
+        disappear from search until the user touched the file.
+
+        Reads each missing session's metadata from the canonical
+        ``sessions`` columns (not ``raw_json``, which may be empty for
+        legacy rows) and supplements it with the on-disk content via
+        ``source_path``.  Returns the number of sessions re-indexed.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, source, uuid, summary, cwd, model, source_path, raw_json FROM sessions s "
+                "WHERE NOT EXISTS (SELECT 1 FROM sessions_fts f WHERE f.session_id = s.id)"
+            ).fetchall()
+        if not rows:
+            return 0
+        rebuilt: list[dict] = []
+        for r in rows:
+            try:
+                raw = json.loads(r["raw_json"]) if r["raw_json"] else {}
+            except (json.JSONDecodeError, TypeError):
+                raw = {}
+            # Prefer values from raw_json when present (it has the richest
+            # set of fields, including the per-source ``first_user_content``
+            # used for the metadata FTS column) but fall back to the
+            # canonical columns so legacy rows still get indexed.
+            session: dict = dict(raw) if isinstance(raw, dict) else {}
+            session.setdefault("source", r["source"] or "")
+            # Fallback id: strip the ``source:`` prefix from the row id
+            # since the column ``uuid`` may itself be missing on very old rows.
+            row_id = r["id"] or ""
+            session.setdefault("id", r["uuid"] or (row_id.split(":", 1)[-1] if ":" in row_id else row_id))
+            session.setdefault("summary", r["summary"] or "")
+            session.setdefault("cwd", r["cwd"] or "")
+            session.setdefault("model", r["model"] or "")
+            if r["source_path"]:
+                session.setdefault("source_path", r["source_path"])
+            # Skip rows that lack the minimum identity fields — they can't
+            # produce a stable FTS key and will be picked up by the FS
+            # scan downstream if their source files still exist.
+            if not session.get("source") or not session.get("id"):
+                continue
+            rebuilt.append(session)
+        if not rebuilt:
+            return 0
+        with self._lock:
+            self._index_sessions_fts(rebuilt)
+            self._conn.commit()
+        return len(rebuilt)
+
     def delete_sessions(self, ids: list[str]) -> None:
         if not ids:
             return
@@ -666,6 +723,13 @@ def refresh_cache(
 
     try:
         cache.set_meta("status", "refreshing")
+
+        # If a migration just recreated ``sessions_fts`` (e.g. 004 added the
+        # ``content`` column by drop-and-recreate), unchanged sessions would
+        # otherwise stay invisible to search until their files were touched.
+        # Backfill any missing FTS rows up front using whatever's already in
+        # the canonical ``sessions`` table.
+        cache.reindex_missing_fts()
 
         # Path-based map: lets us skip re-parsing unchanged files (mtime check).
         cached = cache.get_session_anchors()  # {source_path: (id, mtime)}
