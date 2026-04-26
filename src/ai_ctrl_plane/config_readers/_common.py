@@ -85,14 +85,23 @@ def sanitize_url(url: str) -> str:
 
 
 def safe_read_json(path: Path) -> dict | None:
-    """Read a JSON file, returning None if missing or invalid."""
+    """Read a JSON file, returning None if missing, invalid, or not a dict.
+
+    The root of a JSON document can legally be any JSON value (object,
+    array, string, number, ``null``, boolean), but every caller in this
+    project expects a dict. Returning ``None`` for non-dict roots keeps
+    the declared return type honest and lets callers use the existing
+    ``safe_read_json(...) or {}`` idiom without crashing on
+    ``ws_data.get(...)`` / ``cfg.get(...)`` against, say, a list root.
+    """
     try:
         if not path.is_file():
             return None
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def safe_read_yaml(path: Path) -> dict | None:

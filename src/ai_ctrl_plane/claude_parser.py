@@ -303,15 +303,21 @@ def parse_subagent_transcripts(session_jsonl: Path) -> dict[str, dict]:
                 meta = json.loads(f.read())
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
+        # JSON root can legally be a list / scalar / null; we only
+        # handle dict-shaped subagent meta files.
+        if not isinstance(meta, dict):
+            continue
         events_path = meta_path.with_suffix("").with_suffix(".jsonl")
         if not events_path.is_file():
             continue
         events = _load_events(events_path, _SKIP_TYPES)
-        description = (meta.get("description") or "").strip()
+        desc_val = meta.get("description")
+        description = desc_val.strip() if isinstance(desc_val, str) else ""
         if not description:
             continue
+        agent_type_val = meta.get("agentType", "")
         out[description] = {
-            "agent_type": meta.get("agentType", ""),
+            "agent_type": agent_type_val if isinstance(agent_type_val, str) else "",
             "description": description,
             "events": events,
             "path": str(events_path),
@@ -602,7 +608,13 @@ def _count_permissions(cwd: str) -> dict[str, int]:
                 cfg = json.loads(f.read())
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             continue
+        # JSON root and nested ``permissions`` can each legally be any
+        # JSON value. Skip non-dicts so the ``.get`` chain can't crash.
+        if not isinstance(cfg, dict):
+            continue
         perms = cfg.get("permissions", {})
+        if not isinstance(perms, dict):
+            continue
         for key in ("allow", "deny", "ask"):
             items = perms.get(key, [])
             if isinstance(items, list):

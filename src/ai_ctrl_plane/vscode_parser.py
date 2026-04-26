@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from .config_readers._common import safe_read_json
 from .parser import MAX_RESULT_CHARS
 
 # ---------------------------------------------------------------------------
@@ -205,18 +206,16 @@ def discover_sessions(base: Path) -> list[dict]:
             # Read workspace.json for cwd
             cwd = ""
             repo = ""
-            ws_json = ws_dir / "workspace.json"
-            if ws_json.is_file():
-                try:
-                    with open(ws_json, encoding="utf-8") as f:
-                        ws_data = json.load(f)
-                    folder = ws_data.get("folder", "")
-                    if folder:
-                        cwd = _folder_uri_to_path(folder)
-                        # Derive repo from last path segment
-                        repo = Path(cwd).name if cwd else ""
-                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-                    pass
+            # ``safe_read_json`` returns ``None`` for non-dict roots
+            # (a workspace.json with a list / scalar at the root from a
+            # corrupted file would otherwise crash ``ws_data.get``).
+            ws_data = safe_read_json(ws_dir / "workspace.json")
+            if ws_data:
+                folder = ws_data.get("folder", "")
+                if isinstance(folder, str) and folder:
+                    cwd = _folder_uri_to_path(folder)
+                    # Derive repo from last path segment
+                    repo = Path(cwd).name if cwd else ""
 
             for session_file in sorted(list(chat_dir.glob("*.json")) + list(chat_dir.glob("*.jsonl"))):
                 entry = _session_entry_from_file(session_file, cwd, repo)
@@ -402,17 +401,13 @@ def parse_events(path: Path) -> list[dict]:
         "customTitle": data.get("customTitle", ""),
     }
 
-    # Attach cwd from workspace.json if available
-    ws_json = path.parent.parent / "workspace.json"
-    if ws_json.is_file():
-        try:
-            with open(ws_json, encoding="utf-8") as f:
-                ws_data = json.load(f)
-            folder = ws_data.get("folder", "")
-            if folder:
-                meta["cwd"] = _folder_uri_to_path(folder)
-        except (json.JSONDecodeError, OSError):
-            pass
+    # Attach cwd from workspace.json if available — ``safe_read_json``
+    # handles missing / malformed / non-dict-root cases.
+    ws_data = safe_read_json(path.parent.parent / "workspace.json")
+    if ws_data:
+        folder = ws_data.get("folder", "")
+        if isinstance(folder, str) and folder:
+            meta["cwd"] = _folder_uri_to_path(folder)
 
     return [meta] + data.get("requests", [])
 

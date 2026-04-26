@@ -115,17 +115,17 @@ def extract_images_from_result(result: Any) -> list[dict[str, str]]:
                 if not isinstance(text, str):
                     continue
                 stripped = text.strip()
-                if len(stripped) > _MAX_IMAGE_BASE64_SIZE:
-                    continue
                 m = _DATA_URL_RE.match(stripped)
-                if m:
+                if m and len(m.group(2)) <= _MAX_IMAGE_BASE64_SIZE:
+                    # Apply the cap to the captured base64 data (group 2)
+                    # rather than the whole ``data:...;base64,...`` URL,
+                    # so the threshold matches what the block-image path
+                    # measures (raw base64 bytes, not URL framing).
                     out.append({"src": stripped, "alt": "tool result image"})
     elif isinstance(result, str):
         stripped = result.strip()
-        if len(stripped) > _MAX_IMAGE_BASE64_SIZE:
-            return out
         m = _DATA_URL_RE.match(stripped)
-        if m:
+        if m and len(m.group(2)) <= _MAX_IMAGE_BASE64_SIZE:
             out.append({"src": stripped, "alt": "tool result image"})
     return out
 

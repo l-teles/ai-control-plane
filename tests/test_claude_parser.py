@@ -863,6 +863,39 @@ def test_summary_entry_overrides_first_user_message_in_session_list(tmp_path: Pa
     assert sessions[0]["summary"] == "Walked through how to write pytest fixtures"
 
 
+def test_parse_subagent_transcripts_skips_non_dict_meta(tmp_path: Path) -> None:
+    """A subagent ``.meta.json`` whose root is a list / scalar / null
+    must not crash subagent loading — skip the bad file silently and
+    process the rest. Regression for PR #27 review #45."""
+    from ai_ctrl_plane.claude_parser import parse_subagent_transcripts
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    project_dir = tmp_path / "-Users-test"
+    project_dir.mkdir()
+    session_jsonl = project_dir / f"{sid}.jsonl"
+    sub_dir = project_dir / sid / "subagents"
+    sub_dir.mkdir(parents=True)
+
+    # Bad meta files at every shape JSON allows at the root.
+    for i, payload in enumerate(["null", "[]", '"just a string"', "42", "true"]):
+        (sub_dir / f"agent-bad{i}.meta.json").write_text(payload, encoding="utf-8")
+        (sub_dir / f"agent-bad{i}.jsonl").write_text("", encoding="utf-8")
+
+    # And one valid meta + transcript so we can verify it's still loaded.
+    (sub_dir / "agent-good.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "Find the bug"}), encoding="utf-8"
+    )
+    _write_jsonl(
+        sub_dir / "agent-good.jsonl",
+        [_make_user_event("Find the bug", uuid="su1", session_id=sid, isSidechain=True)],
+    )
+
+    subs = parse_subagent_transcripts(session_jsonl)
+    # Bad meta files are silently skipped; the good one is loaded.
+    assert "Find the bug" in subs
+    assert len(subs) == 1
+
+
 def test_subagent_transcript_loaded_and_attached(tmp_path: Path) -> None:
     """When a session has subagent files in `<session>/subagents/`, the
     matching `Agent` tool_use should carry an inlined transcript."""

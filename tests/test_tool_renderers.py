@@ -262,6 +262,34 @@ def test_extract_images_drops_oversized_data_url_string() -> None:
     assert extract_images_from_result(huge_data_url) == []
 
 
+def test_extract_images_data_url_size_cap_matches_block_image_cap() -> None:
+    """The size cap should be applied to the *base64 payload*, not the
+    full ``data:image/...;base64,DATA`` URL — otherwise the data-URL
+    path is ~30 bytes stricter than the block-image path. A payload
+    *exactly* at the cap should pass through both. Regression for PR
+    #27 review #46."""
+    # 2_000_000 base64 chars → exactly at the cap. Must accept.
+    at_cap = "A" * 2_000_000
+    block_form = [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": at_cap}}
+    ]
+    string_form = "data:image/png;base64," + at_cap
+    text_block_form = [{"type": "text", "text": string_form}]
+
+    assert len(extract_images_from_result(block_form)) == 1
+    assert len(extract_images_from_result(string_form)) == 1
+    assert len(extract_images_from_result(text_block_form)) == 1
+
+    # 2_000_001 base64 chars → just over the cap. Must reject in all
+    # three forms.
+    over_cap = "A" * 2_000_001
+    assert extract_images_from_result(
+        [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": over_cap}}]
+    ) == []
+    assert extract_images_from_result("data:image/png;base64," + over_cap) == []
+    assert extract_images_from_result([{"type": "text", "text": "data:image/png;base64," + over_cap}]) == []
+
+
 def test_extract_images_handles_malformed_block_payload() -> None:
     """Image blocks with non-string ``media_type`` / ``data`` (e.g. lists,
     None, ints from a malformed MCP tool result) must not crash the
