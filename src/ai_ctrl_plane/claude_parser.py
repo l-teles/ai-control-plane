@@ -649,6 +649,22 @@ def build_conversation(
 
     sub_lookup = dict(subagent_transcripts or {})
 
+    # Tool name + input lookup so `tool_complete` events can dispatch to
+    # the right renderer using the original tool_use's call site.
+    from .tool_renderers import render_tool, render_tool_result
+
+    tool_name_by_id: dict[str, str] = {}
+    tool_input_by_id: dict[str, dict] = {}
+    for evt in events:
+        if evt.get("type") != "assistant":
+            continue
+        for block in evt.get("message", {}).get("content", []) or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                tu_id = block.get("id", "")
+                if tu_id:
+                    tool_name_by_id[tu_id] = block.get("name", "unknown")
+                    tool_input_by_id[tu_id] = block.get("input", {}) or {}
+
     conversation: list[dict] = []
     subagent_tool_ids: set[str] = set()  # track Agent tool_use IDs
 
@@ -732,14 +748,23 @@ def build_conversation(
                     for block in content:
                         if not isinstance(block, dict) or block.get("type") != "tool_result":
                             continue
-                        result_content = block.get("content", "")
-                        if isinstance(result_content, list):
-                            # tool_reference or structured content — stringify
-                            result_content = json.dumps(result_content, indent=2)
-                        if isinstance(result_content, str):
-                            result_content = result_content[:MAX_RESULT_CHARS]
+                        raw_result = block.get("content", "")
+                        # Split text from images, then run the tool-specific
+                        # renderer to produce structured fields the template
+                        # can render with a per-tool layout.
+                        text_result, images = render_tool_result(raw_result)
+                        if isinstance(text_result, str):
+                            text_result = text_result[:MAX_RESULT_CHARS]
                         else:
-                            result_content = str(result_content)[:MAX_RESULT_CHARS]
+                            text_result = str(text_result)[:MAX_RESULT_CHARS]
+
+                        # Keep a JSON-stringified copy for the legacy fallback
+                        # rendering; the renderer also picks the most useful
+                        # fields out of the raw input.
+                        if isinstance(raw_result, list):
+                            legacy_result = json.dumps(raw_result, indent=2, default=str)[:MAX_RESULT_CHARS]
+                        else:
+                            legacy_result = text_result
 
                         tc_id = block.get("tool_use_id", "")
                         if tc_id in subagent_tool_ids:
@@ -749,17 +774,24 @@ def build_conversation(
                                     "timestamp": ts,
                                     "agent_name": "",
                                     "tool_call_id": tc_id,
-                                    "result": result_content,
+                                    "result": legacy_result,
+                                    "images": images,
                                 }
                             )
                         else:
+                            tool_name = tool_name_by_id.get(tc_id, "unknown")
+                            tool_input = tool_input_by_id.get(tc_id, {})
+                            rendered = render_tool(tool_name, tool_input, text_result)
                             conversation.append(
                                 {
                                     "kind": "tool_complete",
                                     "timestamp": ts,
                                     "tool_call_id": tc_id,
+                                    "tool_name": tool_name,
                                     "success": not block.get("is_error", False),
-                                    "result": result_content,
+                                    "result": legacy_result,
+                                    "rendered": rendered,
+                                    "images": images,
                                 }
                             )
                     continue
@@ -897,6 +929,7 @@ def build_conversation(
                         item["transcript"] = build_conversation(sub.get("events", []))
                     conversation.append(item)
                 else:
+                    rendered_start = render_tool(tu_name, tu.get("input", {}) or {}, "")
                     conversation.append(
                         {
                             "kind": "tool_start",
@@ -904,6 +937,7 @@ def build_conversation(
                             "tool_call_id": tu["id"],
                             "tool_name": tu_name,
                             "arguments": tu.get("input", {}),
+                            "rendered": rendered_start,
                         }
                     )
 

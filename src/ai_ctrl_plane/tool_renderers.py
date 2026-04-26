@@ -1,0 +1,330 @@
+"""Per-tool enrichment of conversation items.
+
+The Claude conversation builder produces generic ``tool_start`` and
+``tool_complete`` items that carry the raw ``input`` dict and ``result``
+string.  This module turns those into structured fields that the
+template can render with a tool-specific layout — a ``Bash`` block shows
+the command and ANSI-rendered output, a ``Read`` block shows the file
+path and a code excerpt, a ``WebSearch`` block shows the query and a
+list of result entries, etc.
+
+Each renderer takes a tool's input/result and returns a dict of named
+fields the template will use; the dict is merged into the conversation
+item under a ``rendered`` key so the original raw fields stay available
+as a fallback.
+
+Unknown tools fall through to a generic renderer.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import re
+from typing import Any
+
+from .ansi import ansi_to_html
+
+# How many characters of file/output content to inline before truncating.
+# Long content gets a "..." suffix and the full text remains in the raw
+# `result` field so the user can expand it.
+_PREVIEW_CHARS = 4_000
+
+
+def _truncate(text: str, limit: int = _PREVIEW_CHARS) -> tuple[str, bool]:
+    """Return (truncated_text, was_truncated)."""
+    if len(text) <= limit:
+        return text, False
+    return text[:limit], True
+
+
+def _file_basename(path: str) -> str:
+    if not path:
+        return ""
+    return os.path.basename(path) or path
+
+
+# ---------------------------------------------------------------------------
+# Image extraction (used by tool_result blocks)
+# ---------------------------------------------------------------------------
+
+_DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=]+)$")
+
+
+def extract_images_from_result(result: Any) -> list[dict[str, str]]:
+    """Find inline images in a Claude tool_result content payload.
+
+    Tool results may be a string, a list of content blocks, or structured
+    JSON. Image blocks look like ``{"type": "image", "source": {"type":
+    "base64", "media_type": "image/png", "data": "iVBOR..."}}``.
+
+    Returns a list of ``{"src": "data:image/png;base64,…", "alt": "…"}``
+    dicts; empty list when there are no images.
+    """
+    out: list[dict[str, str]] = []
+    if isinstance(result, list):
+        for block in result:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "image":
+                source = block.get("source") or {}
+                if source.get("type") == "base64":
+                    media = source.get("media_type", "image/png")
+                    data = source.get("data", "")
+                    if data:
+                        out.append({"src": f"data:{media};base64,{data}", "alt": "tool result image"})
+            elif block.get("type") == "text":
+                # A text block may contain a data URL — pick those up too.
+                text = block.get("text", "") or ""
+                m = _DATA_URL_RE.match(text.strip())
+                if m:
+                    out.append({"src": text.strip(), "alt": "tool result image"})
+    elif isinstance(result, str):
+        m = _DATA_URL_RE.match(result.strip())
+        if m:
+            out.append({"src": result.strip(), "alt": "tool result image"})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Per-tool renderers
+# ---------------------------------------------------------------------------
+
+
+def render_bash(tool_input: dict, result: str) -> dict:
+    cmd = (tool_input.get("command") or "").strip()
+    description = (tool_input.get("description") or "").strip()
+    output, truncated = _truncate(result or "")
+    return {
+        "tool": "Bash",
+        "title": cmd[:80] if cmd else "(empty command)",
+        "subtitle": description,
+        "command": cmd,
+        "description": description,
+        "output_html": ansi_to_html(output),
+        "truncated": truncated,
+    }
+
+
+def render_read(tool_input: dict, result: str) -> dict:
+    path = tool_input.get("file_path") or ""
+    offset = tool_input.get("offset")
+    limit = tool_input.get("limit")
+    body, truncated = _truncate(result or "")
+    return {
+        "tool": "Read",
+        "title": _file_basename(path),
+        "subtitle": path,
+        "file_path": path,
+        "offset": offset,
+        "limit": limit,
+        "content": body,
+        "truncated": truncated,
+    }
+
+
+def render_write(tool_input: dict, result: str) -> dict:
+    path = tool_input.get("file_path") or ""
+    content = tool_input.get("content") or ""
+    body, truncated = _truncate(content)
+    return {
+        "tool": "Write",
+        "title": _file_basename(path),
+        "subtitle": path,
+        "file_path": path,
+        "content": body,
+        "lines": content.count("\n") + 1 if content else 0,
+        "truncated": truncated,
+    }
+
+
+def render_edit(tool_input: dict, result: str) -> dict:
+    return {
+        "tool": "Edit",
+        "title": _file_basename(tool_input.get("file_path") or ""),
+        "subtitle": tool_input.get("file_path") or "",
+        "file_path": tool_input.get("file_path") or "",
+        "old_string": (tool_input.get("old_string") or "")[:_PREVIEW_CHARS],
+        "new_string": (tool_input.get("new_string") or "")[:_PREVIEW_CHARS],
+        "replace_all": bool(tool_input.get("replace_all")),
+    }
+
+
+def render_grep(tool_input: dict, result: str) -> dict:
+    pattern = tool_input.get("pattern") or ""
+    path = tool_input.get("path") or ""
+    output, truncated = _truncate(result or "")
+    return {
+        "tool": "Grep",
+        "title": pattern[:60],
+        "subtitle": f"in {path}" if path else "",
+        "pattern": pattern,
+        "path": path,
+        "glob": tool_input.get("glob") or "",
+        "type": tool_input.get("type") or "",
+        "output": output,
+        "truncated": truncated,
+    }
+
+
+def render_glob(tool_input: dict, result: str) -> dict:
+    pat = tool_input.get("pattern") or ""
+    output, truncated = _truncate(result or "")
+    matches: list[str] = []
+    for line in output.splitlines():
+        line = line.strip()
+        if line:
+            matches.append(line)
+    return {
+        "tool": "Glob",
+        "title": pat,
+        "subtitle": tool_input.get("path") or "",
+        "pattern": pat,
+        "matches": matches,
+        "match_count": len(matches),
+        "truncated": truncated,
+    }
+
+
+def render_webfetch(tool_input: dict, result: str) -> dict:
+    url = tool_input.get("url") or ""
+    prompt = tool_input.get("prompt") or ""
+    body, truncated = _truncate(result or "")
+    return {
+        "tool": "WebFetch",
+        "title": url[:80],
+        "subtitle": prompt[:120],
+        "url": url,
+        "prompt": prompt,
+        "content": body,
+        "truncated": truncated,
+    }
+
+
+def render_websearch(tool_input: dict, result: str) -> dict:
+    query = tool_input.get("query") or ""
+    # Try to parse structured results from the result string. Claude
+    # WebSearch typically returns a JSON-ish payload listing
+    # ``{"title", "url", "snippet"}`` entries.
+    results: list[dict] = []
+    if result:
+        try:
+            parsed = json.loads(result)
+            if isinstance(parsed, list):
+                for r in parsed:
+                    if isinstance(r, dict):
+                        results.append(
+                            {
+                                "title": r.get("title", ""),
+                                "url": r.get("url", ""),
+                                "snippet": (r.get("snippet") or r.get("description") or "")[:300],
+                            }
+                        )
+        except (json.JSONDecodeError, TypeError):
+            pass
+    body, truncated = _truncate(result or "")
+    return {
+        "tool": "WebSearch",
+        "title": query[:80],
+        "subtitle": f"{len(results)} results" if results else "",
+        "query": query,
+        "results": results,
+        "raw": body,
+        "truncated": truncated,
+    }
+
+
+def render_ask_user_question(tool_input: dict, result: str) -> dict:
+    question = tool_input.get("question") or tool_input.get("prompt") or ""
+    options = tool_input.get("options") or tool_input.get("choices") or []
+    if not isinstance(options, list):
+        options = [str(options)]
+    return {
+        "tool": "AskUserQuestion",
+        "title": question[:80],
+        "subtitle": f"{len(options)} option{'s' if len(options) != 1 else ''}" if options else "",
+        "question": question,
+        "options": [str(o) for o in options],
+        "answer": (result or "").strip()[:500],
+    }
+
+
+def render_todowrite(tool_input: dict, result: str) -> dict:
+    todos = tool_input.get("todos") or []
+    return {
+        "tool": "TodoWrite",
+        "title": f"{len(todos)} task{'s' if len(todos) != 1 else ''}",
+        "subtitle": "",
+        "todos": todos,
+    }
+
+
+def render_generic(tool_name: str, tool_input: dict, result: str) -> dict:
+    """Fallback renderer for tools without a dedicated layout."""
+    body, truncated = _truncate(result or "")
+    title = ""
+    for key in ("file_path", "path", "url", "command", "pattern", "query"):
+        v = tool_input.get(key)
+        if v:
+            title = str(v)[:80]
+            break
+    return {
+        "tool": tool_name,
+        "title": title,
+        "subtitle": "",
+        "input_json": json.dumps(tool_input, indent=2, default=str)[:_PREVIEW_CHARS],
+        "output": body,
+        "truncated": truncated,
+    }
+
+
+_RENDERERS = {
+    "Bash": render_bash,
+    "Read": render_read,
+    "Write": render_write,
+    "Edit": render_edit,
+    "MultiEdit": render_edit,
+    "Grep": render_grep,
+    "Glob": render_glob,
+    "WebFetch": render_webfetch,
+    "WebSearch": render_websearch,
+    "AskUserQuestion": render_ask_user_question,
+    "TodoWrite": render_todowrite,
+}
+
+
+def render_tool(tool_name: str, tool_input: dict, result: str) -> dict:
+    """Dispatch to a tool-specific renderer or fall through to generic."""
+    fn = _RENDERERS.get(tool_name)
+    if fn is None:
+        return render_generic(tool_name, tool_input or {}, result or "")
+    return fn(tool_input or {}, result or "")
+
+
+def render_tool_result(result: Any) -> tuple[str, list[dict[str, str]]]:
+    """Normalise a tool_result content payload into (text, images).
+
+    - String results pass through (after image-URL detection).
+    - List-of-blocks results have their text blocks concatenated and
+      image blocks extracted into a list of base64 data URLs.
+    - Other types are stringified.
+    """
+    images = extract_images_from_result(result)
+    if isinstance(result, str):
+        # If the entire string is a data URL, the image is already in
+        # `images`; suppress the textual representation.
+        if images and result.strip() == images[0]["src"]:
+            return "", images
+        return result, images
+    if isinstance(result, list):
+        text_parts: list[str] = []
+        for block in result:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+        return "\n".join(text_parts), images
+    return str(result), images
+
+
+# Keep `base64` import live for type-checkers that flag unused stdlib.
+_ = base64

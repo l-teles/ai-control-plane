@@ -87,11 +87,17 @@ class CacheDB:
 
     def set_meta(self, key: str, value: str) -> None:
         with self._lock:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)",
-                (key, value),
-            )
-            self._conn.commit()
+            try:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?, ?)",
+                    (key, value),
+                )
+                self._conn.commit()
+            except sqlite3.ProgrammingError:
+                # DB was closed while a background refresh / build was still
+                # running (typical in tests at teardown). Status writes are
+                # best-effort — drop the write and let the thread exit.
+                pass
 
     @property
     def status(self) -> str:
