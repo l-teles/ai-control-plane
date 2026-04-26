@@ -697,6 +697,30 @@ def test_extract_searchable_text_strips_xml_markup(tmp_path: Path) -> None:
     assert "</command-name>" not in text
 
 
+def test_extract_searchable_text_preserves_non_context_angle_brackets(tmp_path: Path) -> None:
+    """Generics like ``List<int>``, ``Function<T, R>``, and HTML/JSX
+    samples must stay searchable — only Claude-injected context tags get
+    scrubbed. Regression for PR #27 review comment 14."""
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    _write_jsonl(
+        jsonl,
+        [
+            _make_user_event(
+                "Use List<int> with Function<T, R> and inside <div>HTML</div> and <component prop={value} />",
+                uuid="u1",
+            ),
+        ],
+    )
+    text = extract_searchable_text(jsonl)
+    assert "List<int>" in text
+    assert "Function<T, R>" in text
+    assert "<div>HTML</div>" in text
+    assert "<component" in text
+
+
 def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) -> None:
     from ai_ctrl_plane.claude_parser import extract_searchable_text
 

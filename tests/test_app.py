@@ -562,3 +562,95 @@ def test_search_route_returns_empty_for_blank_query(tmp_path: Path) -> None:
         r = cl.get("/api/search?q=   ")
         assert r.status_code == 200
         assert r.get_json() == []
+
+
+def test_search_route_returns_slim_response_shape(tmp_path: Path) -> None:
+    """``/api/search`` returns ``[{source, id}]`` only — the live-filter
+    JS just needs the ids, and a slim response keeps per-keystroke
+    bandwidth low. Full session payload is on /api/sessions.
+    Regression for PR #27 review comment 13.
+    """
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "11111111-aaaa-aaaa-aaaa-111111111111"
+    with open(project_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T10:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "needle_token_xyz"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        from ai_ctrl_plane.db import build_cache
+
+        build_cache(
+            app.config["cache_db"], tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode"
+        )
+        r = c.get("/api/search?q=needle_token_xyz")
+        assert r.status_code == 200
+        results = r.get_json()
+        assert len(results) == 1
+        # Slim shape: only source + id
+        assert set(results[0].keys()) == {"source", "id"}
+        assert results[0]["id"] == sid
+
+
+def test_search_falls_back_to_fs_scan_when_cache_empty(tmp_path: Path) -> None:
+    """On a fresh install the FTS index is empty during the initial
+    background build. A search request shouldn't return zero hits when
+    sessions exist on disk — it should fall back to a filesystem scan
+    plus a token match. Regression for PR #27 review comments 12 + 13.
+    """
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "22222222-bbbb-bbbb-bbbb-222222222222"
+    with open(project_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T10:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "frontend refactor work"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    # Don't run build_cache — simulate the fresh-install state where the
+    # initial background build hasn't populated the cache yet.
+    db = app.config["cache_db"]
+    assert db.search_sessions("frontend") == []  # FTS is empty
+
+    with app.test_client() as c:
+        # /api/search should still return the session via FS fallback.
+        r = c.get("/api/search?q=frontend")
+        assert r.status_code == 200
+        results = r.get_json()
+        assert len(results) == 1
+        assert results[0]["id"] == sid
+
+        # And /sessions?q=… HTML render should include the matching card.
+        r = c.get("/sessions?q=frontend")
+        assert r.status_code == 200
+        assert sid.encode() in r.data

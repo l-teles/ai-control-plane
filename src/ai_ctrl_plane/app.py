@@ -407,6 +407,35 @@ def create_app(
             cache_status=db.status,
         )
 
+    def _search_sessions_with_fallback(q: str) -> list[dict]:
+        """Search sessions, falling back to a filesystem scan + simple
+        token match when the FTS index isn't ready yet.
+
+        On a fresh install the cache hasn't been populated, so the FTS
+        index is empty and ``db.search_sessions`` returns ``[]`` — which
+        would cause the search box to hide every visible card on the
+        sessions page. Detect that case and do a best-effort in-memory
+        token match against the filesystem-discovered sessions instead.
+        """
+        hits = db.search_sessions(q) if q else []
+        if hits or not q:
+            return hits
+        all_sessions, _ = _build_session_index()
+        if not all_sessions:
+            return []
+        tokens = [t for t in re.findall(r"\w+", q.lower()) if t]
+        if not tokens:
+            return []
+
+        def _matches(s: dict) -> bool:
+            haystack = " ".join(
+                str(s.get(k, "") or "")
+                for k in ("summary", "cwd", "model", "first_user_content", "branch", "repository")
+            ).lower()
+            return all(t in haystack for t in tokens)
+
+        return [s for s in all_sessions if _matches(s)]
+
     @app.route("/sessions")
     def sessions_view():
         force = request.args.get("refresh") == "1"
@@ -415,7 +444,7 @@ def create_app(
         date_to = (request.args.get("to") or "").strip()[:32]
 
         if q:
-            sessions = db.search_sessions(q)
+            sessions = _search_sessions_with_fallback(q)
         else:
             sessions, _ = _build_session_index(force=force)
 
@@ -441,10 +470,16 @@ def create_app(
 
     @app.route("/api/search")
     def api_search():
+        """Live-filter search endpoint. Returns ``[{source, id}]`` only —
+        the sessions page JS just needs the ids to mark cards visible /
+        hidden, and a slim response keeps per-keystroke latency low.
+        Use ``/api/sessions`` for the full session payload.
+        """
         q = (request.args.get("q") or "").strip()[:200]
         if not q:
             return jsonify([])
-        return jsonify(db.search_sessions(q))
+        sessions = _search_sessions_with_fallback(q)
+        return jsonify([{"source": s.get("source", ""), "id": s.get("id", "")} for s in sessions])
 
     @app.route("/session/<session_id>")
     def session_view(session_id: str):

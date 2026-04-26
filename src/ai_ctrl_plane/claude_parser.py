@@ -176,6 +176,22 @@ def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
 # does add up). 500 KB is comfortably more than any reasonable session.
 _FTS_CONTENT_LIMIT = 500_000
 
+# Tags that Claude Code injects into transcript text — slash commands,
+# IDE context, system markers, etc. Only these get scrubbed from the
+# FTS-indexed content; arbitrary ``<...>`` like ``List<int>`` or HTML
+# samples are left alone so they remain searchable.
+_CLAUDE_CONTEXT_TAGS_RE = re.compile(
+    r"</?(?:"
+    r"command-name|command-message|command-args|command-stdout|command-stderr|"
+    r"local-command-stdout|local-command-stderr|local-command-stdin|local-command-caveat|"
+    r"ide_opened_file|ide_selection|"
+    r"system-reminder|user-prompt-submit-hook|"
+    r"file-history-snapshot|"
+    r"bash-input|bash-output|bash-stderr"
+    r")(?:\s[^>]*)?>",
+    re.IGNORECASE,
+)
+
 
 def extract_searchable_text(jsonl_path: Path) -> str:
     """Concatenate user + assistant text content from a Claude JSONL.
@@ -244,9 +260,11 @@ def extract_searchable_text(jsonl_path: Path) -> str:
     except OSError:
         return ""
     text = "\n".join(parts)[:_FTS_CONTENT_LIMIT]
-    # Strip XML markup wholesale — slash-command and IDE-context tags add
-    # noise without useful tokens.
-    text = re.sub(r"<[^>]+>", " ", text)
+    # Scrub only known Claude-injected context tags. A blanket
+    # ``<[^>]+>`` strip would also wipe out legitimate angle-bracketed
+    # content (``List<int>``, ``Function<T>``, HTML / JSX samples,
+    # algebraic types, etc.) that users genuinely want to search for.
+    text = _CLAUDE_CONTEXT_TAGS_RE.sub(" ", text)
     return text
 
 
@@ -829,22 +847,22 @@ def build_conversation(
                         if not isinstance(block, dict) or block.get("type") != "tool_result":
                             continue
                         raw_result = block.get("content", "")
-                        # Split text from images, then run the tool-specific
-                        # renderer to produce structured fields the template
-                        # can render with a per-tool layout.
+                        # Split text from images. The tool-specific renderer
+                        # gets the *full* text so it can parse structured
+                        # payloads (e.g. WebSearch JSON) before applying its
+                        # own preview truncation; only the legacy fallback
+                        # display gets the MAX_RESULT_CHARS cap.
                         text_result, images = render_tool_result(raw_result)
-                        if isinstance(text_result, str):
-                            text_result = text_result[:MAX_RESULT_CHARS]
-                        else:
-                            text_result = str(text_result)[:MAX_RESULT_CHARS]
+                        if not isinstance(text_result, str):
+                            text_result = str(text_result)
 
-                        # Keep a JSON-stringified copy for the legacy fallback
-                        # rendering; the renderer also picks the most useful
-                        # fields out of the raw input.
+                        # Keep a JSON-stringified, length-capped copy for the
+                        # legacy template fallback (the ``result`` field that
+                        # renders when a tool has no dedicated layout).
                         if isinstance(raw_result, list):
                             legacy_result = json.dumps(raw_result, indent=2, default=str)[:MAX_RESULT_CHARS]
                         else:
-                            legacy_result = text_result
+                            legacy_result = text_result[:MAX_RESULT_CHARS]
 
                         tc_id = block.get("tool_use_id", "")
                         if tc_id in subagent_tool_ids:

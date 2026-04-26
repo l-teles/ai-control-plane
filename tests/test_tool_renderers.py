@@ -87,6 +87,24 @@ def test_websearch_renderer_handles_non_json_result() -> None:
     assert rendered["raw"] == "not json at all"
 
 
+def test_websearch_renderer_parses_payload_larger_than_legacy_truncation_cap() -> None:
+    """Tool results used to be truncated to MAX_RESULT_CHARS (10_000)
+    BEFORE being passed to render_tool, which broke WebSearch when its
+    JSON payload exceeded that — it'd hit a parse error and lose the
+    structured cards. Renderers now get the full text. Regression for
+    PR #27 review comment 11."""
+    # Build a JSON payload that's well over 10_000 chars.
+    big_payload = json.dumps(
+        [{"title": f"Hit {i}", "url": f"https://example.com/{i}", "snippet": "x" * 200} for i in range(60)]
+    )
+    assert len(big_payload) > 10_000  # sanity
+    rendered = render_tool("WebSearch", {"query": "python"}, big_payload)
+    # Parsing succeeded — structured results came through, not the raw fallback.
+    assert len(rendered["results"]) == 60
+    assert rendered["results"][0]["url"] == "https://example.com/0"
+    assert rendered["results"][-1]["url"] == "https://example.com/59"
+
+
 def test_ask_user_question_renderer() -> None:
     rendered = render_tool(
         "AskUserQuestion",
