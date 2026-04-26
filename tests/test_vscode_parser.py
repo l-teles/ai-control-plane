@@ -883,6 +883,33 @@ def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) 
     assert extract_searchable_text(tmp_path / "does-not-exist.json") == ""
 
 
+def test_parse_events_coerces_non_list_requests(tmp_path: Path) -> None:
+    """A malformed session file with ``requests`` as a non-list (dict /
+    string / null) used to crash ``[meta] + requests`` with TypeError.
+    Coerce to ``[]`` and filter to dict entries. Regression for PR #27
+    review #49."""
+    chat_dir = tmp_path / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    p = chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+
+    for bad in ('{"sessionId": "x", "requests": null}', '{"sessionId": "x", "requests": "not-a-list"}',
+                '{"sessionId": "x", "requests": {"k": "v"}}', '{"sessionId": "x", "requests": 42}'):
+        p.write_text(bad, encoding="utf-8")
+        events = parse_events(p)
+        # Just the meta entry — no requests, but no crash.
+        assert len(events) == 1
+        assert events[0].get("_vscode_meta") is True
+
+    # Also a list with non-dict items — they get filtered out.
+    p.write_text(
+        '{"sessionId": "x", "requests": ["not-a-dict", null, {"requestId": "real"}]}',
+        encoding="utf-8",
+    )
+    events = parse_events(p)
+    assert len(events) == 2  # meta + the one valid dict request
+    assert events[1].get("requestId") == "real"
+
+
 def test_extract_searchable_text_returns_empty_for_non_dict_root(tmp_path: Path) -> None:
     """``json.load`` of a ``.json`` file can legally return a list/scalar/null
     at the root. The function should bail rather than crash on

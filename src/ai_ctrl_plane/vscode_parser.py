@@ -409,7 +409,14 @@ def parse_events(path: Path) -> list[dict]:
         if isinstance(folder, str) and folder:
             meta["cwd"] = _folder_uri_to_path(folder)
 
-    return [meta] + data.get("requests", [])
+    # ``requests`` is supposed to be a list of request dicts but a
+    # malformed session file could put any JSON value there; coerce to
+    # ``[]`` so the ``+`` concatenation can't TypeError, and filter to
+    # dict entries so downstream consumers don't have to.
+    requests = data.get("requests")
+    if not isinstance(requests, list):
+        requests = []
+    return [meta] + [r for r in requests if isinstance(r, dict)]
 
 
 # ---------------------------------------------------------------------------
