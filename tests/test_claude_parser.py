@@ -259,17 +259,42 @@ def test_build_conversation_xml_context_with_user_text() -> None:
     assert "Heya, Please fix the TF diffs." in user_msgs[0]["content"]
 
 
-def test_build_conversation_xml_only_no_user_text() -> None:
-    """Pure XML context with no trailing user text becomes just a notification."""
+def test_build_conversation_slash_command_emits_structured_kind() -> None:
+    """Slash command markup is surfaced as a dedicated ``slash_command`` item
+    with command name, args, stdout, and stderr exposed as fields rather than
+    flattened into a notification string."""
     events = [
-        _make_user_event("<command-name>/review</command-name><command-args></command-args>"),
+        _make_user_event(
+            "<command-name>/review</command-name>"
+            "<command-message>review</command-message>"
+            "<command-args>--all</command-args>"
+            "<local-command-stdout>10 issues found</local-command-stdout>"
+            "<local-command-stderr></local-command-stderr>"
+        ),
+    ]
+    conv = build_conversation(events)
+    slash = [c for c in conv if c["kind"] == "slash_command"]
+    assert len(slash) == 1
+    assert slash[0]["command"] == "/review"
+    assert slash[0]["args"] == "--all"
+    assert slash[0]["stdout"] == "10 issues found"
+    assert slash[0]["stderr"] == ""
+    # Should NOT also appear as a notification or user_message
+    assert not [c for c in conv if c["kind"] == "notification"]
+    assert not [c for c in conv if c["kind"] == "user_message"]
+
+
+def test_build_conversation_xml_without_command_name_is_still_notification() -> None:
+    """Non-slash XML markup keeps the old notification + user_message split."""
+    events = [
+        _make_user_event("<ide_opened_file>foo.py</ide_opened_file>fix this"),
     ]
     conv = build_conversation(events)
     notifs = [c for c in conv if c["kind"] == "notification"]
     user_msgs = [c for c in conv if c["kind"] == "user_message"]
     assert len(notifs) == 1
-    assert "/review" in notifs[0]["message"]
-    assert len(user_msgs) == 0
+    assert len(user_msgs) == 1
+    assert user_msgs[0]["content"] == "fix this"
 
 
 def test_build_conversation_requestid_merge() -> None:
@@ -582,6 +607,388 @@ def test_subagent_count_in_stats() -> None:
     assert stats["tool_calls"]["Agent"] == 1
     assert stats["tool_calls"]["Bash"] == 1
     assert stats["tool_calls"]["dispatch_agent"] == 1
+
+
+def test_build_conversation_reorders_resumed_session_by_dag() -> None:
+    """A session resumed from message ``b`` (so original branch ``c=>d`` and
+    resumed branch ``e=>f`` both share parent ``b``) should render with each
+    branch's children adjacent to their parent — not interleaved by file order.
+    """
+    events = [
+        _make_user_event("hi", uuid="a", ts="2026-04-26T10:00:00Z"),
+        _make_assistant_event(
+            [{"type": "text", "text": "hello"}],
+            uuid="b",
+            request_id="rb",
+            ts="2026-04-26T10:00:01Z",
+            parentUuid="a",
+        ),
+        # Original branch (c=>d), written first
+        _make_user_event("first follow-up", uuid="c", ts="2026-04-26T10:00:02Z", parentUuid="b"),
+        _make_assistant_event(
+            [{"type": "text", "text": "answer for first"}],
+            uuid="d",
+            request_id="rd",
+            ts="2026-04-26T10:00:03Z",
+            parentUuid="c",
+        ),
+        # Resumed branch (e=>f), written later but parents off `b` again
+        _make_user_event("second follow-up", uuid="e", ts="2026-04-26T10:00:04Z", parentUuid="b"),
+        _make_assistant_event(
+            [{"type": "text", "text": "answer for second"}],
+            uuid="f",
+            request_id="rf",
+            ts="2026-04-26T10:00:05Z",
+            parentUuid="e",
+        ),
+    ]
+    conv = build_conversation(events)
+    # Pull out the user_message contents in conversation order.
+    user_msgs = [c["content"] for c in conv if c.get("kind") == "user_message"]
+    # Branch c=>d should be fully visited before branch e=>f.
+    assert user_msgs.index("first follow-up") < user_msgs.index("second follow-up")
+    assistant_texts = [c["content"] for c in conv if c.get("kind") == "assistant_message"]
+    # The "hello" reply (b) precedes both branch replies; "answer for first"
+    # comes immediately after its user prompt and before "answer for second".
+    assert assistant_texts.index("hello") < assistant_texts.index("answer for first")
+    assert assistant_texts.index("answer for first") < assistant_texts.index("answer for second")
+
+
+def test_extract_searchable_text_pulls_user_assistant_thinking_and_tool_results(tmp_path: Path) -> None:
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    events = [
+        _make_user_event("plain user prompt", uuid="u1"),
+        _make_assistant_event(
+            [
+                {"type": "thinking", "thinking": "internal_reasoning_token"},
+                {"type": "text", "text": "assistant_reply_token"},
+            ],
+            uuid="a1",
+        ),
+        _make_user_event(
+            [{"type": "tool_result", "tool_use_id": "t1", "content": "tool_output_token"}],
+            uuid="u2",
+        ),
+        {"type": "summary", "summary": "summary_token", "leafUuid": "a1"},
+    ]
+    _write_jsonl(jsonl, events)
+    text = extract_searchable_text(jsonl)
+    assert "plain user prompt" in text
+    assert "internal_reasoning_token" in text
+    assert "assistant_reply_token" in text
+    assert "tool_output_token" in text
+    assert "summary_token" in text
+
+
+def test_extract_searchable_text_strips_xml_markup(tmp_path: Path) -> None:
+    """Slash-command and IDE-context tags add noise; they shouldn't appear
+    as bare angle brackets in the indexed text."""
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    _write_jsonl(jsonl, [_make_user_event("<command-name>/test</command-name>visible_text", uuid="u1")])
+    text = extract_searchable_text(jsonl)
+    assert "visible_text" in text
+    assert "<command-name>" not in text
+    assert "</command-name>" not in text
+
+
+def test_extract_searchable_text_preserves_non_context_angle_brackets(tmp_path: Path) -> None:
+    """Generics like ``List<int>``, ``Function<T, R>``, and HTML/JSX
+    samples must stay searchable — only Claude-injected context tags get
+    scrubbed. Regression for PR #27 review comment 14."""
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    _write_jsonl(
+        jsonl,
+        [
+            _make_user_event(
+                "Use List<int> with Function<T, R> and inside <div>HTML</div> and <component prop={value} />",
+                uuid="u1",
+            ),
+        ],
+    )
+    text = extract_searchable_text(jsonl)
+    assert "List<int>" in text
+    assert "Function<T, R>" in text
+    assert "<div>HTML</div>" in text
+    assert "<component" in text
+
+
+def test_count_permissions_handles_non_string_cwd() -> None:
+    """``cwd`` from a malformed transcript event can be non-string;
+    constructing a Path would TypeError. Coerce to safe defaults.
+    Regression for PR #27 review #53."""
+    from ai_ctrl_plane.claude_parser import _count_permissions
+
+    for bad in (None, 42, [], {"x": 1}, True):
+        result = _count_permissions(bad)
+        assert result == {"allow": 0, "deny": 0, "ask": 0}
+
+
+def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) -> None:
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    assert extract_searchable_text(tmp_path / "nope.jsonl") == ""
+
+
+def test_extract_searchable_text_survives_corrupt_jsonl_lines(tmp_path: Path) -> None:
+    """A line that JSON-parses to a non-dict (``null``, ``[]``, scalar)
+    must not crash extraction — the function should skip the bad line
+    and continue indexing the rest of the session. Regression for PR
+    #27 review #44, plus a broader sweep across every claude_parser
+    function that scans JSONL line-by-line."""
+    from ai_ctrl_plane.claude_parser import (
+        _first_metadata,
+        _last_timestamp,
+        _scan_summaries,
+        _scan_token_usage,
+        extract_searchable_text,
+        parse_events,
+    )
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    # Mix valid events with several corrupt-but-valid-JSON lines.
+    valid_user = _make_user_event("findable_token", uuid="u1", session_id=sid)
+    valid_assistant = _make_assistant_event(
+        [{"type": "text", "text": "answer_token"}], uuid="a1", request_id="r1"
+    )
+    summary_event = {"type": "summary", "summary": "summary_token", "leafUuid": "a1"}
+    lines = [
+        json.dumps(valid_user),
+        "null",  # JSON-decodes to None
+        "[]",  # JSON-decodes to a list
+        '"just a string"',  # JSON-decodes to a str
+        "42",  # JSON-decodes to an int
+        json.dumps(valid_assistant),
+        "true",  # JSON-decodes to a bool
+        json.dumps(summary_event),
+    ]
+    jsonl.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # None of these should raise; the corrupt lines are silently skipped
+    # and the valid events surface as expected.
+    text = extract_searchable_text(jsonl)
+    assert "findable_token" in text
+    assert "answer_token" in text
+    assert "summary_token" in text
+
+    events = parse_events(jsonl)
+    types = [e.get("type") for e in events]
+    assert "user" in types
+    assert "assistant" in types
+
+    meta = _first_metadata(jsonl)
+    assert meta.get("sessionId") == sid
+
+    assert _last_timestamp(jsonl)  # not empty
+    tokens = _scan_token_usage(jsonl)
+    assert tokens["output_tokens"] >= 0  # didn't crash
+    summaries = _scan_summaries(jsonl)
+    assert any("summary_token" in s for _, s in summaries)
+
+
+def test_extract_searchable_text_skips_non_string_block_values(tmp_path: Path) -> None:
+    """A malformed transcript with ``{"text": null}``, ``{"thinking": 42}``,
+    or non-string ``tool_result.content`` would crash ``len()`` / ``join``
+    and break FTS indexing for the entire session. Each non-string value
+    must be skipped silently. Regression for PR #27 review #33."""
+    from ai_ctrl_plane.claude_parser import extract_searchable_text
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    jsonl = tmp_path / f"{sid}.jsonl"
+    events = [
+        # User message with a mix of valid and malformed text blocks.
+        _make_user_event(
+            [
+                {"type": "text", "text": "user_visible"},
+                {"type": "text", "text": None},
+                {"type": "text", "text": 42},
+            ],
+            uuid="u1",
+        ),
+        # Assistant with malformed thinking / text + a tool_use we ignore.
+        _make_assistant_event(
+            [
+                {"type": "thinking", "thinking": None},
+                {"type": "thinking", "thinking": "internal_reasoning"},
+                {"type": "thinking", "thinking": ["bad"]},
+                {"type": "text", "text": "assistant_visible"},
+            ],
+            uuid="a1",
+        ),
+        # Malformed tool_result with non-string content + non-string text in inner blocks.
+        _make_user_event(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tu1",
+                    "content": [
+                        {"type": "text", "text": "tool_visible"},
+                        {"type": "text", "text": None},
+                        {"type": "text", "text": ["bad"]},
+                    ],
+                },
+                {"type": "tool_result", "tool_use_id": "tu2", "content": 42},  # bad content type
+            ],
+            uuid="u2",
+        ),
+        # Malformed summary entry.
+        {"type": "summary", "summary": None, "leafUuid": "u1"},
+    ]
+    _write_jsonl(jsonl, events)
+
+    # No raise — only the string-typed payloads end up in the index.
+    text = extract_searchable_text(jsonl)
+    assert "user_visible" in text
+    assert "internal_reasoning" in text
+    assert "assistant_visible" in text
+    assert "tool_visible" in text
+
+
+def test_summary_entry_overrides_first_user_message_in_session_list(tmp_path: Path) -> None:
+    """When Claude auto-generated a `summary` entry for a session, the most
+    recent one should be used as the session label rather than the first
+    user message."""
+    project_dir = tmp_path / "-Users-test-project"
+    project_dir.mkdir()
+    sid = "11111111-2222-3333-4444-555555555555"
+    events = [
+        _make_user_event("How do I write tests?", uuid="u1", session_id=sid),
+        _make_assistant_event(
+            [{"type": "text", "text": "Here's how"}], request_id="r1", uuid="a1"
+        ),
+        {"type": "summary", "summary": "Walked through how to write pytest fixtures", "leafUuid": "a1"},
+    ]
+    enriched = [{"sessionId": sid, **e} if e.get("type") != "summary" else e for e in events]
+    _write_jsonl(project_dir / f"{sid}.jsonl", enriched)
+    sessions = discover_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0]["summary"] == "Walked through how to write pytest fixtures"
+
+
+def test_parse_subagent_transcripts_skips_non_dict_meta(tmp_path: Path) -> None:
+    """A subagent ``.meta.json`` whose root is a list / scalar / null
+    must not crash subagent loading — skip the bad file silently and
+    process the rest. Regression for PR #27 review #45."""
+    from ai_ctrl_plane.claude_parser import parse_subagent_transcripts
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    project_dir = tmp_path / "-Users-test"
+    project_dir.mkdir()
+    session_jsonl = project_dir / f"{sid}.jsonl"
+    sub_dir = project_dir / sid / "subagents"
+    sub_dir.mkdir(parents=True)
+
+    # Bad meta files at every shape JSON allows at the root.
+    for i, payload in enumerate(["null", "[]", '"just a string"', "42", "true"]):
+        (sub_dir / f"agent-bad{i}.meta.json").write_text(payload, encoding="utf-8")
+        (sub_dir / f"agent-bad{i}.jsonl").write_text("", encoding="utf-8")
+
+    # And one valid meta + transcript so we can verify it's still loaded.
+    (sub_dir / "agent-good.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "Find the bug"}), encoding="utf-8"
+    )
+    _write_jsonl(
+        sub_dir / "agent-good.jsonl",
+        [_make_user_event("Find the bug", uuid="su1", session_id=sid, isSidechain=True)],
+    )
+
+    subs = parse_subagent_transcripts(session_jsonl)
+    # Bad meta files are silently skipped; the good one is loaded.
+    assert "Find the bug" in subs
+    assert len(subs) == 1
+
+
+def test_subagent_transcript_loaded_and_attached(tmp_path: Path) -> None:
+    """When a session has subagent files in `<session>/subagents/`, the
+    matching `Agent` tool_use should carry an inlined transcript."""
+    from ai_ctrl_plane.claude_parser import parse_subagent_transcripts
+
+    sid = "11111111-2222-3333-4444-555555555555"
+    project_dir = tmp_path / "-Users-test"
+    project_dir.mkdir()
+    session_jsonl = project_dir / f"{sid}.jsonl"
+    sub_dir = project_dir / sid / "subagents"
+    sub_dir.mkdir(parents=True)
+
+    # Subagent meta + transcript
+    (sub_dir / "agent-deadbeef.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "Find the bug"}),
+        encoding="utf-8",
+    )
+    _write_jsonl(
+        sub_dir / "agent-deadbeef.jsonl",
+        [
+            _make_user_event("Find the bug", uuid="su1", session_id=sid, isSidechain=True, agentId="deadbeef"),
+            _make_assistant_event(
+                [{"type": "text", "text": "Found it in foo.py:42"}],
+                request_id="rsub",
+                uuid="sa1",
+            ),
+        ],
+    )
+
+    # Verify the helper finds and parses both files
+    subs = parse_subagent_transcripts(session_jsonl)
+    assert "Find the bug" in subs
+    assert subs["Find the bug"]["agent_type"] == "Explore"
+    assert len(subs["Find the bug"]["events"]) == 2
+
+    # Verify the conversation builder attaches the transcript on subagent_start
+    main_events = [
+        _make_user_event("Help me find a bug", uuid="u1", session_id=sid),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_x",
+                    "name": "Agent",
+                    "input": {"description": "Find the bug", "prompt": "Look in foo.py"},
+                },
+            ],
+            request_id="r1",
+            uuid="a1",
+        ),
+    ]
+    conv = build_conversation(main_events, subagent_transcripts=subs)
+    starts = [c for c in conv if c["kind"] == "subagent_start"]
+    assert len(starts) == 1
+    assert starts[0]["agent_type"] == "Explore"
+    assert "transcript" in starts[0]
+    assert isinstance(starts[0]["transcript"], list)
+    inner_msgs = [c for c in starts[0]["transcript"] if c["kind"] == "assistant_message"]
+    assert any("Found it in foo.py:42" in m["content"] for m in inner_msgs)
+
+
+def test_subagent_transcript_absent_when_no_match(tmp_path: Path) -> None:
+    """If no subagent file matches the Agent tool_use's description, the
+    item still emits — just without a `transcript` field."""
+    main_events = [
+        _make_user_event("Help"),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_y",
+                    "name": "Agent",
+                    "input": {"description": "Some other task", "prompt": "..."},
+                },
+            ],
+            request_id="r1",
+        ),
+    ]
+    conv = build_conversation(main_events, subagent_transcripts={"a different task": {"events": []}})
+    starts = [c for c in conv if c["kind"] == "subagent_start"]
+    assert len(starts) == 1
+    assert "transcript" not in starts[0]
 
 
 def test_subagent_conversation_events() -> None:

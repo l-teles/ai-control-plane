@@ -40,10 +40,20 @@ jobs:
           python-version: "3.13"
       - name: Install pip-audit and dependencies
         run: |
+          # Upgrade pip before auditing — the runner's preinstalled pip is
+          # itself scanned by ``pip-audit`` (which audits the whole env),
+          # so a CVE in pip's bundled version would fail the job even when
+          # project deps are clean. Pulling the latest pip lets us pick up
+          # a fix automatically once one is published.
+          python -m pip install --upgrade pip
           pip install -r .github/requirements-security.txt
           pip install -e .
       - name: Audit dependencies
-        run: pip-audit
+        # CVE-2026-3219 is a vuln in pip itself (the runner's bundled pip,
+        # not a project dep). No fixed pip release is out yet; ignore the
+        # specific CVE so unrelated PRs don't get blocked, and remove this
+        # ignore once upstream pip publishes the fix.
+        run: pip-audit --ignore-vuln CVE-2026-3219
 
   zizmor:
     name: zizmor (GitHub Actions security)

@@ -441,3 +441,296 @@ def test_all_three_sources(tmp_path: Path) -> None:
         data = r.get_json()
         sources = {s["source"] for s in data}
         assert sources == {"copilot", "claude", "vscode"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — search and date filtering
+# ---------------------------------------------------------------------------
+
+
+def test_natural_date_parser_iso_passthrough() -> None:
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    assert _parse_natural_date("2026-04-26") == "2026-04-26"
+
+
+def test_natural_date_parser_today_yesterday() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("today") == today.isoformat()
+    assert _parse_natural_date("yesterday") == (today - timedelta(days=1)).isoformat()
+
+
+def test_natural_date_parser_n_days_ago() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("3 days ago") == (today - timedelta(days=3)).isoformat()
+    assert _parse_natural_date("1 day ago") == (today - timedelta(days=1)).isoformat()
+
+
+def test_natural_date_parser_unrecognised_returns_empty() -> None:
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    assert _parse_natural_date("sometime in the future") == ""
+    assert _parse_natural_date("") == ""
+
+
+def test_natural_date_parser_rejects_invalid_calendar_dates() -> None:
+    """``2026-99-99`` matches the regex but isn't a real date; accepting
+    it would cause confusing filter behaviour because the lexical compare
+    in ``_filter_by_date_range`` would drop or include sessions arbitrarily.
+    Regression for PR #27 review #23."""
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    assert _parse_natural_date("2026-99-99") == ""
+    assert _parse_natural_date("2026-13-01") == ""  # invalid month
+    assert _parse_natural_date("2026-02-30") == ""  # Feb 30 doesn't exist
+    # Real dates still pass through.
+    assert _parse_natural_date("2026-04-26") == "2026-04-26"
+    assert _parse_natural_date("2024-02-29") == "2024-02-29"  # leap year
+
+
+def test_filter_by_date_range_inclusive_on_both_bounds() -> None:
+    from ai_ctrl_plane.app import _filter_by_date_range
+
+    sessions = [
+        {"id": "a", "created_at": "2026-04-20T10:00:00Z"},
+        {"id": "b", "created_at": "2026-04-22T10:00:00Z"},
+        {"id": "c", "created_at": "2026-04-25T10:00:00Z"},
+    ]
+    out = _filter_by_date_range(sessions, "2026-04-21", "2026-04-23")
+    assert [s["id"] for s in out] == ["b"]
+
+
+def test_filter_by_date_range_open_ended() -> None:
+    from ai_ctrl_plane.app import _filter_by_date_range
+
+    sessions = [
+        {"id": "a", "created_at": "2026-04-20T10:00:00Z"},
+        {"id": "b", "created_at": "2026-04-25T10:00:00Z"},
+    ]
+    out = _filter_by_date_range(sessions, "2026-04-22", "")
+    assert [s["id"] for s in out] == ["b"]
+    out = _filter_by_date_range(sessions, "", "2026-04-22")
+    assert [s["id"] for s in out] == ["a"]
+
+
+def test_search_route_uses_fts_index(tmp_path: Path) -> None:
+    """A GET to /sessions?q=… runs through ``db.search_sessions`` (FTS) and
+    only the matching session is rendered."""
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid_a = "11111111-aaaa-aaaa-aaaa-111111111111"
+    sid_b = "22222222-bbbb-bbbb-bbbb-222222222222"
+    for sid, summary in [(sid_a, "refactor authentication"), (sid_b, "fix the cache layer")]:
+        with open(project_dir / f"{sid}.jsonl", "w") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "uuid": "u1",
+                        "sessionId": sid,
+                        "timestamp": "2026-04-26T10:00:00Z",
+                        "cwd": "/repo",
+                        "version": "2.1",
+                        "gitBranch": "main",
+                        "message": {"role": "user", "content": summary},
+                    }
+                )
+                + "\n"
+            )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        # First, hit /sessions to populate the cache (build runs in
+        # background — we may need a small synchronous nudge).
+        c.get("/sessions")
+        # Force a cache build so search has data to hit.
+        from ai_ctrl_plane.db import build_cache
+
+        build_cache(
+            app.config["cache_db"],
+            tmp_path / "copilot",
+            tmp_path / "claude_logs",
+            tmp_path / "vscode",
+        )
+        r = c.get("/api/search?q=authentication")
+        assert r.status_code == 200
+        results = r.get_json()
+        ids = {s["id"] for s in results}
+        assert sid_a in ids
+        assert sid_b not in ids
+
+
+def test_search_route_returns_empty_for_blank_query(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "c", tmp_path / "cl", tmp_path / "v", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+    with app.test_client() as cl:
+        r = cl.get("/api/search?q=   ")
+        assert r.status_code == 200
+        assert r.get_json() == []
+
+
+def test_search_route_returns_slim_response_shape(tmp_path: Path) -> None:
+    """``/api/search`` returns ``[{source, id}]`` only — the live-filter
+    JS just needs the ids, and a slim response keeps per-keystroke
+    bandwidth low. Full session payload is on /api/sessions.
+    Regression for PR #27 review comment 13.
+    """
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "11111111-aaaa-aaaa-aaaa-111111111111"
+    with open(project_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T10:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "needle_token_xyz"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        from ai_ctrl_plane.db import build_cache
+
+        build_cache(
+            app.config["cache_db"], tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode"
+        )
+        r = c.get("/api/search?q=needle_token_xyz")
+        assert r.status_code == 200
+        results = r.get_json()
+        assert len(results) == 1
+        # Slim shape: only source + id
+        assert set(results[0].keys()) == {"source", "id"}
+        assert results[0]["id"] == sid
+
+
+def test_session_view_accepts_composite_source_id(tmp_path: Path) -> None:
+    """Two sessions sharing a UUID across sources should each be
+    individually reachable via ``/session/<source>:<uuid>``. Bare-UUID
+    URLs would 400 with "Ambiguous session ID" in this case.
+    Regression for PR #27 review #50."""
+    # Set up a Copilot session and a Claude session sharing the same UUID.
+    sid = "11111111-2222-3333-4444-555555555555"
+
+    copilot_session = tmp_path / "copilot" / sid
+    copilot_session.mkdir(parents=True)
+    (copilot_session / "workspace.yaml").write_text(
+        f"id: {sid}\nsummary: Copilot Side\nrepository: x\nbranch: main\n"
+        "created_at: 2026-04-26T10:00:00.000Z\nupdated_at: 2026-04-26T10:05:00.000Z\n",
+        encoding="utf-8",
+    )
+    (copilot_session / "events.jsonl").write_text(
+        json.dumps({"type": "session.start", "data": {}, "timestamp": "2026-04-26T10:00:00Z"}) + "\n",
+        encoding="utf-8",
+    )
+
+    claude_dir = tmp_path / "claude" / "-Users-test-project"
+    claude_dir.mkdir(parents=True)
+    with open(claude_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T11:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "Claude side"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    with app.test_client() as c:
+        # Bare UUID is ambiguous — server returns 400.
+        r_bare = c.get(f"/session/{sid}")
+        assert r_bare.status_code == 400
+
+        # Composite IDs are unambiguous — both sessions are reachable.
+        r_copilot = c.get(f"/session/copilot:{sid}")
+        assert r_copilot.status_code == 200
+        assert b"Copilot Side" in r_copilot.data
+
+        r_claude = c.get(f"/session/claude:{sid}")
+        assert r_claude.status_code == 200
+        # Claude render uses summary or first-user-content; either way
+        # the page renders without a 400 / 500.
+
+        # /sessions list emits composite-form hrefs so users can click
+        # through to the right session.
+        r_list = c.get("/sessions")
+        assert r_list.status_code == 200
+        assert f"/session/copilot:{sid}".encode() in r_list.data
+        assert f"/session/claude:{sid}".encode() in r_list.data
+
+
+def test_search_falls_back_to_fs_scan_when_cache_empty(tmp_path: Path) -> None:
+    """On a fresh install the FTS index is empty during the initial
+    background build. A search request shouldn't return zero hits when
+    sessions exist on disk — it should fall back to a filesystem scan
+    plus a token match. Regression for PR #27 review comments 12 + 13.
+    """
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "22222222-bbbb-bbbb-bbbb-222222222222"
+    with open(project_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T10:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "frontend refactor work"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    # Don't run build_cache — simulate the fresh-install state where the
+    # initial background build hasn't populated the cache yet.
+    db = app.config["cache_db"]
+    assert db.search_sessions("frontend") == []  # FTS is empty
+
+    with app.test_client() as c:
+        # /api/search should still return the session via FS fallback.
+        r = c.get("/api/search?q=frontend")
+        assert r.status_code == 200
+        results = r.get_json()
+        assert len(results) == 1
+        assert results[0]["id"] == sid
+
+        # And /sessions?q=… HTML render should include the matching card.
+        r = c.get("/sessions?q=frontend")
+        assert r.status_code == 200
+        assert sid.encode() in r.data

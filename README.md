@@ -85,17 +85,45 @@ those raw files into a readable, interactive dashboard so you can review session
 ### Session Browser
 - **Multi-source support** — browse sessions from GitHub Copilot, Claude Code, and
   VS Code Chat side by side, with color-coded source badges.
-- **Search & filters** — full-text search across session names, branches, directories,
-  and models; filter by source on the sessions page, by event type in timelines.
-- **Interactive timeline** — color-coded conversation view with:
-  - User messages (with file attachments)
-  - Assistant responses (rendered Markdown, expandable reasoning/thinking)
-  - Tool calls & results (expandable arguments / output)
-  - Sub-agent launches & completions (expandable prompt / result)
-  - System notifications, hooks, file snapshots, model changes
-  - Errors and warnings
+- **Full-text search** — SQLite FTS5 indexes the full conversation content (user
+  prompts, assistant responses, thinking blocks, tool results) plus summary,
+  cwd, and model. Live as you type; press Enter for a URL-shareable view.
+  Punctuation that confuses FTS (hyphens, quotes, parens) is auto-sanitised.
+- **Date-range filter** — natural language (`yesterday`, `last week`,
+  `3 days ago`, `2026-04-01`) on top of the sessions list.
+- **Filters** — by source (Claude / Copilot / VS Code) and by event type
+  inside the timeline (user / assistant / tools / sub-agents / notifications /
+  errors). Per-source counts update live as the search narrows.
+- **Session minimap** — clickable timeline overview at the top of each session,
+  one coloured tick per event. Click to scroll the timeline to that point.
+- **Interactive timeline** — DAG-ordered (resumed-session branches render with
+  each child immediately following its parent) with per-tool layouts:
+  - **Bash** with ANSI colour rendering
+  - **Read / Write / Edit** with file path and side-by-side red/green diff
+  - **Grep / Glob** with pattern + match list
+  - **WebFetch / WebSearch** with clickable URLs and structured result cards
+  - **AskUserQuestion** with question + options + answer
+  - **TodoWrite** with status-coloured checkbox list
+  - **Slash commands** (`/init`, `/clear`, …) as structured cards with
+    `command-name`, `args`, `stdout`, `stderr` fields
+  - User messages, assistant responses (rendered Markdown, expandable thinking)
+  - Inline subagent transcripts (Claude Code 2.1.2+ `subagents/` directory)
+  - Sub-agent launches & completions, file snapshots, model changes
+  - Errors, warnings, hooks, system notifications
+  - Inline image rendering for base64 image blocks in tool results
 - **Statistics sidebar** — message counts, token usage (input/output/cache),
-  tool breakdown with visual bars, MCP tool usage, rewind snapshots.
+  tool breakdown with visual bars, MCP tool usage, rewind snapshots,
+  memory file count, repo-local permission summary.
+- **Resume command** — Claude session sidebar has a one-click button that copies
+  `claude -r <session_id>` to the clipboard.
+
+### Cache
+- **Incremental refresh on every launch** — new sessions appear automatically;
+  no need to click "Rebuild cache" after every conversation. Each session
+  records its source-file mtime; only modified files are re-parsed, deleted
+  files are dropped.
+- **Schema migrations** — versioned SQL files in `migrations/` keep older
+  caches upgradable in place rather than wiped on every schema change.
 
 ### Tool Configuration Inspector
 - **Claude Code** — MCP servers, plugins (official + external), agents, skills

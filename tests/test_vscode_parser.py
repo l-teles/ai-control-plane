@@ -857,3 +857,66 @@ def test_parse_events_cp1252_invalid_bytes(tmp_path: Path) -> None:
     events = parse_events(jsonl_path)
     assert len(events) >= 1
     assert any("Łódź" in str(e) for e in events)
+
+
+def test_extract_searchable_text_concatenates_request_and_response(tmp_path: Path) -> None:
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    chat_dir = tmp_path / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    session = _make_session(
+        requests=[
+            _make_request(text="user_prompt_token", response_text="assistant_response_token"),
+        ]
+    )
+    p = chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+    p.write_text(json.dumps(session), encoding="utf-8")
+
+    text = extract_searchable_text(p)
+    assert "user_prompt_token" in text
+    assert "assistant_response_token" in text
+
+
+def test_extract_searchable_text_returns_empty_for_missing_file(tmp_path: Path) -> None:
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    assert extract_searchable_text(tmp_path / "does-not-exist.json") == ""
+
+
+def test_parse_events_coerces_non_list_requests(tmp_path: Path) -> None:
+    """A malformed session file with ``requests`` as a non-list (dict /
+    string / null) used to crash ``[meta] + requests`` with TypeError.
+    Coerce to ``[]`` and filter to dict entries. Regression for PR #27
+    review #49."""
+    chat_dir = tmp_path / "chatSessions"
+    chat_dir.mkdir(parents=True)
+    p = chat_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.json"
+
+    for bad in ('{"sessionId": "x", "requests": null}', '{"sessionId": "x", "requests": "not-a-list"}',
+                '{"sessionId": "x", "requests": {"k": "v"}}', '{"sessionId": "x", "requests": 42}'):
+        p.write_text(bad, encoding="utf-8")
+        events = parse_events(p)
+        # Just the meta entry — no requests, but no crash.
+        assert len(events) == 1
+        assert events[0].get("_vscode_meta") is True
+
+    # Also a list with non-dict items — they get filtered out.
+    p.write_text(
+        '{"sessionId": "x", "requests": ["not-a-dict", null, {"requestId": "real"}]}',
+        encoding="utf-8",
+    )
+    events = parse_events(p)
+    assert len(events) == 2  # meta + the one valid dict request
+    assert events[1].get("requestId") == "real"
+
+
+def test_extract_searchable_text_returns_empty_for_non_dict_root(tmp_path: Path) -> None:
+    """``json.load`` of a ``.json`` file can legally return a list/scalar/null
+    at the root. The function should bail rather than crash on
+    ``data.get(...)``. Regression for PR #27 review #41."""
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    for payload in ('["a", "b"]', '"just a string"', "42", "null", "true"):
+        p = tmp_path / "session.json"
+        p.write_text(payload, encoding="utf-8")
+        assert extract_searchable_text(p) == "", f"payload {payload!r} should return empty"

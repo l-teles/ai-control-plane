@@ -17,7 +17,7 @@ from . import claude_parser, vscode_parser
 from .config_readers.claude_config import _default_claude_desktop_dir, read_claude_config, read_claude_desktop_config
 from .config_readers.copilot_config import read_copilot_config
 from .config_readers.vscode_config import read_vscode_config
-from .db import CacheDB, default_cache_dir, start_background_build
+from .db import CacheDB, default_cache_dir, start_background_build, start_background_refresh
 from .parser import (
     _default_copilot_dir,
     duration_between,
@@ -42,11 +42,25 @@ from .parser import (
 # Validation helpers
 # ---------------------------------------------------------------------------
 
-# Session IDs are UUIDs — enforce that to prevent path traversal.
+# Session IDs are UUIDs, optionally prefixed by ``<source>:`` to
+# disambiguate when the same UUID exists across multiple sources
+# (claude / copilot / vscode). Both forms are accepted by the
+# /session/<id> route; the prefix is stripped before the value is
+# used as a filesystem path component.
 _UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    r"^(?:(?:claude|copilot|vscode):)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+
+
+def _bare_uuid(session_id: str) -> str:
+    """Return the UUID part of a session id, stripping any ``source:`` prefix.
+
+    Used before passing the value to ``_safe_copilot_dir`` (which uses
+    it as a directory name and would reject the colon as a path-traversal
+    attempt).
+    """
+    return session_id.split(":", 1)[1] if ":" in session_id else session_id
 
 # Backup hash filenames: hex-timestamp
 _BACKUP_HASH_RE = re.compile(r"^[0-9a-f]{16}-\d{13}$")
@@ -54,6 +68,85 @@ _BACKUP_HASH_RE = re.compile(r"^[0-9a-f]{16}-\d{13}$")
 # Project encoded names: only safe characters (no slashes, no ..)
 # Allow colon for Windows drive letters (e.g. C:), reject ".." for path traversal
 _PROJECT_NAME_RE = re.compile(r"^[-a-zA-Z0-9_.: ]+$")
+
+
+def _parse_natural_date(text: str) -> str:
+    """Convert a free-form date string into ISO ``YYYY-MM-DD``.
+
+    Recognises explicit ``YYYY-MM-DD`` plus a small set of common phrases
+    (``today``, ``yesterday``, ``last week``, ``last month``, ``N days ago``,
+    ``N weeks ago``).  Returns an empty string when the input doesn't
+    match — the caller treats that as "no constraint" rather than an error.
+    """
+    from datetime import UTC, date, datetime, timedelta
+
+    text = (text or "").strip().lower()
+    if not text:
+        return ""
+
+    # Already ISO YYYY-MM-DD — but only accept *real* calendar dates;
+    # ``2026-99-99`` matches the regex yet would compare nonsensically
+    # against real ``created_at`` strings in :func:`_filter_by_date_range`.
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+        try:
+            date.fromisoformat(text)
+            return text
+        except ValueError:
+            return ""
+
+    today = datetime.now(UTC).date()
+    if text == "today":
+        return today.isoformat()
+    if text == "yesterday":
+        return (today - timedelta(days=1)).isoformat()
+    if text == "last week":
+        return (today - timedelta(days=7)).isoformat()
+    if text == "last month":
+        return (today - timedelta(days=30)).isoformat()
+
+    m = re.match(r"^(\d{1,4})\s+days?\s+ago$", text)
+    if m:
+        return (today - timedelta(days=int(m.group(1)))).isoformat()
+    m = re.match(r"^(\d{1,3})\s+weeks?\s+ago$", text)
+    if m:
+        return (today - timedelta(weeks=int(m.group(1)))).isoformat()
+    m = re.match(r"^(\d{1,3})\s+months?\s+ago$", text)
+    if m:
+        return (today - timedelta(days=int(m.group(1)) * 30)).isoformat()
+    return ""
+
+
+def _filter_by_date_range(sessions: list[dict], date_from: str, date_to: str) -> list[dict]:
+    """Filter *sessions* by ``created_at`` falling within an inclusive date range.
+
+    Either bound may be empty (open-ended).  Bounds parse via
+    :func:`_parse_natural_date` so the caller can hand through whatever
+    the user typed.  Sessions whose ``created_at`` doesn't parse keep
+    showing — the filter is best-effort.
+    """
+    iso_from = _parse_natural_date(date_from) if date_from else ""
+    iso_to = _parse_natural_date(date_to) if date_to else ""
+    if not iso_from and not iso_to:
+        return sessions
+    out: list[dict] = []
+    for s in sessions:
+        raw = s.get("created_at")
+        # Best-effort: if ``created_at`` isn't a string (malformed cached
+        # row or unusual session source), keep the session in the result
+        # rather than silently dropping it from view.
+        if not isinstance(raw, str):
+            out.append(s)
+            continue
+        created = raw[:10]  # YYYY-MM-DD prefix
+        if not created:
+            out.append(s)
+            continue
+        if iso_from and created < iso_from:
+            continue
+        if iso_to and created > iso_to:
+            continue
+        out.append(s)
+    return out
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -220,8 +313,12 @@ def create_app(
 
     atexit.register(db.close)
 
-    # Start background cache build if not already ready
-    if db.status != "ready":
+    # If the cache has never been built, do a full background build.
+    # Otherwise kick off an incremental refresh so new sessions appear
+    # without the user having to click "rebuild".
+    if db.status == "ready":
+        start_background_refresh(db, copilot_path, claude_path, vscode_path, desktop_path)
+    elif db.status not in ("building", "refreshing"):
         start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
 
     # -- Unified session index (cached) ---------------------------------------
@@ -231,7 +328,7 @@ def create_app(
 
     def _build_session_index(*, force: bool = False) -> tuple[list[dict], dict[str, dict]]:
         # Try DB first (also use partial data while building)
-        if db.status in ("ready", "building") and not force:
+        if db.status in ("ready", "building", "refreshing") and not force:
             sessions = db.get_sessions()
             if sessions:
                 idx = {f"{s['source']}:{s['id']}": s for s in sessions}
@@ -337,10 +434,50 @@ def create_app(
             cache_status=db.status,
         )
 
+    def _search_sessions_with_fallback(q: str) -> list[dict]:
+        """Search sessions, falling back to a filesystem scan + simple
+        token match when the FTS index isn't ready yet.
+
+        On a fresh install the cache hasn't been populated, so the FTS
+        index is empty and ``db.search_sessions`` returns ``[]`` — which
+        would cause the search box to hide every visible card on the
+        sessions page. Detect that case and do a best-effort in-memory
+        token match against the filesystem-discovered sessions instead.
+        """
+        hits = db.search_sessions(q) if q else []
+        if hits or not q:
+            return hits
+        all_sessions, _ = _build_session_index()
+        if not all_sessions:
+            return []
+        tokens = [t for t in re.findall(r"\w+", q.lower()) if t]
+        if not tokens:
+            return []
+
+        def _matches(s: dict) -> bool:
+            haystack = " ".join(
+                str(s.get(k, "") or "")
+                for k in ("summary", "cwd", "model", "first_user_content", "branch", "repository")
+            ).lower()
+            return all(t in haystack for t in tokens)
+
+        return [s for s in all_sessions if _matches(s)]
+
     @app.route("/sessions")
     def sessions_view():
         force = request.args.get("refresh") == "1"
-        sessions, _ = _build_session_index(force=force)
+        q = (request.args.get("q") or "").strip()[:200]
+        date_from = (request.args.get("from") or "").strip()[:32]
+        date_to = (request.args.get("to") or "").strip()[:32]
+
+        if q:
+            sessions = _search_sessions_with_fallback(q)
+        else:
+            sessions, _ = _build_session_index(force=force)
+
+        if date_from or date_to:
+            sessions = _filter_by_date_range(sessions, date_from, date_to)
+
         copilot_count = sum(1 for s in sessions if s.get("source") == "copilot")
         claude_count = sum(1 for s in sessions if s.get("source") == "claude")
         vscode_count = sum(1 for s in sessions if s.get("source") == "vscode")
@@ -353,7 +490,23 @@ def create_app(
             copilot_count=copilot_count,
             claude_count=claude_count,
             vscode_count=vscode_count,
+            search_query=q,
+            date_from=date_from,
+            date_to=date_to,
         )
+
+    @app.route("/api/search")
+    def api_search():
+        """Live-filter search endpoint. Returns ``[{source, id}]`` only —
+        the sessions page JS just needs the ids to mark cards visible /
+        hidden, and a slim response keeps per-keystroke latency low.
+        Use ``/api/sessions`` for the full session payload.
+        """
+        q = (request.args.get("q") or "").strip()[:200]
+        if not q:
+            return jsonify([])
+        sessions = _search_sessions_with_fallback(q)
+        return jsonify([{"source": s.get("source", ""), "id": s.get("id", "")} for s in sessions])
 
     @app.route("/session/<session_id>")
     def session_view(session_id: str):
@@ -365,14 +518,24 @@ def create_app(
 
         source = session_info.get("source", "copilot")
 
+        memory_count = 0
+        project_name = ""
+        permission_counts: dict[str, int] = {}
+
         if source == "claude":
             session_file = Path(session_info["path"])
             events = claude_parser.parse_events(session_file)
             conv_events = claude_parser.parse_events_for_conversation(session_file)
-            conversation = claude_parser.build_conversation(conv_events)
+            subagents = claude_parser.parse_subagent_transcripts(session_file)
+            conversation = claude_parser.build_conversation(conv_events, subagent_transcripts=subagents)
             stats = claude_parser.compute_stats(events)
             ws = claude_parser.extract_workspace(events)
             snapshots: dict = {}
+            # Memory and permission info from the project directory
+            project_dir = session_file.parent
+            project_name = project_dir.name
+            memory_count = claude_parser._count_memory_files(project_dir)
+            permission_counts = claude_parser._count_permissions(ws.get("cwd", ""))
         elif source == "vscode":
             session_file = Path(session_info["path"])
             events = vscode_parser.parse_events(session_file)
@@ -381,7 +544,7 @@ def create_app(
             ws = vscode_parser.extract_workspace(events)
             snapshots = {}
         else:
-            session_dir = _safe_copilot_dir(copilot_path, session_id)
+            session_dir = _safe_copilot_dir(copilot_path, _bare_uuid(session_id))
             if not session_dir.is_dir():
                 abort(404)
             ws = parse_workspace(session_dir)
@@ -398,6 +561,9 @@ def create_app(
             stats=stats,
             snapshots=snapshots,
             source=source,
+            memory_count=memory_count,
+            project_name=project_name,
+            permission_counts=permission_counts,
             ts_display=ts_display,
             duration_between=duration_between,
             md_to_html=md_to_html,
@@ -423,7 +589,7 @@ def create_app(
         while the cache is being populated.
         """
         result: dict[str, dict] = {}
-        if db.status in ("ready", "building"):
+        if db.status in ("ready", "building", "refreshing"):
             cached = db.get_all_tool_configs()
             if cached:
                 result = dict(cached)
@@ -440,7 +606,7 @@ def create_app(
     def _get_tool_config(tool: str) -> dict:
         if tool not in _VALID_TOOLS:
             abort(404)
-        if db.status in ("ready", "building"):
+        if db.status in ("ready", "building", "refreshing"):
             cached = db.get_tool_config(tool)
             if cached:
                 return cached
@@ -864,7 +1030,7 @@ def create_app(
         elif source == "vscode":
             events = vscode_parser.parse_events(Path(session_info["path"]))
         else:
-            session_dir = _safe_copilot_dir(copilot_path, session_id)
+            session_dir = _safe_copilot_dir(copilot_path, _bare_uuid(session_id))
             if not session_dir.is_dir():
                 abort(404)
             events = copilot_parse_events(session_dir)
@@ -875,7 +1041,7 @@ def create_app(
     def api_backup(session_id: str, backup_hash: str):
         _validate_session_id(session_id)
         _validate_backup_hash(backup_hash)
-        session_dir = _safe_copilot_dir(copilot_path, session_id)
+        session_dir = _safe_copilot_dir(copilot_path, _bare_uuid(session_id))
         safe_hash = secure_filename(backup_hash)
         if not safe_hash or safe_hash != backup_hash:
             abort(400)
@@ -997,7 +1163,8 @@ def create_app(
 
     @app.route("/settings/rebuild-cache", methods=["POST"])
     def rebuild_cache():
-        if db.status != "building":
+        # Manual rebuild does a full wipe+build (the user explicitly asked for it).
+        if db.status not in ("building", "refreshing"):
             start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
         return redirect(url_for("settings_view"))
 

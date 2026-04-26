@@ -27,6 +27,10 @@ _XML_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+# Slash-command markup that Claude Code injects into user messages when the
+# user runs ``/commandname`` from the prompt. Each tag is optional.
+_SLASH_TAGS = ("command-name", "command-message", "command-args", "local-command-stdout", "local-command-stderr")
+
 
 def _split_xml_and_text(content: str) -> tuple[str, str]:
     """Split content into XML context (notification) and remaining user text.
@@ -42,6 +46,81 @@ def _split_xml_and_text(content: str) -> tuple[str, str]:
     return xml_text.strip(), remaining
 
 
+def _parse_slash_command(content: str) -> dict | None:
+    """Parse Claude Code slash-command markup into structured fields.
+
+    Returns ``{"name", "message", "args", "stdout", "stderr"}`` when the
+    content contains a ``<command-name>`` tag, else ``None``.
+    """
+    if "<command-name>" not in content:
+        return None
+    parts: dict[str, str] = {}
+    for tag in _SLASH_TAGS:
+        m = re.search(rf"<{tag}>(.*?)</{tag}>", content, re.DOTALL)
+        if m:
+            parts[tag] = m.group(1).strip()
+    if "command-name" not in parts:
+        return None
+    return {
+        "name": parts.get("command-name", ""),
+        "message": parts.get("command-message", ""),
+        "args": parts.get("command-args", ""),
+        "stdout": parts.get("local-command-stdout", ""),
+        "stderr": parts.get("local-command-stderr", ""),
+    }
+
+
+def _emit_xml_user_content(
+    content: str,
+    ts: str,
+    perm: str,
+    sidechain: bool,
+    conversation: list[dict],
+) -> None:
+    """Emit conversation items for a user message containing XML markup.
+
+    Slash commands (``<command-name>…``) are surfaced as a structured
+    ``slash_command`` item; other XML context becomes a notification with
+    any trailing user text emitted as a separate user_message.
+    """
+    sc = _parse_slash_command(content)
+    if sc:
+        conversation.append(
+            {
+                "kind": "slash_command",
+                "timestamp": ts,
+                "command": sc["name"],
+                "message": sc["message"],
+                "args": sc["args"],
+                "stdout": sc["stdout"],
+                "stderr": sc["stderr"],
+                "permission_mode": perm,
+                "is_sidechain": sidechain,
+            }
+        )
+        return
+    notif_text, user_text = _split_xml_and_text(content)
+    if notif_text:
+        conversation.append(
+            {
+                "kind": "notification",
+                "timestamp": ts,
+                "message": notif_text[:500],
+            }
+        )
+    if user_text:
+        conversation.append(
+            {
+                "kind": "user_message",
+                "timestamp": ts,
+                "content": user_text,
+                "attachments": [],
+                "permission_mode": perm,
+                "is_sidechain": sidechain,
+            }
+        )
+
+
 # ---------------------------------------------------------------------------
 # Reading
 # ---------------------------------------------------------------------------
@@ -52,7 +131,12 @@ _DISCOVERY_SKIP_TYPES = frozenset({"file-history-snapshot", "queue-operation", "
 
 
 def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
-    """Load events from a JSONL file, dropping types in *skip*."""
+    """Load events from a JSONL file, dropping types in *skip*.
+
+    Non-dict JSON values at the line level (corrupted ``null`` /
+    ``[]`` / scalar lines) are filtered out so every consumer downstream
+    can safely assume each event is a dict.
+    """
     if not jsonl_path.is_file():
         return []
     events: list[dict] = []
@@ -65,6 +149,8 @@ def _load_events(jsonl_path: Path, skip: frozenset[str]) -> list[dict]:
                 try:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+                if not isinstance(evt, dict):
                     continue
                 if evt.get("type") in skip:
                     continue
@@ -91,6 +177,154 @@ def parse_events_for_conversation(jsonl_path: Path) -> list[dict]:
     return _load_events(jsonl_path, _SKIP_TYPES)
 
 
+# Cap per-session indexed content so a few multi-megabyte sessions don't
+# blow the cache size out (FTS5 handles big content fine, but holding the
+# whole transcript in memory for 100s of sessions during a full rebuild
+# does add up). 500 KB is comfortably more than any reasonable session.
+_FTS_CONTENT_LIMIT = 500_000
+
+# Tags that Claude Code injects into transcript text — slash commands,
+# IDE context, system markers, etc. Only these get scrubbed from the
+# FTS-indexed content; arbitrary ``<...>`` like ``List<int>`` or HTML
+# samples are left alone so they remain searchable.
+_CLAUDE_CONTEXT_TAGS_RE = re.compile(
+    r"</?(?:"
+    r"command-name|command-message|command-args|command-stdout|command-stderr|"
+    r"local-command-stdout|local-command-stderr|local-command-stdin|local-command-caveat|"
+    r"ide_opened_file|ide_selection|"
+    r"system-reminder|user-prompt-submit-hook|"
+    r"file-history-snapshot|"
+    r"bash-input|bash-output|bash-stderr"
+    r")(?:\s[^>]*)?>",
+    re.IGNORECASE,
+)
+
+
+def extract_searchable_text(jsonl_path: Path) -> str:
+    """Concatenate user + assistant text content from a Claude JSONL.
+
+    Used to populate the FTS index so search hits actual conversation
+    content, not just the session summary and first message.  XML markup
+    (``<command-name>``, ``<ide_opened_file>``, etc.) is stripped — those
+    tags are noise for term-frequency-based ranking.
+    """
+    if not jsonl_path.is_file():
+        return ""
+    parts: list[str] = []
+    total = 0
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if total >= _FTS_CONTENT_LIMIT:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(evt, dict):
+                    continue
+                t = evt.get("type", "")
+                if t not in ("user", "assistant", "summary"):
+                    continue
+
+                # Helper: append only when value is a usable string.
+                # A malformed transcript with ``{"text": null}`` /
+                # ``{"text": 42}`` would otherwise crash ``len(txt)``
+                # below and break FTS indexing for the entire session.
+                def _append(value: object) -> None:
+                    nonlocal total
+                    if isinstance(value, str) and value:
+                        parts.append(value)
+                        total += len(value)
+
+                if t == "summary":
+                    _append(evt.get("summary"))
+                    continue
+                msg = evt.get("message")
+                if not isinstance(msg, dict):
+                    continue
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    _append(content)
+                elif isinstance(content, list):
+                    for b in content:
+                        if not isinstance(b, dict):
+                            continue
+                        bt = b.get("type")
+                        if bt == "text":
+                            _append(b.get("text"))
+                        elif bt == "thinking":
+                            _append(b.get("thinking"))
+                        elif bt == "tool_result":
+                            # Tool output text — useful for searches like
+                            # "where did `npm install` fail?".  We skip
+                            # nested image / structured blocks.
+                            tc = b.get("content", "")
+                            if isinstance(tc, str):
+                                _append(tc)
+                            elif isinstance(tc, list):
+                                for inner in tc:
+                                    if isinstance(inner, dict) and inner.get("type") == "text":
+                                        _append(inner.get("text"))
+    except OSError:
+        return ""
+    text = "\n".join(parts)[:_FTS_CONTENT_LIMIT]
+    # Scrub only known Claude-injected context tags. A blanket
+    # ``<[^>]+>`` strip would also wipe out legitimate angle-bracketed
+    # content (``List<int>``, ``Function<T>``, HTML / JSX samples,
+    # algebraic types, etc.) that users genuinely want to search for.
+    text = _CLAUDE_CONTEXT_TAGS_RE.sub(" ", text)
+    return text
+
+
+def parse_subagent_transcripts(session_jsonl: Path) -> dict[str, dict]:
+    """Load subagent transcripts that accompany a Claude session.
+
+    Claude Code 2.1.2+ stores each Task/Agent subagent invocation in a
+    sibling directory at ``<session_uuid>/subagents/agent-<id>.jsonl`` with
+    a matching ``agent-<id>.meta.json`` containing the agent's ``agentType``
+    and ``description``.
+
+    Returns ``{description: {"agent_type", "description", "events", "path"}}``
+    keyed by description, which is what the main thread's ``Agent`` /
+    ``dispatch_agent`` tool_use carries in ``input.description``.  Empty
+    dict if the session has no subagent directory.
+    """
+    out: dict[str, dict] = {}
+    subagent_dir = session_jsonl.parent / session_jsonl.stem / "subagents"
+    if not subagent_dir.is_dir():
+        return out
+
+    for meta_path in sorted(subagent_dir.glob("agent-*.meta.json")):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.loads(f.read())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        # JSON root can legally be a list / scalar / null; we only
+        # handle dict-shaped subagent meta files.
+        if not isinstance(meta, dict):
+            continue
+        events_path = meta_path.with_suffix("").with_suffix(".jsonl")
+        if not events_path.is_file():
+            continue
+        events = _load_events(events_path, _SKIP_TYPES)
+        desc_val = meta.get("description")
+        description = desc_val.strip() if isinstance(desc_val, str) else ""
+        if not description:
+            continue
+        agent_type_val = meta.get("agentType", "")
+        out[description] = {
+            "agent_type": agent_type_val if isinstance(agent_type_val, str) else "",
+            "description": description,
+            "events": events,
+            "path": str(events_path),
+        }
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Session discovery
 # ---------------------------------------------------------------------------
@@ -110,6 +344,8 @@ def _first_metadata(jsonl_path: Path) -> dict:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
                 if evt.get("type") in _DISCOVERY_SKIP_TYPES:
                     continue
                 if evt.get("isMeta"):
@@ -117,10 +353,14 @@ def _first_metadata(jsonl_path: Path) -> dict:
 
                 if not meta.get("sessionId"):
                     meta["sessionId"] = evt.get("sessionId", "")
-                    meta["cwd"] = evt.get("cwd", "")
-                    meta["gitBranch"] = evt.get("gitBranch", "")
-                    meta["version"] = evt.get("version", "")
-                    meta["created_at"] = evt.get("timestamp", "")
+                if not meta.get("cwd") and evt.get("cwd"):
+                    meta["cwd"] = evt["cwd"]
+                if not meta.get("gitBranch") and evt.get("gitBranch"):
+                    meta["gitBranch"] = evt["gitBranch"]
+                if not meta.get("version") and evt.get("version"):
+                    meta["version"] = evt["version"]
+                if not meta.get("created_at") and evt.get("timestamp"):
+                    meta["created_at"] = evt["timestamp"]
 
                 if evt.get("slug") and not meta.get("slug"):
                     meta["slug"] = evt["slug"]
@@ -131,10 +371,15 @@ def _first_metadata(jsonl_path: Path) -> dict:
                         meta["model"] = msg["model"]
 
                 if evt.get("type") == "user" and not first_user_content:
-                    content = evt.get("message", {}).get("content", "")
+                    _msg = evt.get("message")
+                    content = _msg.get("content", "") if isinstance(_msg, dict) else ""
                     if isinstance(content, list):
                         # Extract text from content blocks
-                        parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+                        parts = [
+                            b["text"]
+                            for b in content
+                            if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)
+                        ]
                         content = " ".join(parts)
                     if isinstance(content, str) and content:
                         _, user_text = _split_xml_and_text(content)
@@ -174,11 +419,13 @@ def _last_timestamp(jsonl_path: Path) -> str:
             continue
         try:
             evt = json.loads(line)
-            ts = evt.get("timestamp", "")
-            if ts:
-                return ts
         except json.JSONDecodeError:
             continue
+        if not isinstance(evt, dict):
+            continue
+        ts = evt.get("timestamp", "")
+        if ts:
+            return ts
 
     # Fallback: full forward scan (handles lines longer than 4 KB)
     try:
@@ -189,11 +436,13 @@ def _last_timestamp(jsonl_path: Path) -> str:
                     continue
                 try:
                     evt = json.loads(line)
-                    ts = evt.get("timestamp", "")
-                    if ts:
-                        last_ts = ts
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
+                ts = evt.get("timestamp", "")
+                if ts:
+                    last_ts = ts
     except OSError:
         pass
     return last_ts
@@ -255,15 +504,23 @@ def _scan_token_usage(jsonl_path: Path) -> dict:
                     evt = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(evt, dict):
+                    continue
                 if evt.get("type") != "assistant":
                     continue
-                msg = evt.get("message", {})
+                msg = evt.get("message")
+                if not isinstance(msg, dict):
+                    continue
                 usage = msg.get("usage", {})
+                if not isinstance(usage, dict):
+                    continue
                 if not usage:
                     continue
-                rid = evt.get("requestId", evt.get("uuid", ""))
+                rid_val = evt.get("requestId") or evt.get("uuid") or ""
+                rid = rid_val if isinstance(rid_val, str) else ""
                 if not model:
-                    model = msg.get("model", "")
+                    model_val = msg.get("model", "")
+                    model = model_val if isinstance(model_val, str) else ""
                 ot = usage.get("output_tokens", 0)
                 if ot:
                     output_by_req[rid] = ot
@@ -290,6 +547,96 @@ def _scan_token_usage(jsonl_path: Path) -> dict:
     }
 
 
+def _scan_summaries(jsonl_path: Path) -> list[tuple[str, str]]:
+    """Scan a JSONL for ``type=summary`` entries.
+
+    Returns a list of ``(leaf_uuid, summary_text)`` in file order.  Summary
+    entries are emitted asynchronously by Claude Code when it auto-generates
+    a description of a thread, and are useful as a richer label than the
+    first user message for the session list.
+
+    The scan filters lines by string match before JSON-decoding so it stays
+    cheap on long sessions where 99 % of lines aren't summaries.
+    """
+    out: list[tuple[str, str]] = []
+    if not jsonl_path.is_file():
+        return out
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # Cheap pre-filter that's tolerant of whitespace in the
+                # JSON serialiser. Production Claude files have no spaces;
+                # test fixtures may.
+                if '"summary"' not in line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(evt, dict):
+                    continue
+                if evt.get("type") != "summary":
+                    continue
+                summary_val = evt.get("summary")
+                summary = summary_val.strip() if isinstance(summary_val, str) else ""
+                leaf_val = evt.get("leafUuid")
+                leaf = leaf_val if isinstance(leaf_val, str) else ""
+                if summary:
+                    out.append((leaf, summary))
+    except OSError:
+        pass
+    return out
+
+
+def _count_permissions(cwd: str) -> dict[str, int]:
+    """Count permission rules from repo-local Claude settings.
+
+    Reads ``<cwd>/.claude/settings.json`` and ``<cwd>/.claude/settings.local.json``.
+    Returns counts for allow, deny, and ask lists.
+    """
+    counts: dict[str, int] = {"allow": 0, "deny": 0, "ask": 0}
+    # ``cwd`` comes from a JSONL event field that ``extract_workspace`` /
+    # ``_first_metadata`` don't yet type-check. A non-string ``cwd``
+    # (None / int / dict from a malformed event) would crash ``Path()``.
+    if not isinstance(cwd, str) or not cwd:
+        return counts
+    repo = Path(cwd)
+    seen: dict[str, set[str]] = {"allow": set(), "deny": set(), "ask": set()}
+    for name in ("settings.json", "settings.local.json"):
+        cfg_path = repo / ".claude" / name
+        if not cfg_path.is_file():
+            continue
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = json.loads(f.read())
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        # JSON root and nested ``permissions`` can each legally be any
+        # JSON value. Skip non-dicts so the ``.get`` chain can't crash.
+        if not isinstance(cfg, dict):
+            continue
+        perms = cfg.get("permissions", {})
+        if not isinstance(perms, dict):
+            continue
+        for key in ("allow", "deny", "ask"):
+            items = perms.get(key, [])
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, str):
+                        seen[key].add(item)
+    for key in counts:
+        counts[key] = len(seen[key])
+    return counts
+
+
+def _count_memory_files(project_dir: Path) -> int:
+    """Count markdown files in a project's memory subdirectory."""
+    memory_dir = project_dir / "memory"
+    if not memory_dir.is_dir():
+        return 0
+    return sum(1 for f in memory_dir.iterdir() if f.is_file() and f.suffix == ".md")
+
+
 def discover_sessions(base: Path) -> list[dict]:
     """Scan Claude project directories for session JSONL files."""
     sessions: list[dict] = []
@@ -302,6 +649,9 @@ def discover_sessions(base: Path) -> list[dict]:
         # Skip known non-session directories
         if project_dir.name in ("memory", ".cache"):
             continue
+
+        memory_count = _count_memory_files(project_dir)
+        permission_counts: dict[str, int] | None = None  # lazy, computed from first session's cwd
 
         for jsonl_file in sorted(project_dir.glob("*.jsonl")):
             # Skip files in subdirectories (subagent logs etc.)
@@ -322,14 +672,32 @@ def discover_sessions(base: Path) -> list[dict]:
             if summary == raw_slug and summary:
                 summary = slug_display
 
+            # If Claude auto-generated a summary for this session, use the
+            # most recent one — it's a curated description of what the
+            # thread was about, more useful than the first user message.
+            file_summaries = _scan_summaries(jsonl_file)
+            if file_summaries:
+                summary = file_summaries[-1][1]
+
+            # Compute permission counts once per project from first session's cwd
+            if permission_counts is None and meta.get("cwd"):
+                permission_counts = _count_permissions(meta["cwd"])
+
             updated_at = _last_timestamp(jsonl_file)
 
             # Token usage and cost estimation
             tokens = _scan_token_usage(jsonl_file)
 
+            try:
+                source_mtime = jsonl_file.stat().st_mtime
+            except OSError:
+                source_mtime = 0.0
+
             session_entry: dict = {
                 "id": session_id,
                 "path": str(jsonl_file),
+                "source_path": str(jsonl_file),
+                "source_mtime": source_mtime,
                 "summary": summary,
                 "repository": "",
                 "branch": meta.get("gitBranch", ""),
@@ -343,6 +711,9 @@ def discover_sessions(base: Path) -> list[dict]:
                 "cache_read_tokens": tokens["cache_read_tokens"],
                 "cache_creation_tokens": tokens["cache_creation_tokens"],
                 "estimated_cost": tokens["estimated_cost"],
+                "memory_count": memory_count,
+                "project_name": project_dir.name,
+                "permission_counts": permission_counts or {},
             }
             if slug_display:
                 session_entry["slug"] = slug_display
@@ -377,7 +748,8 @@ def extract_workspace(events: list[dict]) -> dict:
         # Updated_at will be set from last event
         ws["updated_at"] = evt.get("timestamp", ws.get("updated_at", ""))
         if evt.get("type") == "user" and not first_user_content:
-            content = evt.get("message", {}).get("content", "")
+            _msg = evt.get("message")
+            content = _msg.get("content", "") if isinstance(_msg, dict) else ""
             if isinstance(content, list):
                 parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
                 content = " ".join(parts)
@@ -397,12 +769,66 @@ def extract_workspace(events: list[dict]) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def build_conversation(events: list[dict]) -> list[dict]:
+def build_conversation(
+    events: list[dict],
+    subagent_transcripts: dict[str, dict] | None = None,
+) -> list[dict]:
     """Build a conversation view from Claude JSONL events.
 
     Produces items with the same ``kind`` values as the Copilot parser so the
     templates can render them identically.
+
+    Events are reordered into DAG (parent_uuid) order before the rest of
+    the pipeline runs, so resumed sessions and parallel-Task transcripts
+    render with each child immediately following its parent regardless of
+    the order in which lines were appended to the JSONL file.
+
+    If ``subagent_transcripts`` is provided (typically from
+    :func:`parse_subagent_transcripts`), each ``Agent`` / ``dispatch_agent``
+    tool call is inlined with its inner transcript attached to the
+    ``subagent_start`` item under a ``transcript`` field.
     """
+    from .dag import order_by_dag
+    from .models import parse_entries
+
+    typed = parse_entries(events)
+    typed = order_by_dag(typed)
+    events = [e.raw for e in typed]
+
+    sub_lookup = dict(subagent_transcripts or {})
+
+    # Tool name + input lookup so `tool_complete` events can dispatch to
+    # the right renderer using the original tool_use's call site.
+    from .tool_renderers import render_tool, render_tool_result
+
+    tool_name_by_id: dict[str, str] = {}
+    tool_input_by_id: dict[str, dict] = {}
+    for evt in events:
+        if evt.get("type") != "assistant":
+            continue
+        # Defend ``message`` and ``content`` shapes too — a malformed
+        # transcript could have either as a non-dict / non-list and we
+        # don't want a per-event TypeError to tank the whole render.
+        msg = evt.get("message")
+        if not isinstance(msg, dict):
+            continue
+        blocks = msg.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                tu_id = block.get("id", "")
+                if not isinstance(tu_id, str) or not tu_id:
+                    continue
+                name = block.get("name", "unknown")
+                tool_name_by_id[tu_id] = name if isinstance(name, str) else "unknown"
+                # ``input`` is supposed to be the tool's structured args
+                # dict, but malformed / non-Anthropic MCP servers can
+                # emit lists or strings here. Coerce to ``{}`` so the
+                # renderer dispatcher gets the type it expects.
+                inp = block.get("input")
+                tool_input_by_id[tu_id] = inp if isinstance(inp, dict) else {}
+
     conversation: list[dict] = []
     subagent_tool_ids: set[str] = set()  # track Agent tool_use IDs
 
@@ -486,14 +912,23 @@ def build_conversation(events: list[dict]) -> list[dict]:
                     for block in content:
                         if not isinstance(block, dict) or block.get("type") != "tool_result":
                             continue
-                        result_content = block.get("content", "")
-                        if isinstance(result_content, list):
-                            # tool_reference or structured content — stringify
-                            result_content = json.dumps(result_content, indent=2)
-                        if isinstance(result_content, str):
-                            result_content = result_content[:MAX_RESULT_CHARS]
+                        raw_result = block.get("content", "")
+                        # Split text from images. The tool-specific renderer
+                        # gets the *full* text so it can parse structured
+                        # payloads (e.g. WebSearch JSON) before applying its
+                        # own preview truncation; only the legacy fallback
+                        # display gets the MAX_RESULT_CHARS cap.
+                        text_result, images = render_tool_result(raw_result)
+                        if not isinstance(text_result, str):
+                            text_result = str(text_result)
+
+                        # Keep a JSON-stringified, length-capped copy for the
+                        # legacy template fallback (the ``result`` field that
+                        # renders when a tool has no dedicated layout).
+                        if isinstance(raw_result, list):
+                            legacy_result = json.dumps(raw_result, indent=2, default=str)[:MAX_RESULT_CHARS]
                         else:
-                            result_content = str(result_content)[:MAX_RESULT_CHARS]
+                            legacy_result = text_result[:MAX_RESULT_CHARS]
 
                         tc_id = block.get("tool_use_id", "")
                         if tc_id in subagent_tool_ids:
@@ -503,17 +938,24 @@ def build_conversation(events: list[dict]) -> list[dict]:
                                     "timestamp": ts,
                                     "agent_name": "",
                                     "tool_call_id": tc_id,
-                                    "result": result_content,
+                                    "result": legacy_result,
+                                    "images": images,
                                 }
                             )
                         else:
+                            tool_name = tool_name_by_id.get(tc_id, "unknown")
+                            tool_input = tool_input_by_id.get(tc_id, {})
+                            rendered = render_tool(tool_name, tool_input, text_result)
                             conversation.append(
                                 {
                                     "kind": "tool_complete",
                                     "timestamp": ts,
                                     "tool_call_id": tc_id,
+                                    "tool_name": tool_name,
                                     "success": not block.get("is_error", False),
-                                    "result": result_content,
+                                    "result": legacy_result,
+                                    "rendered": rendered,
+                                    "images": images,
                                 }
                             )
                     continue
@@ -523,26 +965,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 if texts:
                     joined = "\n".join(texts)
                     if joined.startswith("<"):
-                        notif_text, user_text = _split_xml_and_text(joined)
-                        if notif_text:
-                            conversation.append(
-                                {
-                                    "kind": "notification",
-                                    "timestamp": ts,
-                                    "message": notif_text[:500],
-                                }
-                            )
-                        if user_text:
-                            conversation.append(
-                                {
-                                    "kind": "user_message",
-                                    "timestamp": ts,
-                                    "content": user_text,
-                                    "attachments": [],
-                                    "permission_mode": _perm,
-                                    "is_sidechain": _sidechain,
-                                }
-                            )
+                        _emit_xml_user_content(joined, ts, _perm, _sidechain, conversation)
                     else:
                         conversation.append(
                             {
@@ -559,28 +982,10 @@ def build_conversation(events: list[dict]) -> list[dict]:
             # String content — user message
             if isinstance(content, str) and content:
                 # System-injected XML context (e.g. <command-name>, <ide_opened_file>,
-                # <local-command-stderr>) — split into notification + user message.
+                # <local-command-stderr>) — split into slash_command / notification
+                # / user_message via the helper.
                 if content.startswith("<"):
-                    notif_text, user_text = _split_xml_and_text(content)
-                    if notif_text:
-                        conversation.append(
-                            {
-                                "kind": "notification",
-                                "timestamp": ts,
-                                "message": notif_text[:500],
-                            }
-                        )
-                    if user_text:
-                        conversation.append(
-                            {
-                                "kind": "user_message",
-                                "timestamp": ts,
-                                "content": user_text,
-                                "attachments": [],
-                                "permission_mode": _perm,
-                                "is_sidechain": _sidechain,
-                            }
-                        )
+                    _emit_xml_user_content(content, ts, _perm, _sidechain, conversation)
                     continue
                 conversation.append(
                     {
@@ -669,19 +1074,26 @@ def build_conversation(events: list[dict]) -> list[dict]:
                 tu_name = tu.get("name", "unknown")
                 if tu_name in ("Agent", "dispatch_agent"):
                     agent_input = tu.get("input", {})
-                    agent_name = agent_input.get("description", agent_input.get("prompt", tu_name))
+                    description = agent_input.get("description", "") or ""
+                    agent_name = description or agent_input.get("prompt", tu_name)
                     agent_prompt = agent_input.get("prompt", "")
                     subagent_tool_ids.add(tu["id"])
-                    conversation.append(
-                        {
-                            "kind": "subagent_start",
-                            "timestamp": info["timestamp"],
-                            "agent_name": str(agent_name)[:120],
-                            "agent_prompt": str(agent_prompt)[:2000],
-                            "tool_call_id": tu["id"],
-                        }
-                    )
+                    item: dict = {
+                        "kind": "subagent_start",
+                        "timestamp": info["timestamp"],
+                        "agent_name": str(agent_name)[:120],
+                        "agent_prompt": str(agent_prompt)[:2000],
+                        "tool_call_id": tu["id"],
+                    }
+                    sub = sub_lookup.get(description)
+                    if sub:
+                        item["agent_type"] = sub.get("agent_type", "")
+                        # Recurse to render the inner transcript with the
+                        # same conversation kinds as the parent.
+                        item["transcript"] = build_conversation(sub.get("events", []))
+                    conversation.append(item)
                 else:
+                    rendered_start = render_tool(tu_name, tu.get("input", {}) or {}, "")
                     conversation.append(
                         {
                             "kind": "tool_start",
@@ -689,11 +1101,13 @@ def build_conversation(events: list[dict]) -> list[dict]:
                             "tool_call_id": tu["id"],
                             "tool_name": tu_name,
                             "arguments": tu.get("input", {}),
+                            "rendered": rendered_start,
                         }
                     )
 
         elif etype == "system":
-            content = evt.get("message", {}).get("content", "")
+            _msg = evt.get("message")
+            content = _msg.get("content", "") if isinstance(_msg, dict) else ""
             if isinstance(content, list):
                 content = " ".join(
                     b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
@@ -790,7 +1204,8 @@ def compute_stats(events: list[dict]) -> dict:
         etype = evt.get("type", "")
 
         if etype == "user" and not evt.get("isMeta"):
-            content = evt.get("message", {}).get("content", "")
+            _msg = evt.get("message")
+            content = _msg.get("content", "") if isinstance(_msg, dict) else ""
             if isinstance(content, str) and content and not content.startswith("<"):
                 stats["user_messages"] += 1
                 stats["turns"] += 1

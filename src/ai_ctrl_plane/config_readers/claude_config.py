@@ -445,6 +445,32 @@ def _extract_cwd_from_jsonl(project_dir: Path) -> str:
     return ""
 
 
+def _read_repo_permissions(real_path: str) -> dict:
+    """Read permission rules from repo-local Claude settings.
+
+    Merges ``<cwd>/.claude/settings.json`` (committed) and
+    ``<cwd>/.claude/settings.local.json`` (local, user-specific).
+    Returns a dict with ``allow``, ``deny``, and ``ask`` lists.
+    """
+    result: dict[str, list[str]] = {"allow": [], "deny": [], "ask": []}
+    repo = Path(real_path)
+    for name in ("settings.json", "settings.local.json"):
+        cfg = safe_read_json(repo / ".claude" / name) or {}
+        perms = cfg.get("permissions", {})
+        # ``permissions`` is supposed to be a dict but a corrupted
+        # settings file could put a list / scalar there; the inner
+        # ``perms.get(...)`` would crash.
+        if not isinstance(perms, dict):
+            continue
+        for key in ("allow", "deny", "ask"):
+            items = perms.get(key, [])
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, str) and item not in result[key]:
+                        result[key].append(item)
+    return result
+
+
 def read_claude_projects(claude_home: Path | None = None) -> dict:
     """Read Claude Code per-project data.
 
@@ -510,6 +536,10 @@ def read_claude_projects(claude_home: Path | None = None) -> dict:
 
         last_cost = meta.get("lastCost") if isinstance(meta.get("lastCost"), int | float) else None
 
+        # Read repo-local permissions from <cwd>/.claude/settings.local.json
+        # and committed settings from <cwd>/.claude/settings.json
+        local_permissions = _read_repo_permissions(real_path) if real_path else {}
+
         project = {
             "encoded_name": encoded_name,
             "path": real_path,
@@ -529,7 +559,8 @@ def read_claude_projects(claude_home: Path | None = None) -> dict:
             "allowed_tools": meta.get("allowedTools", []),
             "mcp_servers": meta.get("mcpServers", {}),
             "example_files": meta.get("exampleFiles", []),
-            "metadata": meta,
+            "permissions": local_permissions,
+            "metadata": {**meta, "permissions": local_permissions},
         }
         projects.append(project)
         if last_cost is not None:

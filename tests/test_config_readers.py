@@ -822,6 +822,56 @@ def test_safe_read_json_utf8(tmp_path):
     assert "日本語" in result["note"]
 
 
+def test_read_repo_permissions_handles_non_dict_permissions(tmp_path):
+    """A corrupted settings file with ``"permissions": []`` (or any
+    non-dict value) used to crash ``perms.get(...)``. Regression for
+    PR #27 review #51."""
+    from ai_ctrl_plane.config_readers.claude_config import _read_repo_permissions
+
+    repo = tmp_path / "repo"
+    claude_dir = repo / ".claude"
+    claude_dir.mkdir(parents=True)
+
+    for bad_perms_payload in (
+        '{"permissions": []}',
+        '{"permissions": "not-a-dict"}',
+        '{"permissions": 42}',
+        '{"permissions": null}',
+    ):
+        (claude_dir / "settings.json").write_text(bad_perms_payload, encoding="utf-8")
+        result = _read_repo_permissions(str(repo))
+        assert result == {"allow": [], "deny": [], "ask": []}, (
+            f"payload {bad_perms_payload!r} should yield empty rule lists"
+        )
+
+    # Valid permissions still work.
+    (claude_dir / "settings.json").write_text(
+        '{"permissions": {"allow": ["Read"], "deny": ["Bash"]}}', encoding="utf-8"
+    )
+    result = _read_repo_permissions(str(repo))
+    assert result["allow"] == ["Read"]
+    assert result["deny"] == ["Bash"]
+
+
+def test_safe_read_json_returns_none_for_non_dict_root(tmp_path):
+    """The declared return type is ``dict | None`` but ``json.load`` can
+    return any JSON value at the root. Non-dict roots must be coerced
+    to ``None`` so callers using the ``safe_read_json(...) or {}``
+    pattern can't crash on ``data.get(...)``. Regression for PR #27
+    reviews #47 and #48 (the systemic fix that protects every caller
+    in the project at once)."""
+    from ai_ctrl_plane.config_readers._common import safe_read_json
+
+    for payload in ('["a", "b"]', '"just a string"', "42", "null", "true"):
+        cfg = tmp_path / "x.json"
+        cfg.write_text(payload, encoding="utf-8")
+        assert safe_read_json(cfg) is None, f"payload {payload!r} should return None"
+
+    # Sanity: a real dict still passes through.
+    cfg.write_text('{"k": "v"}', encoding="utf-8")
+    assert safe_read_json(cfg) == {"k": "v"}
+
+
 def test_copilot_parse_events_utf8(tmp_path):
     """Copilot parser must read UTF-8 JSONL session files without UnicodeDecodeError."""
     from ai_ctrl_plane.parser import parse_events

@@ -50,6 +50,40 @@
 .search-bar:focus-within .search-icon { color: var(--accent); }
 .search-bar input::placeholder { color: var(--text-secondary); }
 
+.session-search-form { margin-bottom: 20px; }
+.date-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.date-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.date-field span { font-weight: 500; }
+.date-field input {
+  width: 240px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+.date-field input:focus { border-color: var(--accent); }
+.search-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0 12px;
+}
+
 /* Source filters */
 .filters {
   display: flex;
@@ -174,22 +208,47 @@
     <h1>Sessions</h1>
   </div>
 
-  <div class="search-bar">
-    <input type="text" id="search" placeholder="Search sessions by name, branch, directory, model..." autocomplete="off">
-    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  </div>
+  <form class="session-search-form" method="get" action="/sessions">
+    <div class="search-bar">
+      <input type="text" id="search" name="q" value="{{ search_query or '' }}"
+             placeholder="Search sessions — typing filters live, Enter shares the URL" autocomplete="off">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    <div class="date-bar">
+      <label class="date-field">
+        <span>From</span>
+        <input type="text" name="from" value="{{ date_from or '' }}" placeholder='e.g. "yesterday", "3 days ago", 2026-04-01' autocomplete="off">
+      </label>
+      <label class="date-field">
+        <span>To</span>
+        <input type="text" name="to" value="{{ date_to or '' }}" placeholder='e.g. "today", 2026-04-26' autocomplete="off">
+      </label>
+      <button type="submit" class="filter-btn">Apply</button>
+      {% if search_query or date_from or date_to %}
+      <a href="/sessions" class="filter-btn">Clear</a>
+      {% endif %}
+    </div>
+    {% if search_query %}
+    <div class="search-meta">Server search: <strong>{{ search_query }}</strong> &middot; {{ sessions|length }} match{{ '' if sessions|length == 1 else 'es' }}</div>
+    {% endif %}
+  </form>
 
   <div class="filters">
-    <button class="filter-btn active" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
-    <button class="filter-btn" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
+    <button class="filter-btn active" data-filter="all" onclick="filterSessions('all', this)">All<span class="count">{{ sessions|length }}</span></button>
+    <button class="filter-btn" data-filter="claude" onclick="filterSessions('claude', this)" data-active-class="active-claude">Claude Code<span class="count">{{ claude_count }}</span></button>
+    <button class="filter-btn" data-filter="copilot" onclick="filterSessions('copilot', this)" data-active-class="active-copilot">Copilot<span class="count">{{ copilot_count }}</span></button>
+    <button class="filter-btn" data-filter="vscode" onclick="filterSessions('vscode', this)" data-active-class="active-vscode">VS Code Chat<span class="count">{{ vscode_count }}</span></button>
   </div>
 
   <div class="sessions-grid" id="sessions-grid">
     {% for s in sessions %}
-    <a class="session-card" href="/session/{{ s.id }}" data-source="{{ s.source }}"
-       data-search="{{ (s.summary or s.id)|lower }} {{ (s.branch or '')|lower }} {{ (s.cwd or '')|lower }} {{ (s.repository or '')|lower }} {{ (s.model or '')|lower }} {{ (s.slug or '')|lower }}">
+    {# Use the composite ``source:id`` form so two sessions that
+       happen to share a UUID across sources are still individually
+       reachable — the route accepts both forms but ``_lookup_session``
+       rejects bare UUIDs as ambiguous when more than one source has
+       the same id. #}
+    <a class="session-card" href="/session/{{ s.source }}:{{ s.id }}" data-source="{{ s.source }}"
+       data-session-id="{{ s.source }}:{{ s.id }}">
       <h2>{{ s.summary or s.id }}</h2>
       <div class="session-meta">
         {% if s.source == 'claude' %}
@@ -207,6 +266,14 @@
         {% endif %}
         {% if s.slug %}
         <span class="badge badge-model">{{ s.slug }}</span>
+        {% endif %}
+        {% if s.memory_count %}
+        <span class="badge badge-model" title="{{ s.memory_count }} memory file{{ 's' if s.memory_count != 1 }}">&#x1f9e0; {{ s.memory_count }}</span>
+        {% endif %}
+        {% set pc = s.get('permission_counts', {}) %}
+        {% set total_perms = (pc.get('allow', 0) or 0) + (pc.get('deny', 0) or 0) + (pc.get('ask', 0) or 0) %}
+        {% if total_perms %}
+        <span class="badge badge-model" title="{{ pc.get('allow', 0) }} allow, {{ pc.get('deny', 0) }} deny, {{ pc.get('ask', 0) }} ask">&#x1f512; {{ total_perms }}</span>
         {% endif %}
         {% if s.model %}
         <span class="badge badge-model">{{ s.model }}</span>
@@ -249,20 +316,42 @@
 {% block scripts_extra %}
 <script>
 var currentFilter = 'all';
-var currentSearch = '';
+// IDs returned by the most recent /api/search call. Empty string means
+// "no search active — every card is eligible". A Set means "only cards
+// whose data-session-id is in this set are eligible".
+var searchHits = '';
 
 function applyFilters() {
   var cards = document.querySelectorAll('#sessions-grid .session-card');
   var visible = 0;
+  // Per-source totals reflect "matches the search" regardless of the
+  // currently active source filter, so the count badges show how many
+  // hits are in each tool — useful for deciding which source filter to
+  // click after searching.
+  var bySource = {claude: 0, copilot: 0, vscode: 0};
   cards.forEach(function(card) {
     var sourceMatch = currentFilter === 'all' || card.dataset.source === currentFilter;
-    var searchMatch = !currentSearch || card.dataset.search.indexOf(currentSearch) !== -1;
+    var searchMatch = searchHits === '' || searchHits.has(card.dataset.sessionId);
+    if (searchMatch) {
+      var src = card.dataset.source || '';
+      if (bySource[src] !== undefined) bySource[src]++;
+    }
     var show = sourceMatch && searchMatch;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
   var nr = document.getElementById('no-results');
   if (nr) nr.style.display = visible === 0 ? '' : 'none';
+  function setCount(filter, n) {
+    var btn = document.querySelector('.filter-btn[data-filter="' + filter + '"]');
+    if (!btn) return;
+    var c = btn.querySelector('.count');
+    if (c) c.textContent = n;
+  }
+  setCount('all', bySource.claude + bySource.copilot + bySource.vscode);
+  setCount('claude', bySource.claude);
+  setCount('copilot', bySource.copilot);
+  setCount('vscode', bySource.vscode);
 }
 
 function filterSessions(source, btn) {
@@ -275,11 +364,49 @@ function filterSessions(source, btn) {
   applyFilters();
 }
 
+// Debounced server-side search via /api/search — uses the same FTS index
+// as the form submit, so live-filter results match what you'd see after
+// pressing Enter.
 var searchInput = document.getElementById('search');
+var searchInflight = null;
+var searchDebounce = null;
 if (searchInput) {
   searchInput.addEventListener('input', function() {
-    currentSearch = this.value.toLowerCase().trim();
-    applyFilters();
+    var q = this.value.trim();
+    if (searchDebounce) clearTimeout(searchDebounce);
+    // Always cancel any in-flight request — whether we're firing a new
+    // one or clearing the box. Without this, a slow response that
+    // resolves AFTER the user cleared the input would set ``searchHits``
+    // to stale results and hide cards even though the search is empty.
+    if (searchInflight) {
+      searchInflight.abort();
+      searchInflight = null;
+    }
+    if (q === '') {
+      searchHits = '';
+      applyFilters();
+      return;
+    }
+    searchDebounce = setTimeout(function() {
+      var ctrl = new AbortController();
+      searchInflight = ctrl;
+      // Capture the query at fire time and verify it still matches the
+      // input at apply time — guards against fetches that resolve after
+      // the user typed more characters (the abort above handles the
+      // common case but request scheduling can still race).
+      var firedFor = q;
+      fetch('/api/search?q=' + encodeURIComponent(q), {signal: ctrl.signal})
+        .then(function(r) { return r.json(); })
+        .then(function(results) {
+          if (searchInput.value.trim() !== firedFor) return;  // stale
+          searchHits = new Set(results.map(function(s) { return s.source + ':' + s.id; }));
+          applyFilters();
+          searchInflight = null;
+        })
+        .catch(function(err) {
+          if (err.name !== 'AbortError') console.error(err);
+        });
+    }, 200);
   });
 }
 

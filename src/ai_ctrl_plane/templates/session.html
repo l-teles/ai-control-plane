@@ -401,6 +401,269 @@
   font-style: italic;
 }
 
+/* Slash command */
+.event-slash .event-dot { background: var(--accent); border-color: var(--accent); }
+.event-slash .event-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.event-slash .slash-header { display: flex; align-items: baseline; gap: 8px; }
+.event-slash .slash-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 13px;
+}
+.event-slash .slash-args {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.event-slash .slash-message { margin-top: 4px; font-size: 13px; }
+.event-slash .slash-output {
+  margin-top: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.event-slash .slash-output-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.event-slash .slash-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.event-slash .slash-stderr pre { color: var(--red); }
+
+/* Resume button */
+.resume-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.resume-btn:hover { background: var(--accent-subtle); border-color: var(--accent); }
+
+/* Session minimap (timeline overview) */
+.minimap {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.minimap-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.minimap-track {
+  position: relative;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.minimap-bar {
+  /* Reset default <button> styling — we render these as buttons for
+     keyboard accessibility (focusable + Enter/Space activation) but
+     they need to look identical to the original <div> markers. */
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--transition), transform var(--transition);
+}
+.minimap-bar:hover, .minimap-bar:focus-visible {
+  opacity: 1;
+  transform: scaleX(2);
+}
+.minimap-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.minimap-bar.kind-user { background: var(--accent); }
+.minimap-bar.kind-assistant { background: var(--purple); }
+.minimap-bar.kind-tool { background: var(--orange); }
+.minimap-bar.kind-error { background: var(--red); }
+.minimap-bar.kind-notification { background: var(--text-secondary); }
+.minimap-bar.kind-subagent { background: var(--green); }
+
+/* Tool-specific renderer styles */
+.tool-title { color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px; }
+.tool-subtitle {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+.tool-pre {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 8px 0 0;
+  color: var(--text);
+}
+.tool-pre-foldable {
+  max-height: 360px;
+  overflow: auto;
+}
+.tool-truncated {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 4px;
+}
+.tool-flag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  background: var(--orange-subtle);
+  color: var(--orange);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.diff-pane {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.diff-old, .diff-new {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow: auto;
+}
+.diff-old { background: rgba(248, 81, 73, 0.10); border-left: 3px solid var(--red); }
+.diff-new { background: rgba(63, 185, 80, 0.10); border-left: 3px solid var(--green); }
+.glob-matches { list-style: none; padding: 0; margin: 8px 0 0; font-family: var(--font-mono); font-size: 12px; }
+.glob-matches li { padding: 2px 0; color: var(--text-secondary); }
+.webfetch-url { font-size: 11px; margin-bottom: 8px; }
+.webfetch-url a { color: var(--accent); text-decoration: none; }
+.webfetch-content { font-size: 13px; }
+.websearch-results { padding-left: 18px; margin: 8px 0 0; }
+.websearch-results li { margin-bottom: 8px; }
+.ws-title a { color: var(--accent); text-decoration: none; font-size: 13px; }
+.ws-snippet { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.aq-question { font-size: 13px; margin-bottom: 6px; font-weight: 500; }
+.aq-options { margin: 0 0 0 18px; font-size: 12px; }
+.aq-answer { margin-top: 6px; font-size: 13px; padding: 6px 10px; background: var(--accent-subtle); border-radius: 4px; }
+.todo-list { list-style: none; padding: 0; margin: 8px 0 0; font-size: 12px; }
+.todo-list li { padding: 4px 0 4px 22px; position: relative; }
+.todo-list li::before {
+  content: '';
+  position: absolute;
+  left: 4px; top: 7px;
+  width: 12px; height: 12px;
+  border: 2px solid var(--text-secondary);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.todo-list li.todo-completed::before { background: var(--green); border-color: var(--green); }
+.todo-list li.todo-in_progress::before { background: var(--orange); border-color: var(--orange); }
+.todo-list li.todo-completed { color: var(--text-secondary); text-decoration: line-through; }
+.tool-images { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.tool-images img {
+  max-width: 100%;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* ANSI colour palette */
+.tool-ansi { font-family: var(--font-mono); }
+.ansi-fg-black { color: #2d333b; }
+.ansi-fg-red { color: #f85149; }
+.ansi-fg-green { color: #3fb950; }
+.ansi-fg-yellow { color: #d29922; }
+.ansi-fg-blue { color: #58a6ff; }
+.ansi-fg-magenta { color: #bc8cff; }
+.ansi-fg-cyan { color: #76e3ea; }
+.ansi-fg-white { color: #c9d1d9; }
+.ansi-fg-bright-black { color: #6e7681; }
+.ansi-fg-bright-red { color: #ff7b72; }
+.ansi-fg-bright-green { color: #56d364; }
+.ansi-fg-bright-yellow { color: #e3b341; }
+.ansi-fg-bright-blue { color: #79c0ff; }
+.ansi-fg-bright-magenta { color: #d2a8ff; }
+.ansi-fg-bright-cyan { color: #b3f0ff; }
+.ansi-fg-bright-white { color: #f0f6fc; }
+.ansi-bg-red { background-color: rgba(248, 81, 73, 0.20); }
+.ansi-bg-green { background-color: rgba(63, 185, 80, 0.20); }
+.ansi-bg-yellow { background-color: rgba(210, 153, 34, 0.20); }
+.ansi-bg-blue { background-color: rgba(88, 166, 255, 0.20); }
+.ansi-bold { font-weight: 700; }
+.ansi-italic { font-style: italic; }
+.ansi-underline { text-decoration: underline; }
+.ansi-dim { opacity: 0.65; }
+
+/* Inline subagent transcript */
+.subagent-transcript {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border-left: 3px solid var(--purple);
+}
+.subagent-transcript-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.subagent-msg {
+  font-size: 12px;
+  margin-bottom: 4px;
+  padding-left: 8px;
+}
+.subagent-role {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.subagent-user { color: var(--text); }
+.subagent-assistant { color: var(--text); }
+.subagent-tool {
+  font-family: var(--font-mono);
+  color: var(--orange);
+  font-size: 11px;
+}
+.subagent-msg .msg-content { display: inline; }
+.subagent-msg .msg-content p { display: inline; margin: 0; }
+
 /* Warning */
 .event-warning .event-dot { background: var(--orange); border-color: var(--orange); }
 .event-warning .event-card {
@@ -606,7 +869,32 @@
       <div class="info-row"><span class="info-key">Slug</span><span class="info-val">{{ ws.slug }}</span></div>
       {% endif %}
       <div class="info-row"><span class="info-key">Source</span><span class="info-val">{{ 'Claude Code' if source == 'claude' else ('VS Code Chat' if source == 'vscode' else 'Copilot') }}</span></div>
+      {% if memory_count %}
+      <div class="info-row">
+        <span class="info-key">Memories</span>
+        <span class="info-val"><a href="/projects/{{ project_name }}" style="color:var(--accent);text-decoration:none;">&#x1f9e0; {{ memory_count }} memory file{{ 's' if memory_count != 1 }}</a></span>
+      </div>
+      {% endif %}
+      {% set total_perms = (permission_counts.get('allow', 0) or 0) + (permission_counts.get('deny', 0) or 0) + (permission_counts.get('ask', 0) or 0) %}
+      {% if total_perms %}
+      <div class="info-row">
+        <span class="info-key">Permissions</span>
+        <span class="info-val"><a href="/projects/{{ project_name }}" style="color:var(--accent);text-decoration:none;">&#x1f512; {{ permission_counts.get('allow', 0) }} allow, {{ permission_counts.get('deny', 0) }} deny, {{ permission_counts.get('ask', 0) }} ask</a></span>
+      </div>
+      {% endif %}
       <div class="info-row"><span class="info-key">ID</span><span class="info-val" style="font-size:10px;">{{ session_id }}</span></div>
+      {% if source == 'claude' %}
+      <div class="info-row">
+        <span class="info-key">Resume</span>
+        <span class="info-val">
+          <button type="button" class="resume-btn"
+                  data-cmd="claude -r {{ session_id }}"
+                  onclick="navigator.clipboard.writeText(this.dataset.cmd).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy resume command';},1500);});">
+            Copy resume command
+          </button>
+        </span>
+      </div>
+      {% endif %}
     </div>
 
     <div class="stats-panel">
@@ -747,7 +1035,13 @@
       <button class="filter-btn" onclick="filterEvents('assistant_message', this)">Assistant</button>
       <button class="filter-btn" onclick="filterEvents('tool', this)">Tools</button>
       <button class="filter-btn" onclick="filterEvents('subagent', this)">Sub-Agents</button>
+      <button class="filter-btn" onclick="filterEvents('notification', this)">Notifications</button>
       <button class="filter-btn" onclick="filterEvents('error', this)">Errors</button>
+    </div>
+
+    <div class="minimap" id="minimap">
+      <div class="minimap-label">Session timeline ({{ conversation|length }} events) — click a marker to jump</div>
+      <div class="minimap-track" id="minimap-track"></div>
     </div>
 
     <div class="timeline" id="timeline">
@@ -807,6 +1101,7 @@
       </div>
 
       {% elif item.kind == 'tool_start' %}
+      {% set r = item.rendered or {} %}
       <div class="event event-tool" data-kind="tool">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
@@ -814,23 +1109,102 @@
           <div class="tool-header" onclick="this.parentElement.querySelector('.tool-details').classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open')">
             <svg class="tool-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             <span class="tool-label">{% if item.mcp_server %}{{ item.mcp_server }} &rarr; {% endif %}{{ item.tool_name }}</span>
+            {% if r.title %}<span class="tool-title">&middot; {{ r.title }}</span>{% endif %}
             <span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
           </div>
-          {% if item.past_tense %}<div class="tool-past-tense">{{ item.past_tense }}</div>{% endif %}
-          <div class="tool-details">{{ json.dumps(item.arguments, indent=2) }}</div>
+          {% if r.subtitle %}<div class="tool-subtitle">{{ r.subtitle }}</div>{% endif %}
+          <div class="tool-details">
+            {% if r.tool == 'Bash' and r.command %}
+              <pre class="tool-pre">{{ r.command }}</pre>
+            {% elif r.tool == 'Edit' %}
+              <div class="diff-pane">
+                <div class="diff-old">{{ r.old_string }}</div>
+                <div class="diff-new">{{ r.new_string }}</div>
+              </div>
+              {% if r.replace_all %}<div class="tool-flag">replace_all</div>{% endif %}
+            {% elif r.tool == 'Write' and r.content %}
+              <pre class="tool-pre tool-pre-foldable">{{ r.content }}</pre>
+              {% if r.truncated %}<div class="tool-truncated">&hellip; truncated ({{ r.lines }} lines)</div>{% endif %}
+            {% elif r.tool == 'AskUserQuestion' %}
+              <div class="aq-question">{{ r.question }}</div>
+              <ul class="aq-options">{% for opt in r.options %}<li>{{ opt }}</li>{% endfor %}</ul>
+            {% elif r.tool == 'TodoWrite' %}
+              <ul class="todo-list">{% for t in r.todos %}<li class="todo-{{ t.get('status','pending') }}">{{ t.get('content', '') }}</li>{% endfor %}</ul>
+            {% else %}
+              <pre class="tool-pre">{{ json.dumps(item.arguments, indent=2) }}</pre>
+            {% endif %}
+          </div>
         </div>
       </div>
 
       {% elif item.kind == 'tool_complete' %}
+      {% set r = item.rendered or {} %}
       <div class="event event-tool-complete {{ 'success' if item.success else 'failure' }}" data-kind="tool">
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">
           <div class="result-toggle" onclick="this.parentElement.querySelector('.result-content').classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open')">
-            {% if item.success %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Tool succeeded{% else %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Tool failed{% endif %}
+            {% if item.success %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>{% else %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>{% endif %}
+            {{ item.tool_name or 'Tool' }}{% if r.title %} &middot; <span class="tool-title">{{ r.title }}</span>{% endif %}
             <span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
           </div>
-          <div class="result-content">{{ item.result }}</div>
+          {% if item.images %}
+          <div class="tool-images">
+            {% for img in item.images %}
+            <img src="{{ img.src }}" alt="{{ img.alt }}" loading="lazy" />
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div class="result-content">
+            {% if r.tool == 'Bash' %}
+              <pre class="tool-pre tool-ansi">{{ r.output_html|safe }}</pre>
+              {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
+            {% elif r.tool == 'Read' and r.content %}
+              <pre class="tool-pre tool-pre-foldable">{{ r.content }}</pre>
+              {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
+            {% elif r.tool == 'Grep' %}
+              <pre class="tool-pre">{{ r.output }}</pre>
+              {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
+            {% elif r.tool == 'Glob' %}
+              <ul class="glob-matches">{% for p in r.matches %}<li>{{ p }}</li>{% endfor %}</ul>
+              {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
+            {% elif r.tool == 'WebFetch' %}
+              {% if r.url_display %}
+                <div class="webfetch-url">
+                  {% if r.url %}
+                    <a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url_display }}</a>
+                  {% else %}
+                    <span title="URL scheme blocked for safety">{{ r.url_display }}</span>
+                  {% endif %}
+                </div>
+              {% endif %}
+              <div class="webfetch-content">{{ md_to_html(r.content)|safe }}</div>
+              {% if r.truncated %}<div class="tool-truncated">&hellip; truncated</div>{% endif %}
+            {% elif r.tool == 'WebSearch' %}
+              {% if r.results %}
+              <ol class="websearch-results">
+                {% for hit in r.results %}
+                <li>
+                  <div class="ws-title">
+                    {% if hit.url %}
+                      <a href="{{ hit.url }}" target="_blank" rel="noopener">{{ hit.title or hit.url_display }}</a>
+                    {% else %}
+                      <span title="URL scheme blocked for safety">{{ hit.title or hit.url_display }}</span>
+                    {% endif %}
+                  </div>
+                  {% if hit.snippet %}<div class="ws-snippet">{{ hit.snippet }}</div>{% endif %}
+                </li>
+                {% endfor %}
+              </ol>
+              {% else %}
+              <pre class="tool-pre">{{ r.raw }}</pre>
+              {% endif %}
+            {% elif r.tool == 'AskUserQuestion' %}
+              <div class="aq-answer"><strong>Answer:</strong> {{ r.answer }}</div>
+            {% else %}
+              <pre class="tool-pre tool-pre-foldable">{{ item.result }}</pre>
+            {% endif %}
+          </div>
         </div>
       </div>
 
@@ -841,11 +1215,33 @@
         <div class="event-card">
           <div class="tool-header" onclick="var d=this.parentElement.querySelector('.tool-details');if(d){d.classList.toggle('visible');this.querySelector('.toggle-chevron').classList.toggle('open');}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            <span style="font-weight:600;">Sub-agent started: {{ item.agent_name }}</span>
-            {% if item.agent_prompt %}<span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>{% endif %}
+            <span style="font-weight:600;">Sub-agent started: {{ item.agent_name }}{% if item.agent_type %} <span style="color:var(--text-secondary);font-weight:400;">({{ item.agent_type }})</span>{% endif %}</span>
+            {% if item.agent_prompt or item.transcript %}<span class="expand-hint"><svg class="toggle-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>{% endif %}
           </div>
-          {% if item.agent_prompt %}
-          <div class="tool-details" style="color:var(--text-secondary);font-style:italic;">{{ item.agent_prompt }}</div>
+          {% if item.agent_prompt or item.transcript %}
+          <div class="tool-details">
+            {% if item.agent_prompt %}
+            <div style="color:var(--text-secondary);font-style:italic;margin-bottom:8px;">{{ item.agent_prompt }}</div>
+            {% endif %}
+            {% if item.transcript %}
+            <div class="subagent-transcript">
+              <div class="subagent-transcript-label">Inner transcript ({{ item.transcript|length }} events)</div>
+              {% for inner in item.transcript %}
+                {% if inner.kind == 'user_message' %}
+                <div class="subagent-msg subagent-user"><span class="subagent-role">User &rarr;</span> {{ inner.content }}</div>
+                {% elif inner.kind == 'assistant_message' %}
+                <div class="subagent-msg subagent-assistant"><span class="subagent-role">Assistant &rarr;</span> <div class="msg-content">{{ md_to_html(inner.content)|safe }}</div></div>
+                {% elif inner.kind == 'tool_start' %}
+                <div class="subagent-msg subagent-tool">&rarr; {{ inner.tool_name }}</div>
+                {% elif inner.kind == 'tool_complete' %}
+                <div class="subagent-msg subagent-tool">&larr; {{ 'ok' if inner.success else 'error' }}</div>
+                {% elif inner.kind == 'slash_command' %}
+                <div class="subagent-msg subagent-tool">&rarr; {{ inner.command }} {{ inner.args }}</div>
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
           {% endif %}
         </div>
       </div>
@@ -895,6 +1291,33 @@
         <div class="event-dot"></div>
         <div class="event-time">{{ ts_display(item.timestamp) }}</div>
         <div class="event-card">Model changed to <strong>{{ item.new_model }}</strong>{% if item.reasoning_effort %} (reasoning: {{ item.reasoning_effort }}){% endif %}</div>
+      </div>
+
+      {% elif item.kind == 'slash_command' %}
+      <div class="event event-slash" data-kind="slash_command">
+        <div class="event-dot"></div>
+        <div class="event-time">{{ ts_display(item.timestamp) }}</div>
+        <div class="event-card">
+          <div class="slash-header">
+            <span class="slash-name">{{ item.command }}</span>
+            {% if item.args %}<span class="slash-args">{{ item.args }}</span>{% endif %}
+          </div>
+          {% if item.message and item.message != item.command %}
+          <div class="slash-message">{{ item.message }}</div>
+          {% endif %}
+          {% if item.stdout %}
+          <div class="slash-output">
+            <div class="slash-output-label">stdout</div>
+            <pre>{{ item.stdout }}</pre>
+          </div>
+          {% endif %}
+          {% if item.stderr %}
+          <div class="slash-output slash-stderr">
+            <div class="slash-output-label">stderr</div>
+            <pre>{{ item.stderr }}</pre>
+          </div>
+          {% endif %}
+        </div>
       </div>
 
       {% elif item.kind == 'notification' %}
@@ -965,16 +1388,72 @@ function filterEvents(kind, btn) {
   document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
   btn.classList.add('active');
   document.querySelectorAll('#timeline .event').forEach(function(el) {
+    var dk = el.dataset.kind;
     if (kind === 'all') {
       el.style.display = '';
     } else if (kind === 'tool') {
-      el.style.display = (el.dataset.kind === 'tool') ? '' : 'none';
+      el.style.display = (dk === 'tool') ? '' : 'none';
+    } else if (kind === 'user_message') {
+      // The User filter covers both plain user messages and slash
+      // commands — they're both user-typed input. Bucket explicitly
+      // here rather than papering over by setting their data-kind to
+      // the same value (which would make the DOM lie about the kind).
+      el.style.display = (dk === 'user_message' || dk === 'slash_command') ? '' : 'none';
     } else if (kind === 'error') {
-      el.style.display = (el.dataset.kind === 'error' || el.dataset.kind === 'warning') ? '' : 'none';
+      el.style.display = (dk === 'error' || dk === 'warning') ? '' : 'none';
+    } else if (kind === 'notification') {
+      // The notification group covers a few mostly-metadata kinds.
+      var allowed = ['notification', 'session', 'turn'];
+      el.style.display = allowed.indexOf(dk) >= 0 ? '' : 'none';
     } else {
-      el.style.display = (el.dataset.kind === kind) ? '' : 'none';
+      el.style.display = (dk === kind) ? '' : 'none';
     }
   });
 }
+
+// Build the session minimap: one coloured tick per event, positioned by
+// its index along the track. Click a tick to scroll its event into view.
+(function() {
+  var track = document.getElementById('minimap-track');
+  if (!track) return;
+  var events = Array.prototype.slice.call(document.querySelectorAll('#timeline .event'));
+  if (!events.length) return;
+  var frag = document.createDocumentFragment();
+  // Normalise the per-event data-kind into a small palette of bucket
+  // names that match the .kind-* CSS classes on .minimap-bar.
+  function bucketFor(k) {
+    if (k === 'user_message' || k === 'slash_command') return 'user';
+    if (k === 'assistant_message') return 'assistant';
+    if (k === 'error' || k === 'warning') return 'error';
+    if (k === 'tool') return 'tool';
+    if (k === 'subagent') return 'subagent';
+    return 'notification';
+  }
+  function jumpTo(ev) {
+    ev.scrollIntoView({behavior: 'smooth', block: 'center'});
+    ev.style.transition = 'background 0.2s';
+    var card = ev.querySelector('.event-card');
+    if (card) {
+      var orig = card.style.boxShadow;
+      card.style.boxShadow = '0 0 0 2px var(--accent)';
+      setTimeout(function() { card.style.boxShadow = orig; }, 1200);
+    }
+  }
+  events.forEach(function(ev, i) {
+    // Use a real <button> so the marker is keyboard-focusable, has the
+    // right semantics for assistive tech, and gets Enter/Space-to-click
+    // behaviour for free.
+    var bar = document.createElement('button');
+    bar.type = 'button';
+    bar.className = 'minimap-bar kind-' + bucketFor(ev.dataset.kind || '');
+    bar.style.left = ((i / events.length) * 100).toFixed(2) + '%';
+    var label = (ev.dataset.kind || 'event') + ' (event ' + (i + 1) + ' of ' + events.length + ')';
+    bar.setAttribute('aria-label', 'Jump to ' + label);
+    bar.title = label;
+    bar.addEventListener('click', function() { jumpTo(ev); });
+    frag.appendChild(bar);
+  });
+  track.appendChild(frag);
+})();
 </script>
 {% endblock %}

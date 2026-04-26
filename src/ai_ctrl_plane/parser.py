@@ -45,19 +45,83 @@ def parse_workspace(session_dir: Path) -> dict:
 
 
 def parse_events(session_dir: Path) -> list[dict]:
-    """Read the events.jsonl file and return a list of parsed event dicts."""
+    """Read the events.jsonl file and return a list of parsed event dicts.
+
+    Non-dict JSON values at the line level (a stray ``null`` / ``[]`` /
+    scalar from a corrupted line) are filtered out so every consumer
+    downstream can assume each event is a dict.
+    """
     content = _safe_open(session_dir, "events.jsonl")
     if content is None:
         return []
     events: list[dict] = []
     for line in content.splitlines():
         line = line.strip()
-        if line:
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
+        if not line:
+            continue
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(evt, dict):
+            events.append(evt)
     return events
+
+
+_FTS_CONTENT_LIMIT = 500_000
+
+
+def extract_searchable_text(session_dir: Path) -> str:
+    """Concatenate user + assistant text from a Copilot session for FTS.
+
+    Reads ``events.jsonl`` and pulls ``user.message.content``,
+    ``assistant.message.content``, and ``assistant.message.reasoningText``.
+    """
+    events_jsonl = session_dir / "events.jsonl"
+    if not events_jsonl.is_file():
+        return ""
+    parts: list[str] = []
+    total = 0
+    try:
+        with open(events_jsonl, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if total >= _FTS_CONTENT_LIMIT:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(evt, dict):
+                    continue
+                t = evt.get("type", "")
+                d = evt.get("data") or {}
+                if not isinstance(d, dict):
+                    d = {}
+                if t == "user.message":
+                    txt = d.get("content", "") or ""
+                    if isinstance(txt, str) and txt:
+                        parts.append(txt)
+                        total += len(txt)
+                elif t == "assistant.message":
+                    txt = d.get("content", "") or ""
+                    if isinstance(txt, str) and txt:
+                        parts.append(txt)
+                        total += len(txt)
+                    reasoning = d.get("reasoningText", "") or ""
+                    if isinstance(reasoning, str) and reasoning:
+                        parts.append(reasoning)
+                        total += len(reasoning)
+                elif t == "tool.execution_complete":
+                    res = d.get("result", "")
+                    if isinstance(res, str) and res:
+                        parts.append(res)
+                        total += len(res)
+    except OSError:
+        return ""
+    return "\n".join(parts)[:_FTS_CONTENT_LIMIT]
 
 
 def parse_snapshots(session_dir: Path) -> dict:
@@ -116,20 +180,40 @@ def discover_sessions(base: Path) -> list[dict]:
     if not base.is_dir():
         return sessions
     for d in sorted(base.iterdir()):
-        if d.is_dir() and (d / "events.jsonl").exists():
-            ws = parse_workspace(d)
-            sessions.append(
-                {
-                    "id": d.name,
-                    "path": str(d),
-                    "summary": ws.get("summary", d.name),
-                    "repository": ws.get("repository", ""),
-                    "branch": ws.get("branch", ""),
-                    "cwd": ws.get("cwd", ""),
-                    "created_at": str(ws.get("created_at", "")),
-                    "updated_at": str(ws.get("updated_at", "")),
-                }
-            )
+        events_jsonl = d / "events.jsonl"
+        if not (d.is_dir() and events_jsonl.exists()):
+            continue
+        ws = parse_workspace(d)
+        # Take the max mtime across the two files that drive the cached
+        # session row: events.jsonl (conversation events) and workspace.yaml
+        # (summary / repo / branch / cwd). If either is touched, the cache
+        # row is stale and refresh should re-parse.
+        mtimes: list[float] = []
+        try:
+            mtimes.append(events_jsonl.stat().st_mtime)
+        except OSError:
+            pass
+        workspace_yaml = d / "workspace.yaml"
+        if workspace_yaml.is_file():
+            try:
+                mtimes.append(workspace_yaml.stat().st_mtime)
+            except OSError:
+                pass
+        source_mtime = max(mtimes) if mtimes else 0.0
+        sessions.append(
+            {
+                "id": d.name,
+                "path": str(d),
+                "source_path": str(events_jsonl),
+                "source_mtime": source_mtime,
+                "summary": ws.get("summary", d.name),
+                "repository": ws.get("repository", ""),
+                "branch": ws.get("branch", ""),
+                "cwd": ws.get("cwd", ""),
+                "created_at": str(ws.get("created_at", "")),
+                "updated_at": str(ws.get("updated_at", "")),
+            }
+        )
     sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
     return sessions
 

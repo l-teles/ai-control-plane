@@ -110,6 +110,72 @@ def test_parse_events(tmp_session: Path) -> None:
     assert events[-1]["type"] == "session.shutdown"
 
 
+def test_extract_searchable_text_concatenates_user_and_assistant(tmp_path: Path) -> None:
+    from ai_ctrl_plane.parser import extract_searchable_text
+
+    sdir = tmp_path / "sess"
+    sdir.mkdir()
+    (sdir / "events.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type": "user.message", "data": {"content": "hello world"}, "timestamp": "t"}',
+                '{"type": "assistant.message", "data": {"content": "DPDK bypass", "reasoningText": "thinking"}}',
+                '{"type": "tool.execution_complete", "data": {"result": "needle_result"}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    text = extract_searchable_text(sdir)
+    assert "hello world" in text
+    assert "DPDK bypass" in text
+    assert "thinking" in text
+    assert "needle_result" in text
+
+
+def test_extract_searchable_text_returns_empty_for_missing_session(tmp_path: Path) -> None:
+    from ai_ctrl_plane.parser import extract_searchable_text
+
+    assert extract_searchable_text(tmp_path / "nope") == ""
+
+
+def test_parse_events_and_extract_text_skip_corrupt_lines(tmp_path: Path) -> None:
+    """A JSONL line that decodes to a non-dict (``null``/scalar/list)
+    must not crash the load path or extraction. Regression for PR #27
+    review #43."""
+    from ai_ctrl_plane.parser import extract_searchable_text, parse_events
+
+    sdir = tmp_path / "sess"
+    sdir.mkdir()
+    (sdir / "events.jsonl").write_text(
+        "\n".join(
+            [
+                '{"type": "user.message", "data": {"content": "real_token"}, "timestamp": "t"}',
+                "null",
+                "[]",
+                '"a bare string"',
+                "42",
+                "true",
+                '{"type": "assistant.message", "data": {"content": "another_token"}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Both functions skip corrupt lines and surface the valid content.
+    events = parse_events(sdir)
+    types = [e.get("type") for e in events]
+    assert "user.message" in types
+    assert "assistant.message" in types
+    # Non-dict lines were filtered, not stored.
+    assert all(isinstance(e, dict) for e in events)
+
+    text = extract_searchable_text(sdir)
+    assert "real_token" in text
+    assert "another_token" in text
+
+
 def test_build_conversation(tmp_session: Path) -> None:
     events = parse_events(tmp_session / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
     conv = build_conversation(events)
