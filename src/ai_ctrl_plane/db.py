@@ -849,12 +849,22 @@ def refresh_cache(
         if memory_items:
             cache.insert_project_memory(memory_items)
 
-        cache.set_meta("status", "ready")
-        cache.set_meta("built_at", _now_iso())
+        # Cooperative cancellation: if a manual rebuild flipped the
+        # status to "building" while we were running, don't clobber its
+        # state with our "ready" write — let the build's own completion
+        # write the final status. The refresh's writes that already
+        # landed will be wiped by the build's ``_clear_all`` and rebuilt
+        # from scratch, so no data loss either way.
+        if cache.status == "refreshing":
+            cache.set_meta("status", "ready")
+            cache.set_meta("built_at", _now_iso())
         return counts
 
     except Exception:
-        cache.set_meta("status", "error")
+        # Same caveat for the error branch: don't override "building" /
+        # "ready" set by a concurrent caller.
+        if cache.status == "refreshing":
+            cache.set_meta("status", "error")
         raise
 
 

@@ -1163,8 +1163,14 @@ def create_app(
 
     @app.route("/settings/rebuild-cache", methods=["POST"])
     def rebuild_cache():
-        # Manual rebuild does a full wipe+build (the user explicitly asked for it).
-        if db.status not in ("building", "refreshing"):
+        # Manual rebuild does a full wipe+build (the user explicitly
+        # asked for it). Allow it to override a running background
+        # refresh — ``start_background_build`` flips the status to
+        # "building" synchronously, and ``refresh_cache`` checks the
+        # status before its final "ready" write so the in-flight
+        # refresh exits cleanly without clobbering the rebuild's
+        # status or trampling its data.
+        if db.status != "building":
             start_background_build(db, copilot_path, claude_path, vscode_path, desktop_path)
         return redirect(url_for("settings_view"))
 

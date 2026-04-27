@@ -93,7 +93,12 @@ def extract_images_from_result(result: Any) -> list[dict[str, str]]:
             if not isinstance(block, dict):
                 continue
             if block.get("type") == "image":
-                source = block.get("source") or {}
+                # ``source`` is supposed to be a dict but a malformed
+                # tool_result could put a list / scalar here; the
+                # subsequent ``source.get(...)`` would crash.
+                source = block.get("source")
+                if not isinstance(source, dict):
+                    continue
                 if source.get("type") == "base64":
                     media = source.get("media_type", "image/png")
                     data = source.get("data", "")

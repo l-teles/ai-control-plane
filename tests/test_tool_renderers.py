@@ -256,6 +256,21 @@ def test_extract_images_drops_oversized_data_url_in_text_block() -> None:
     assert extract_images_from_result(blocks) == []
 
 
+def test_extract_images_handles_non_dict_source() -> None:
+    """A tool_result image block with a non-dict ``source`` (list /
+    string / null / int) used to crash ``source.get(...)`` because
+    ``block.get('source') or {}`` returns the raw value when it's
+    truthy non-dict. Regression for PR #27 review #57."""
+    bad_blocks = [
+        {"type": "image", "source": ["not", "a", "dict"]},
+        {"type": "image", "source": "string"},
+        {"type": "image", "source": None},
+        {"type": "image", "source": 42},
+    ]
+    for block in bad_blocks:
+        assert extract_images_from_result([block]) == [], f"block {block!r} should be skipped"
+
+
 def test_extract_images_drops_oversized_data_url_string() -> None:
     """And to results that are a bare data URL string."""
     huge_data_url = "data:image/png;base64," + ("A" * 2_000_001)

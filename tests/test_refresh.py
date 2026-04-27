@@ -374,6 +374,46 @@ def test_copilot_source_mtime_tracks_workspace_yaml_too(tmp_path: Path) -> None:
     db.close()
 
 
+def test_refresh_skips_status_write_if_rebuild_took_over(tmp_path: Path) -> None:
+    """If a manual rebuild flips the status to "building" while a
+    background refresh is running, refresh must NOT overwrite the
+    status with "ready" on completion — that would falsely declare the
+    build done. Regression for PR #27 review #56."""
+    db = CacheDB(tmp_path / "cache.db")
+    copilot_dir = tmp_path / "copilot"
+    claude_dir = tmp_path / "claude"
+    vscode_dir = tmp_path / "vscode"
+    for d in (copilot_dir, claude_dir, vscode_dir):
+        d.mkdir()
+
+    # Simulate a rebuild having taken over: set status to "building"
+    # *before* refresh exits. Easiest way is to start refresh and then
+    # mid-flight have something flip the status — but for a unit test
+    # we can just prove the post-condition.  Set status to "building"
+    # before calling refresh_cache; refresh sets it to "refreshing" on
+    # entry, does work, then checks status before writing ready.
+    # If we override "refreshing" → "building" between the entry write
+    # and the exit check, the exit check sees "building" and skips the
+    # ready write.
+    #
+    # We can't easily race threads here, but we can verify the exit
+    # logic directly: monkey-patch insert_tool_config (one of the last
+    # operations) to flip status, then assert refresh respected it.
+    original_insert = db.insert_tool_config
+
+    def _flip_status(tool: str, config: dict) -> None:
+        original_insert(tool, config)
+        db.set_meta("status", "building")  # simulate rebuild override
+
+    db.insert_tool_config = _flip_status  # type: ignore[method-assign]
+
+    refresh_cache(db, copilot_dir, claude_dir, vscode_dir)
+
+    # Status should still be "building" — refresh didn't clobber it.
+    assert db.status == "building"
+    db.close()
+
+
 def test_get_session_anchors_round_trip(tmp_path: Path) -> None:
     db = CacheDB(tmp_path / "cache.db")
     db.insert_sessions(
