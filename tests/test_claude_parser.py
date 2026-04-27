@@ -991,6 +991,56 @@ def test_subagent_transcript_absent_when_no_match(tmp_path: Path) -> None:
     assert "transcript" not in starts[0]
 
 
+def test_subagent_handles_non_dict_input() -> None:
+    """Agent / dispatch_agent tool_use ``input`` is meant to be a dict but a
+    malformed transcript or an MCP server could emit a list / string. The
+    builder must coerce to ``{}`` instead of crashing on
+    ``agent_input.get(...)`` or ``sub_lookup.get(unhashable)``. Proactive
+    sweep for PR #27."""
+    bad_inputs: list[object] = [
+        "raw string input",
+        ["list", "of", "things"],
+        42,
+        None,
+    ]
+    for bad in bad_inputs:
+        events = [
+            _make_user_event("Run an agent"),
+            _make_assistant_event(
+                [{"type": "tool_use", "id": "toolu_z", "name": "Agent", "input": bad}],
+                request_id="req",
+            ),
+        ]
+        conv = build_conversation(events)
+        starts = [c for c in conv if c["kind"] == "subagent_start"]
+        assert len(starts) == 1
+        # Falls back to the tool name when neither description nor prompt are usable.
+        assert starts[0]["agent_name"] == "Agent"
+        assert starts[0]["agent_prompt"] == ""
+
+    # ``description`` as a non-hashable type used to crash the
+    # ``sub_lookup.get(description)`` call with TypeError.
+    events = [
+        _make_user_event("Run an agent"),
+        _make_assistant_event(
+            [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_w",
+                    "name": "Agent",
+                    "input": {"description": ["not", "hashable"], "prompt": "Look around"},
+                },
+            ],
+            request_id="req",
+        ),
+    ]
+    conv = build_conversation(events, subagent_transcripts={"x": {"events": []}})
+    starts = [c for c in conv if c["kind"] == "subagent_start"]
+    assert len(starts) == 1
+    # description coerced to "" → falls back to prompt for agent_name.
+    assert starts[0]["agent_name"] == "Look around"
+
+
 def test_subagent_conversation_events() -> None:
     """build_conversation emits subagent_start / subagent_complete for Agent tools."""
     events = [

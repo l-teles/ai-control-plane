@@ -1055,10 +1055,21 @@ def build_conversation(
             for tu in tool_uses:
                 tu_name = tu.get("name", "unknown")
                 if tu_name in ("Agent", "dispatch_agent"):
-                    agent_input = tu.get("input", {})
-                    description = agent_input.get("description", "") or ""
-                    agent_name = description or agent_input.get("prompt", tu_name)
-                    agent_prompt = agent_input.get("prompt", "")
+                    # ``input`` should be a dict but a malformed transcript or
+                    # an MCP server emitting a list/string would crash the
+                    # ``.get`` chain.  Coerce to ``{}`` first.
+                    agent_input = tu.get("input")
+                    if not isinstance(agent_input, dict):
+                        agent_input = {}
+                    raw_desc = agent_input.get("description", "")
+                    # ``description`` is used as a dict key into
+                    # ``sub_lookup`` below; a non-hashable value (list / dict)
+                    # would raise ``TypeError`` there. Coerce to str.
+                    description = raw_desc if isinstance(raw_desc, str) else ""
+                    raw_prompt = agent_input.get("prompt", "")
+                    prompt_str = raw_prompt if isinstance(raw_prompt, str) else ""
+                    agent_name = description or prompt_str or tu_name
+                    agent_prompt = prompt_str
                     subagent_tool_ids.add(tu["id"])
                     item: dict = {
                         "kind": "subagent_start",
@@ -1067,7 +1078,7 @@ def build_conversation(
                         "agent_prompt": str(agent_prompt)[:2000],
                         "tool_call_id": tu["id"],
                     }
-                    sub = sub_lookup.get(description)
+                    sub = sub_lookup.get(description) if description else None
                     if sub:
                         item["agent_type"] = sub.get("agent_type", "")
                         # Recurse to render the inner transcript with the
@@ -1075,14 +1086,16 @@ def build_conversation(
                         item["transcript"] = build_conversation(sub.get("events", []))
                     conversation.append(item)
                 else:
-                    rendered_start = render_tool(tu_name, tu.get("input", {}) or {}, "")
+                    raw_input = tu.get("input")
+                    tu_input = raw_input if isinstance(raw_input, dict) else {}
+                    rendered_start = render_tool(tu_name, tu_input, "")
                     conversation.append(
                         {
                             "kind": "tool_start",
                             "timestamp": info["timestamp"],
                             "tool_call_id": tu["id"],
                             "tool_name": tu_name,
-                            "arguments": tu.get("input", {}),
+                            "arguments": tu_input,
                             "rendered": rendered_start,
                         }
                     )
