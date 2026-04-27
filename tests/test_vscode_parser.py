@@ -922,6 +922,35 @@ def test_extract_searchable_text_returns_empty_for_non_dict_root(tmp_path: Path)
         assert extract_searchable_text(p) == "", f"payload {payload!r} should return empty"
 
 
+def test_extract_searchable_text_coerces_non_list_requests(tmp_path: Path) -> None:
+    """If ``requests`` is a dict / scalar / null instead of a list, the
+    previous ``... or []`` walked dict keys (silently dropping all
+    searchable text). Now coerced to ``[]`` like ``parse_events`` does.
+    Regression for PR #27."""
+    from ai_ctrl_plane.vscode_parser import extract_searchable_text
+
+    p = tmp_path / "session.json"
+
+    # Dict at requests[] would have iterated its keys — extract returns "".
+    p.write_text(json.dumps({"sessionId": "x", "requests": {"foo": "bar"}}), encoding="utf-8")
+    assert extract_searchable_text(p) == ""
+
+    # String at requests[] would have iterated its characters.
+    p.write_text(json.dumps({"sessionId": "x", "requests": "not-a-list"}), encoding="utf-8")
+    assert extract_searchable_text(p) == ""
+
+    # null requests is also tolerated.
+    p.write_text(json.dumps({"sessionId": "x", "requests": None}), encoding="utf-8")
+    assert extract_searchable_text(p) == ""
+
+    # And a real list still works (sanity check).
+    p.write_text(
+        json.dumps({"sessionId": "x", "requests": [{"message": {"text": "hello world"}}]}),
+        encoding="utf-8",
+    )
+    assert "hello world" in extract_searchable_text(p)
+
+
 def test_build_conversation_tolerates_non_dict_intermediates() -> None:
     """``result``, ``result.metadata``, ``message``, ``agent``, ``thinking``
     and ``variableData`` could each be the wrong shape in a corrupted

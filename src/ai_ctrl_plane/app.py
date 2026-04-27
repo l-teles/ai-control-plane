@@ -440,17 +440,32 @@ def create_app(
 
     def _search_sessions_with_fallback(q: str) -> list[dict]:
         """Search sessions, falling back to a filesystem scan + simple
-        token match when the FTS index isn't ready yet.
+        token match only while the cache hasn't been successfully built
+        yet.
 
         On a fresh install the cache hasn't been populated, so the FTS
         index is empty and ``db.search_sessions`` returns ``[]`` — which
         would cause the search box to hide every visible card on the
-        sessions page. Detect that case and do a best-effort in-memory
-        token match against the filesystem-discovered sessions instead.
+        sessions page. Detect that specific window via the cache status
+        and do a best-effort in-memory token match against the
+        filesystem-discovered sessions instead.
+
+        Once the cache is ``ready`` (or being incrementally refreshed —
+        FTS rows are mutated incrementally, so the index stays
+        authoritative), an empty result really means "no hits" and we
+        return ``[]`` directly. That avoids paying for a full Python
+        scan on every legitimate zero-hit query and keeps match
+        semantics consistent with FTS.
         """
         hits = db.search_sessions(q) if q else []
         if hits or not q:
             return hits
+        # FTS is authoritative once the cache is built / being refreshed.
+        # ``empty`` (never built), ``building`` (initial build), and
+        # ``error`` (build failed mid-flight, FTS may be incomplete) are
+        # the windows where falling back is worth the scan cost.
+        if db.status in ("ready", "refreshing"):
+            return []
         all_sessions, _ = _build_session_index()
         if not all_sessions:
             return []

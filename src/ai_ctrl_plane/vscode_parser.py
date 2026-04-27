@@ -394,9 +394,17 @@ def extract_searchable_text(path: Path) -> str:
     # ``data.get()`` can't crash on a non-dict.
     if not isinstance(data, dict):
         return ""
+    # ``requests`` is supposed to be a list of request dicts but a
+    # malformed session file could put a dict / string / scalar there.
+    # ``... or []`` previously hid the type bug — iterating a dict would
+    # silently walk its *keys*, dropping every searchable string. Coerce
+    # the same way :func:`parse_events` does so FTS extraction stays
+    # consistent across both code paths.
+    raw_requests = data.get("requests")
+    requests = raw_requests if isinstance(raw_requests, list) else []
     parts: list[str] = []
     total = 0
-    for req in data.get("requests") or []:
+    for req in requests:
         if total >= _FTS_CONTENT_LIMIT:
             break
         if not isinstance(req, dict):
@@ -407,7 +415,10 @@ def extract_searchable_text(path: Path) -> str:
             if isinstance(text, str) and text:
                 parts.append(text)
                 total += len(text)
-        for r in req.get("response") or []:
+        response = req.get("response")
+        if not isinstance(response, list):
+            continue
+        for r in response:
             if not isinstance(r, dict):
                 continue
             text = r.get("value", "") or r.get("text", "") or ""

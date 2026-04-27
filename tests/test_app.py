@@ -743,6 +743,46 @@ def test_session_view_accepts_composite_source_id(tmp_path: Path) -> None:
         assert f"/session/claude:{sid}".encode() in r_list.data
 
 
+def test_search_skips_fallback_when_cache_ready(tmp_path: Path) -> None:
+    """Once the cache is ``ready``, FTS is authoritative — a zero-hit
+    query must NOT trigger a filesystem fallback (which would be wasted
+    work on every legitimate no-match search and could surface results
+    with different match semantics than FTS). Regression for PR #27."""
+    project_dir = tmp_path / "claude_logs" / "-Users-test-project"
+    project_dir.mkdir(parents=True)
+    sid = "33333333-cccc-cccc-cccc-333333333333"
+    with open(project_dir / f"{sid}.jsonl", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "uuid": "u1",
+                    "sessionId": sid,
+                    "timestamp": "2026-04-26T10:00:00Z",
+                    "cwd": "/repo",
+                    "version": "2.1",
+                    "gitBranch": "main",
+                    "message": {"role": "user", "content": "frontend refactor work"},
+                }
+            )
+            + "\n"
+        )
+
+    app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+    app.config["TESTING"] = True
+
+    db = app.config["cache_db"]
+    # Simulate a built-but-stale cache: status="ready" but no FTS rows.
+    db.set_meta("status", "ready")
+    assert db.search_sessions("frontend") == []
+
+    with app.test_client() as c:
+        r = c.get("/api/search?q=frontend")
+        assert r.status_code == 200
+        # No fallback in "ready" state — empty FTS result returned as-is.
+        assert r.get_json() == []
+
+
 def test_search_falls_back_to_fs_scan_when_cache_empty(tmp_path: Path) -> None:
     """On a fresh install the FTS index is empty during the initial
     background build. A search request shouldn't return zero hits when
