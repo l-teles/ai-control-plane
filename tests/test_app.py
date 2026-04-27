@@ -474,6 +474,61 @@ def test_natural_date_parser_n_days_ago() -> None:
     assert _parse_natural_date("1 day ago") == (today - timedelta(days=1)).isoformat()
 
 
+def test_natural_date_parser_last_week_and_last_month() -> None:
+    """``last week`` / ``last month`` shorthands. Regression for PR #27 review."""
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("last week") == (today - timedelta(days=7)).isoformat()
+    assert _parse_natural_date("last month") == (today - timedelta(days=30)).isoformat()
+
+
+def test_natural_date_parser_n_weeks_ago_with_pluralisation() -> None:
+    """``N weeks ago`` and ``1 week ago``. Regression for PR #27 review."""
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("2 weeks ago") == (today - timedelta(weeks=2)).isoformat()
+    assert _parse_natural_date("1 week ago") == (today - timedelta(weeks=1)).isoformat()
+
+
+def test_natural_date_parser_n_months_ago_with_pluralisation() -> None:
+    """``N months ago`` and ``1 month ago``. Months are approximated as 30
+    days, which the helper documents and ``_filter_by_date_range`` accepts.
+    Regression for PR #27 review."""
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ctrl_plane.app import _parse_natural_date
+
+    today = datetime.now(UTC).date()
+    assert _parse_natural_date("3 months ago") == (today - timedelta(days=90)).isoformat()
+    assert _parse_natural_date("1 month ago") == (today - timedelta(days=30)).isoformat()
+
+
+def test_validate_session_id_rejects_uppercase_source_prefix() -> None:
+    """``_UUID_RE`` is intentionally lowercase-only — stored session ids and
+    source names are all lowercase, so ``CLAUDE:<uuid>`` would validate but
+    fail the lookup. Reject it up front instead.  Regression for PR #27."""
+    import pytest
+
+    from ai_ctrl_plane.app import _validate_session_id
+
+    # Lowercase composite — accepted.
+    _validate_session_id("claude:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    # Bare lowercase UUID — accepted.
+    _validate_session_id("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    # Uppercase source prefix — must reject (HTTP 400 via abort()).
+    with pytest.raises(Exception, match="(?i)400|invalid"):
+        _validate_session_id("CLAUDE:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    # Uppercase UUID hex — also rejected.
+    with pytest.raises(Exception, match="(?i)400|invalid"):
+        _validate_session_id("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+
+
 def test_natural_date_parser_unrecognised_returns_empty() -> None:
     from ai_ctrl_plane.app import _parse_natural_date
 

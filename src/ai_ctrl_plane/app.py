@@ -47,9 +47,13 @@ from .parser import (
 # (claude / copilot / vscode). Both forms are accepted by the
 # /session/<id> route; the prefix is stripped before the value is
 # used as a filesystem path component.
+#
+# Lowercase-only: stored sessions, source names, and on-disk filenames
+# are all lowercase, and ``_lookup_session`` keys composite ids the same
+# way.  Accepting ``CLAUDE:<UUID>`` here would pass validation but then
+# 404 in the lookup, which is worse than rejecting up front.
 _UUID_RE = re.compile(
     r"^(?:(?:claude|copilot|vscode):)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.IGNORECASE,
 )
 
 
