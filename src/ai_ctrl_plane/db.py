@@ -795,7 +795,16 @@ def refresh_cache(
                 counts["added"] += 1
                 continue
             current = cached.get(sp)
-            new_mtime = float(s.get("source_mtime", 0.0))
+            # Parsers should always supply a numeric ``source_mtime``,
+            # but a buggy / partial session dict could provide a string
+            # or ``None`` and crash ``float()``. Treat anything we can't
+            # coerce as 0 — the comparison below will then look like a
+            # change and trigger a re-upsert, which is the safe default.
+            raw_mtime = s.get("source_mtime", 0.0)
+            try:
+                new_mtime = float(raw_mtime) if isinstance(raw_mtime, int | float | str) else 0.0
+            except (TypeError, ValueError):
+                new_mtime = 0.0
             if current is None:
                 # New file OR a legacy NULL-anchor row whose id is now
                 # being upgraded to a proper anchor.  ``insert_sessions``

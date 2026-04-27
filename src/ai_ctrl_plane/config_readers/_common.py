@@ -199,10 +199,16 @@ def read_skills(skills_dir: Path) -> list[dict]:
             homepage = fm.get("homepage", "")
         if not author:
             author = fm.get("author", "")
+        # YAML can decode ``description: 42`` or ``description:`` (None) —
+        # ``.strip()`` would crash. Coerce to string before normalising.
+        raw_desc = fm.get("description", "")
+        desc = raw_desc.strip()[:200] if isinstance(raw_desc, str) else ""
+        raw_name = fm.get("name")
+        name = raw_name if isinstance(raw_name, str) and raw_name else skill_file.parent.name
         skills.append(
             {
-                "name": fm.get("name") or skill_file.parent.name,
-                "description": fm.get("description", "").strip()[:200],
+                "name": name,
+                "description": desc,
                 "path": str(skill_file.parent),
                 "homepage": sanitize_url(str(homepage)) if homepage else "",
                 "author": str(author) if author else "",

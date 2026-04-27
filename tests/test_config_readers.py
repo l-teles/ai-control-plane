@@ -306,6 +306,28 @@ def test_read_skills_empty_dir(tmp_path):
     assert result == []
 
 
+def test_read_skills_tolerates_non_string_description(tmp_path):
+    """YAML allows scalars / nulls / lists where we expect a string. The
+    skill loader must not crash on ``.strip()`` if ``description`` decodes
+    to something other than a string. Proactive sweep for PR #27."""
+    from ai_ctrl_plane.config_readers._common import read_skills
+
+    skills_dir = tmp_path / "skills"
+    for i, raw in enumerate(("description: 42", "description:", "description: [a, b]", "name: 99\ndescription: ok")):
+        skill = skills_dir / f"weird-{i}"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"---\n{raw}\n---\nBody.\n")
+
+    result = read_skills(skills_dir)
+    assert len(result) == 4
+    # Non-string description values become "" rather than raising.
+    descs = sorted(s["description"] for s in result)
+    assert descs == ["", "", "", "ok"]
+    # Non-string ``name`` falls back to the directory name.
+    names = {s["name"] for s in result}
+    assert "weird-3" in names  # numeric ``name: 99`` was rejected → dir name
+
+
 def test_read_skills_no_metadata(tmp_path):
     """read_skills works with minimal frontmatter (no metadata block)."""
     from ai_ctrl_plane.config_readers._common import read_skills

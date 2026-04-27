@@ -24,6 +24,30 @@ from .parser import MAX_RESULT_CHARS
 # ---------------------------------------------------------------------------
 
 
+def _dget(obj: object, *keys: str, default: object = None) -> object:
+    """Walk a chain of dict keys, returning *default* on any non-dict step.
+
+    VS Code Chat session JSON is shaped by another tool's writes, so any
+    intermediate node may be missing or, if the file is corrupted, the
+    wrong type.  This helper mirrors ``a.get(k1, {}).get(k2, ...)`` chains
+    without crashing when an intermediate is a string / list / None.
+    """
+    for k in keys:
+        if not isinstance(obj, dict):
+            return default
+        obj = obj.get(k)
+    return default if obj is None else obj
+
+
+def _dget_dict(obj: object, *keys: str) -> dict:
+    """Like :func:`_dget`, but coerces the leaf to ``{}`` if it isn't a dict.
+
+    Use when the caller is about to ``.get(...)`` further off the result.
+    """
+    v = _dget(obj, *keys, default={})
+    return v if isinstance(v, dict) else {}
+
+
 def _ms_to_iso(ms: int | float) -> str:
     """Convert a Unix-millisecond timestamp to an ISO 8601 string."""
     if not ms:
@@ -504,7 +528,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
     )
 
     # Check for maxToolCallsExceeded across all requests
-    if any(req.get("result", {}).get("metadata", {}).get("maxToolCallsExceeded", False) for req in requests):
+    if any(_dget(req, "result", "metadata", "maxToolCallsExceeded", default=False) for req in requests):
         conversation.append(
             {
                 "kind": "warning",
@@ -516,7 +540,7 @@ def build_conversation(events: list[dict]) -> list[dict]:
     # Extract auto-generated summary from last request (display near session start)
     last_req = requests[-1] if requests else {}
     first_req = requests[0] if requests else {}
-    auto_summary = last_req.get("result", {}).get("metadata", {}).get("summary", {}).get("text", "")
+    auto_summary = _dget(last_req, "result", "metadata", "summary", "text", default="")
     if auto_summary:
         conversation.append(
             {
@@ -528,22 +552,29 @@ def build_conversation(events: list[dict]) -> list[dict]:
 
     for req in requests:
         ts = _ms_to_iso(req.get("timestamp", 0))
-        timings = req.get("result", {}).get("timings", {})
+        timings = _dget_dict(req, "result", "timings")
         cost_multiplier = _extract_cost_multiplier(req)
 
         # Agent mode from request.agent.id (e.g. "github.copilot.editsAgent" -> "Edit")
-        agent_id = req.get("agent", {}).get("id", "") if isinstance(req.get("agent"), dict) else ""
-        agent_mode = _agent_mode_label(agent_id)
+        agent_id = _dget(req, "agent", "id", default="")
+        agent_mode = _agent_mode_label(agent_id) if isinstance(agent_id, str) else ""
 
         # --- User message ---
-        user_text = req.get("message", {}).get("text", "")
+        user_text = _dget(req, "message", "text", default="")
+        if not isinstance(user_text, str):
+            user_text = ""
         attachments: list[dict] = []
         # Extract file references from variableData
-        for var in req.get("variableData", {}).get("variables", []):
+        variables = _dget(req, "variableData", "variables", default=[])
+        if not isinstance(variables, list):
+            variables = []
+        for var in variables:
+            if not isinstance(var, dict):
+                continue
             if var.get("kind") == "file":
-                uri_data = var.get("value", {}).get("uri", {})
+                uri_data = _dget_dict(var, "value", "uri")
                 file_path = uri_data.get("path", "") or uri_data.get("fsPath", "")
-                if file_path:
+                if file_path and isinstance(file_path, str):
                     attachments.append({"type": "file", "name": Path(file_path).name, "path": file_path})
 
         if user_text:
@@ -559,9 +590,13 @@ def build_conversation(events: list[dict]) -> list[dict]:
             )
 
         # --- Process tool call rounds from metadata (structured data) ---
-        result_meta = req.get("result", {}).get("metadata", {})
+        result_meta = _dget_dict(req, "result", "metadata")
         tool_call_rounds = result_meta.get("toolCallRounds", [])
+        if not isinstance(tool_call_rounds, list):
+            tool_call_rounds = []
         tool_call_results = result_meta.get("toolCallResults", {})
+        if not isinstance(tool_call_results, dict):
+            tool_call_results = {}
 
         # Build ordered list of pastTenseMessage from response array.
         # IDs differ between response[] and toolCallRounds, so match by
@@ -577,9 +612,13 @@ def build_conversation(events: list[dict]) -> list[dict]:
         if tool_call_rounds:
             _pt_idx = 0  # positional index into past_tense_list
             for round_data in tool_call_rounds:
+                if not isinstance(round_data, dict):
+                    continue
                 response_text = round_data.get("response", "")
                 tool_calls = round_data.get("toolCalls", [])
-                thinking = round_data.get("thinking", {}).get("text", "")
+                if not isinstance(tool_calls, list):
+                    tool_calls = []
+                thinking = _dget(round_data, "thinking", "text", default="")
 
                 # Emit assistant message for this round
                 if response_text or tool_calls:
@@ -796,8 +835,10 @@ def compute_stats(events: list[dict]) -> dict:
     }
 
     for req in requests:
+        if not isinstance(req, dict):
+            continue
         # Each request is a user-assistant turn
-        msg_text = req.get("message", {}).get("text", "")
+        msg_text = _dget(req, "message", "text", default="")
         if msg_text:
             stats["user_messages"] += 1
             stats["turns"] += 1
@@ -808,25 +849,37 @@ def compute_stats(events: list[dict]) -> dict:
             stats["assistant_messages"] += 1
 
         # Count tool calls from toolCallRounds
-        result_meta = req.get("result", {}).get("metadata", {})
-        for round_data in result_meta.get("toolCallRounds", []):
-            for tc in round_data.get("toolCalls", []):
+        result_meta = _dget_dict(req, "result", "metadata")
+        rounds = result_meta.get("toolCallRounds", [])
+        if not isinstance(rounds, list):
+            rounds = []
+        for round_data in rounds:
+            if not isinstance(round_data, dict):
+                continue
+            tcs = round_data.get("toolCalls", [])
+            if not isinstance(tcs, list):
+                continue
+            for tc in tcs:
+                if not isinstance(tc, dict):
+                    continue
                 name = tc.get("name", "unknown")
                 stats["tool_calls"][name] = stats["tool_calls"].get(name, 0) + 1
 
         # Fallback: count from response[] if no rounds
-        if not result_meta.get("toolCallRounds"):
-            for item in req.get("response", []):
-                if isinstance(item, dict) and item.get("kind") == "toolInvocationSerialized":
-                    name = item.get("toolId", "unknown")
-                    stats["tool_calls"][name] = stats["tool_calls"].get(name, 0) + 1
+        if not rounds:
+            response_items = req.get("response", [])
+            if isinstance(response_items, list):
+                for item in response_items:
+                    if isinstance(item, dict) and item.get("kind") == "toolInvocationSerialized":
+                        name = item.get("toolId", "unknown")
+                        stats["tool_calls"][name] = stats["tool_calls"].get(name, 0) + 1
 
         if req.get("isCanceled"):
             stats["errors"] += 1
 
         # Prompt token details — treat missing keys as 0 so averages
         # aren't biased by requests where a category happens to be zero.
-        ptd = result_meta.get("usage", {}).get("promptTokenDetails", {})
+        ptd = _dget_dict(result_meta, "usage", "promptTokenDetails")
         if ptd:
             for key in ("system", "toolDefinitions", "messages", "files"):
                 pct = ptd.get(key, 0)

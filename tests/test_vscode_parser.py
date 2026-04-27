@@ -920,3 +920,28 @@ def test_extract_searchable_text_returns_empty_for_non_dict_root(tmp_path: Path)
         p = tmp_path / "session.json"
         p.write_text(payload, encoding="utf-8")
         assert extract_searchable_text(p) == "", f"payload {payload!r} should return empty"
+
+
+def test_build_conversation_tolerates_non_dict_intermediates() -> None:
+    """``result``, ``result.metadata``, ``message``, ``agent``, ``thinking``
+    and ``variableData`` could each be the wrong shape in a corrupted
+    session file. ``build_conversation`` and ``compute_stats`` must not
+    crash on chained ``.get`` walks. Proactive sweep for PR #27."""
+    meta = {"_vscode_meta": True, "creationDate": 1, "lastMessageDate": 2, "cwd": "/x"}
+    # Each request has at least one wrong-typed intermediate.
+    bad_requests: list[dict] = [
+        {"timestamp": 1, "result": "not-a-dict", "message": "not-a-dict", "agent": "not-a-dict"},
+        {"timestamp": 2, "result": {"metadata": "not-a-dict"}, "message": {"text": None}},
+        {"timestamp": 3, "result": {"metadata": {"toolCallRounds": "not-a-list"}}},
+        {
+            "timestamp": 4,
+            "result": {"metadata": {"toolCallRounds": [{"toolCalls": "not-a-list", "thinking": "x"}]}},
+        },
+        {"timestamp": 5, "variableData": "not-a-dict"},
+        {"timestamp": 6, "variableData": {"variables": [{"kind": "file", "value": "not-a-dict"}]}},
+    ]
+    # Should not raise.
+    convo = build_conversation([meta, *bad_requests])
+    assert isinstance(convo, list)
+    stats = compute_stats([meta, *bad_requests])
+    assert stats["total_events"] == len(bad_requests)

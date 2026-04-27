@@ -729,24 +729,39 @@ def _read_cowork_plugins(desktop_dir: Path) -> list[dict]:
             installed = safe_read_json(installed_path) or {}
             settings = safe_read_json(inner / "cowork_plugins" / "cowork_settings.json") or {}
             enabled_plugins = settings.get("enabledPlugins", {})
+            if not isinstance(enabled_plugins, dict):
+                enabled_plugins = {}
 
             plugins: list[dict] = []
-            for plugin_key, installs in installed.get("plugins", {}).items():
+            installed_plugins = installed.get("plugins", {})
+            if not isinstance(installed_plugins, dict):
+                installed_plugins = {}
+            for plugin_key, installs in installed_plugins.items():
                 if not isinstance(installs, list):
                     continue
                 for inst in installs:
-                    cache_path = Path(inst.get("installPath", ""))
+                    if not isinstance(inst, dict):
+                        continue
+                    # ``installPath`` is meant to be a string but a hand-edited
+                    # or partially-written ``installed_plugins.json`` can put
+                    # ``None`` / a number there, which crashes ``Path()``.
+                    install_path = inst.get("installPath", "")
+                    if not isinstance(install_path, str) or not install_path:
+                        continue
+                    cache_path = Path(install_path)
                     if not cache_path.is_dir():
                         continue
                     plugin_json = safe_read_json(cache_path / ".claude-plugin" / "plugin.json") or {}
                     plugin_skills = read_skills(cache_path / "skills")
+                    author_obj = plugin_json.get("author") or {}
+                    author_name = author_obj.get("name", "") if isinstance(author_obj, dict) else ""
                     plugins.append(
                         {
                             "key": plugin_key,
                             "name": plugin_json.get("name", plugin_key),
                             "version": inst.get("version", ""),
                             "description": plugin_json.get("description", ""),
-                            "author": (plugin_json.get("author") or {}).get("name", ""),
+                            "author": author_name,
                             "enabled": bool(enabled_plugins.get(plugin_key, False)),
                             "installed_at": inst.get("installedAt", ""),
                             "last_updated": inst.get("lastUpdated", ""),
