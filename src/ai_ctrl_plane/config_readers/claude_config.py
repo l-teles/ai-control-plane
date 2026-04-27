@@ -534,7 +534,10 @@ def read_claude_projects(claude_home: Path | None = None) -> dict:
                     if content:
                         memory_files.append({"filename": mf.name, "content": content})
 
-        last_cost = meta.get("lastCost") if isinstance(meta.get("lastCost"), int | float) else None
+        # ``bool`` is a subclass of ``int`` in Python; reject it so a
+        # malformed ``lastCost: true`` doesn't render as $1.00.
+        _raw_cost = meta.get("lastCost")
+        last_cost = _raw_cost if isinstance(_raw_cost, int | float) and not isinstance(_raw_cost, bool) else None
 
         # Read repo-local permissions from <cwd>/.claude/settings.local.json
         # and committed settings from <cwd>/.claude/settings.json

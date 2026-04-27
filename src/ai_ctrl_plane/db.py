@@ -800,11 +800,16 @@ def refresh_cache(
             # or ``None`` and crash ``float()``. Treat anything we can't
             # coerce as 0 — the comparison below will then look like a
             # change and trigger a re-upsert, which is the safe default.
+            # Exclude ``bool`` explicitly: it's a subclass of ``int``, so
+            # ``True`` would otherwise sneak through as a 1.0 mtime.
             raw_mtime = s.get("source_mtime", 0.0)
-            try:
-                new_mtime = float(raw_mtime) if isinstance(raw_mtime, int | float | str) else 0.0
-            except (TypeError, ValueError):
+            if isinstance(raw_mtime, bool) or not isinstance(raw_mtime, int | float | str):
                 new_mtime = 0.0
+            else:
+                try:
+                    new_mtime = float(raw_mtime)
+                except (TypeError, ValueError):
+                    new_mtime = 0.0
             if current is None:
                 # New file OR a legacy NULL-anchor row whose id is now
                 # being upgraded to a proper anchor.  ``insert_sessions``
