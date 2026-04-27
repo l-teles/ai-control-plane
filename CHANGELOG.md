@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.7.0 - 2026-04-27
+
+### What's Changed
+
+- Docs/changelog v0.6.1 (#19) @l-teles
+
+### Features
+
+- Incremental cache, DAG rendering, per-tool renderers, search, timeline (#27) @l-teles
+
+### CI / Maintenance
+
+- ci: bump release-drafter/release-drafter from 7.1.1 to 7.2.0 (#22) @[dependabot[bot]](https://github.com/apps/dependabot)
+- ci: bump peter-evans/create-pull-request from 8.1.0 to 8.1.1 (#23) @[dependabot[bot]](https://github.com/apps/dependabot)
+- ci: bump zizmorcore/zizmor-action from 0.5.2 to 0.5.3 (#24) @[dependabot[bot]](https://github.com/apps/dependabot)
+- ci: bump actions/upload-artifact from 7.0.0 to 7.0.1 (#25) @[dependabot[bot]](https://github.com/apps/dependabot)
+- ci: bump github/codeql-action from 4.35.1 to 4.35.2 (#26) @[dependabot[bot]](https://github.com/apps/dependabot)
+- ci: bump pypa/gh-action-pypi-publish from 1.13.0 to 1.14.0 (#20) @[dependabot[bot]](https://github.com/apps/dependabot)
+- ci: bump github/codeql-action from 4.32.6 to 4.35.1 (#21) @[dependabot[bot]](https://github.com/apps/dependabot)
+
+**Full Changelog**: https://github.com/l-teles/ai-control-plane/compare/v0.6.1...v0.7.0
+
 ## 0.6.1 - 2026-03-30
 
 ### What's Changed
