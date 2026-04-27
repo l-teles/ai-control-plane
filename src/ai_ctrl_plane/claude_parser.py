@@ -591,41 +591,23 @@ def _scan_summaries(jsonl_path: Path) -> list[tuple[str, str]]:
 def _count_permissions(cwd: str) -> dict[str, int]:
     """Count permission rules from repo-local Claude settings.
 
-    Reads ``<cwd>/.claude/settings.json`` and ``<cwd>/.claude/settings.local.json``.
-    Returns counts for allow, deny, and ask lists.
+    Delegates to :func:`config_readers.claude_config._read_repo_permissions`
+    so there's a single source of truth for parsing
+    ``<cwd>/.claude/settings.json`` + ``settings.local.json``. This
+    function just turns the rule lists into counts.
     """
     counts: dict[str, int] = {"allow": 0, "deny": 0, "ask": 0}
     # ``cwd`` comes from a JSONL event field that ``extract_workspace`` /
     # ``_first_metadata`` don't yet type-check. A non-string ``cwd``
-    # (None / int / dict from a malformed event) would crash ``Path()``.
+    # (None / int / dict from a malformed event) would crash ``Path()``
+    # inside the helper.
     if not isinstance(cwd, str) or not cwd:
         return counts
-    repo = Path(cwd)
-    seen: dict[str, set[str]] = {"allow": set(), "deny": set(), "ask": set()}
-    for name in ("settings.json", "settings.local.json"):
-        cfg_path = repo / ".claude" / name
-        if not cfg_path.is_file():
-            continue
-        try:
-            with open(cfg_path, encoding="utf-8") as f:
-                cfg = json.loads(f.read())
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-            continue
-        # JSON root and nested ``permissions`` can each legally be any
-        # JSON value. Skip non-dicts so the ``.get`` chain can't crash.
-        if not isinstance(cfg, dict):
-            continue
-        perms = cfg.get("permissions", {})
-        if not isinstance(perms, dict):
-            continue
-        for key in ("allow", "deny", "ask"):
-            items = perms.get(key, [])
-            if isinstance(items, list):
-                for item in items:
-                    if isinstance(item, str):
-                        seen[key].add(item)
+    from .config_readers.claude_config import _read_repo_permissions
+
+    rules = _read_repo_permissions(cwd)
     for key in counts:
-        counts[key] = len(seen[key])
+        counts[key] = len(rules.get(key, []))
     return counts
 
 

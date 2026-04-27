@@ -23,7 +23,10 @@ _CURSOR_CONTROL_RE = re.compile(r"\x1b\[[0-9;?]*[ABCDEFGHJKSTfilnsuh]")
 # The ESC N / ESC O single-shift sequences carry a single argument byte from
 # the G2/G3 character set; we don't render those alternate sets, so we drop
 # the prefix and let the argument byte (if any) fall through as plain text.
-_OTHER_ESC_RE = re.compile(r"\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\\|\x1b[NO]")
+# DOTALL so the ``.*?`` in the DCS/SOS/PM/APC branch can match payloads
+# that legally contain newlines (the terminator is ``ESC \``, not the end
+# of line).
+_OTHER_ESC_RE = re.compile(r"\x1b\][^\x07]*\x07|\x1b[PX^_].*?\x1b\\|\x1b[NO]", re.DOTALL)
 # SGR (Select Graphic Rendition) — ESC [ <params> m
 _SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 
