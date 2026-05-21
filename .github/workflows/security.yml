@@ -49,11 +49,9 @@ jobs:
           pip install -r .github/requirements-security.txt
           pip install -e .
       - name: Audit dependencies
-        # CVE-2026-3219 is a vuln in pip itself (the runner's bundled pip,
-        # not a project dep). No fixed pip release is out yet; ignore the
-        # specific CVE so unrelated PRs don't get blocked, and remove this
-        # ignore once upstream pip publishes the fix.
-        run: pip-audit --ignore-vuln CVE-2026-3219
+        # PYSEC-2026-89: DoS in python-markdown 3.10.2 (latest); no fix release
+        # yet. Remove once upstream publishes a patched version.
+        run: pip-audit --ignore-vuln PYSEC-2026-89
 
   zizmor:
     name: zizmor (GitHub Actions security)
