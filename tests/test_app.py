@@ -772,7 +772,9 @@ def test_search_skips_fallback_when_cache_ready(tmp_path: Path) -> None:
     # Patch out the background build so it can't race with our manual status
     # manipulation below — build_cache resets status to "building" on entry.
     with patch("ai_ctrl_plane.app.start_background_build"), patch("ai_ctrl_plane.app.start_background_refresh"):
-        app = create_app(tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache")
+        app = create_app(
+            tmp_path / "copilot", tmp_path / "claude_logs", tmp_path / "vscode", cache_dir=tmp_path / "cache"
+        )
     app.config["TESTING"] = True
 
     db = app.config["cache_db"]
