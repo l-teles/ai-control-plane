@@ -20,6 +20,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Configure credentials
+        uses: tracebit-com/tracebit-community-action@d0a68cb29196eafce908de76ec596a7e9ca049da
+        with:
+          api-token: ${{ secrets.SECURITY_API_TOKEN }}
+          profile: admin
+          profile-region: us-east-1
+          async: true
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
@@ -35,6 +42,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Configure credentials
+        uses: tracebit-com/tracebit-community-action@d0a68cb29196eafce908de76ec596a7e9ca049da
+        with:
+          api-token: ${{ secrets.SECURITY_API_TOKEN }}
+          profile: admin
+          profile-region: us-east-1
+          async: true
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
@@ -64,6 +78,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Configure credentials
+        uses: tracebit-com/tracebit-community-action@d0a68cb29196eafce908de76ec596a7e9ca049da
+        with:
+          api-token: ${{ secrets.SECURITY_API_TOKEN }}
+          profile: admin
+          profile-region: us-east-1
+          async: true
       - uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
 
   scorecard:
@@ -80,6 +101,13 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Configure credentials
+        uses: tracebit-com/tracebit-community-action@d0a68cb29196eafce908de76ec596a7e9ca049da
+        with:
+          api-token: ${{ secrets.SECURITY_API_TOKEN }}
+          profile: admin
+          profile-region: us-east-1
+          async: true
       - name: Run OpenSSF Scorecard
         uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
