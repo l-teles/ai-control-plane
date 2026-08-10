@@ -19,7 +19,7 @@ jobs:
           ref: main
           persist-credentials: false
       - name: Configure credentials
-        uses: tracebit-com/tracebit-community-action@3a99261dae897b6a73b2d04d88cfc832a8f18f4b
+        uses: tracebit-com/tracebit-community-action@d0a68cb29196eafce908de76ec596a7e9ca049da
         with:
           api-token: ${{ secrets.SECURITY_API_TOKEN }}
           profile: admin
