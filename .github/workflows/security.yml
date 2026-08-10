@@ -101,17 +101,6 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Configure credentials
-        uses: tracebit-com/tracebit-community-action@d0a68cb29196eafce908de76ec596a7e9ca049da
-        with:
-          api-token: ${{ secrets.SECURITY_API_TOKEN }}
-          profile: admin
-          profile-region: us-east-1
-          async: true
-      # NOTE: Do not add extra steps (e.g. the Tracebit canary step used in the
-      # other jobs) to this job. When publish_results is true, the Scorecard
-      # webapp verifies this job contains only an allowlisted set of steps and
-      # rejects publication (HTTP 400) otherwise.
       - name: Run OpenSSF Scorecard
         uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
