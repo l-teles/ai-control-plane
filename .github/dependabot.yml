@@ -12,6 +12,16 @@ updates:
       - dependencies
     cooldown:
       default-days: 7
+    groups:
+      dependencies-minor-and-patch:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+      dependencies-major:
+        dependency-type: "all"
+        update-types:
+          - "major"
 
   - package-ecosystem: pip
     directory: /.github
@@ -26,6 +36,16 @@ updates:
       - dependencies
     cooldown:
       default-days: 7
+    groups:
+      ci-dependencies-minor-and-patch:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+      ci-dependencies-major:
+        dependency-type: "all"
+        update-types:
+          - "major"
 
   - package-ecosystem: github-actions
     directory: /
@@ -39,3 +59,13 @@ updates:
       - ci
     cooldown:
       default-days: 7
+    groups:
+      github-actions-minor-and-patch:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+      github-actions-major:
+        dependency-type: "all"
+        update-types:
+          - "major"
